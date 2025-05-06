@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference to the class library project -->
+    <ProjectReference Include="..\\ConfigEditor\\ConfigEditor.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- JSON handling -->
+    <PackageReference Include="System.Text.Json" Version="8.0.0" />
+    <!-- Optional: CLI args, logging, etc. -->
+    <!-- <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" /> -->
+  </ItemGroup>
+
+</Project>
