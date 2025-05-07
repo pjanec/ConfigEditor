@@ -1,84 +1,69 @@
-using System;
 using System.Collections.Generic;
-using System.Text.Json;
-using ConfigEditor.Dom;
 
-namespace ConfigEditor.Util
+namespace ConfigDom
 {
-    public class JsonMergeService
+    /// <summary>
+    /// Provides functionality to merge multiple JSON object trees from different cascade levels.
+    /// Performs deep object merging, with arrays replaced completely.
+    /// Used to build the effective DOM for cascaded configurations.
+    /// </summary>
+    public static class JsonMergeService
     {
-        public ObjectNode MergeFilesToDom(IEnumerable<Json5SourceFile> sourceFiles)
+        /// <summary>
+        /// Merges a list of object-node maps from cascade layers.
+        /// Each dictionary maps relative paths to partial object trees.
+        /// </summary>
+        /// <param name="layers">A list of layer maps from lowest (base) to highest (most specific).</param>
+        /// <returns>A merged root ObjectNode representing the combined DOM.</returns>
+        public static ObjectNode MergeCascade(List<Dictionary<string, ObjectNode>> layers)
         {
-            var mergedRoot = new ObjectNode();
+            var root = new ObjectNode("root");
 
-            foreach (var file in sourceFiles)
+            foreach (var layer in layers)
             {
-                using var doc = JsonDocument.Parse(file.Text);
-                var fragment = ParseJsonElement(doc.RootElement, file.FilePath);
-                mergedRoot = DeepMerge(mergedRoot, fragment as ObjectNode ?? new ObjectNode()) as ObjectNode;
-            }
-
-            return mergedRoot;
-        }
-
-        public static ObjectNode ParseFileToDom(Json5SourceFile file)
-        {
-            using var doc = JsonDocument.Parse(file.Text);
-            return ParseJsonElement(doc.RootElement, file.FilePath) as ObjectNode ?? new ObjectNode();
-        }
-
-        public static DomNode ParseJsonElement(JsonElement element, string sourceFile, int? lineHint = null)
-        {
-            switch (element.ValueKind)
-            {
-                case JsonValueKind.Object:
-                    var objNode = new ObjectNode { SourceFile = sourceFile, SourceLine = lineHint };
-                    foreach (var prop in element.EnumerateObject())
-                    {
-                        var child = ParseJsonElement(prop.Value, sourceFile);
-                        objNode.Add(prop.Name, child);
-                    }
-                    return objNode;
-                case JsonValueKind.Array:
-                    var arrNode = new ArrayNode { SourceFile = sourceFile, SourceLine = lineHint };
-                    foreach (var item in element.EnumerateArray())
-                        arrNode.Add(ParseJsonElement(item, sourceFile));
-                    return arrNode;
-                case JsonValueKind.String:
-                    return new LeafNode(element.GetString()) { SourceFile = sourceFile, SourceLine = lineHint };
-                case JsonValueKind.Number:
-                    return new LeafNode(element.GetDecimal()) { SourceFile = sourceFile, SourceLine = lineHint };
-                case JsonValueKind.True:
-                    return new LeafNode(true) { SourceFile = sourceFile, SourceLine = lineHint };
-                case JsonValueKind.False:
-                    return new LeafNode(false) { SourceFile = sourceFile, SourceLine = lineHint };
-                case JsonValueKind.Null:
-                    return new LeafNode(null) { SourceFile = sourceFile, SourceLine = lineHint };
-                default:
-                    throw new InvalidOperationException($"Unsupported JSON value kind: {element.ValueKind}");
-            }
-        }
-
-        private static DomNode DeepMerge(DomNode baseNode, DomNode overrideNode)
-        {
-            if (baseNode is ObjectNode baseObj && overrideNode is ObjectNode overrideObj)
-            {
-                foreach (var (key, value) in overrideObj.GetChildren())
+                foreach (var (path, node) in layer)
                 {
-                    if (baseObj.GetChild(key!) is DomNode existingChild)
+                    ApplyObjectNode(root, path.Split('/'), node);
+                }
+            }
+
+            return root;
+        }
+
+        private static void ApplyObjectNode(ObjectNode targetRoot, string[] pathParts, ObjectNode source)
+        {
+            ObjectNode current = targetRoot;
+            for (int i = 0; i < pathParts.Length - 1; i++)
+            {
+                string part = pathParts[i];
+                if (!current.TryGetChild(part, out var child))
+                {
+                    child = new ObjectNode(part, current);
+                    current.AddChild(child);
+                }
+                current = (ObjectNode)child;
+            }
+
+            string leafKey = pathParts[^1];
+            if (current.TryGetChild(leafKey, out var existing))
+            {
+                if (existing is ObjectNode existingObj && source is ObjectNode sourceObj)
+                {
+                    foreach (var child in sourceObj.Children)
                     {
-                        baseObj.Add(key!, DeepMerge(existingChild, value));
-                    }
-                    else
-                    {
-                        baseObj.Add(key!, value);
+                        existingObj.AddChild(child.Value); // override or add
                     }
                 }
-                return baseObj;
+                else
+                {
+                    current.RemoveChild(leafKey);
+                    current.AddChild(source);
+                }
             }
-
-            // Arrays and primitives: full replace
-            return overrideNode;
+            else
+            {
+                current.AddChild(source);
+            }
         }
     }
 }

@@ -1,47 +1,24 @@
+using System;
 using System.Text.Json;
-using System.Text.Json.Nodes;
-using ConfigEditor.Dom;
 
-namespace ConfigEditor.Util
+namespace ConfigDom
 {
+    /// <summary>
+    /// Utility class to extract and export a resolved subtree from a given root node.
+    /// Can be used in runtime or editor to extract a specific JSON subtree.
+    /// </summary>
     public static class ExportJsonSubtree
     {
-        public static JsonNode? ToJsonNode(DomNode node)
+        /// <summary>
+        /// Finds a node by absolute path and returns its JSON representation.
+        /// </summary>
+        /// <param name="root">The root node of the DOM tree.</param>
+        /// <param name="path">The absolute slash-separated path (e.g. "config/env1/network/ip").</param>
+        /// <returns>The JsonElement representing the subtree, or null if not found.</returns>
+        public static JsonElement? Get(DomNode root, string path)
         {
-            return node switch
-            {
-                ObjectNode obj => ExportObject(obj),
-                ArrayNode arr => ExportArray(arr),
-                LeafNode leaf => ExportLeaf(leaf),
-                RefNode r => JsonValue.Create(r.RefPath),
-                _ => null
-            };
-        }
-
-        private static JsonObject ExportObject(ObjectNode obj)
-        {
-            var json = new JsonObject();
-            foreach (var (key, child) in obj.GetChildren())
-            {
-                if (key != null)
-                    json[key] = ToJsonNode(child);
-            }
-            return json;
-        }
-
-        private static JsonArray ExportArray(ArrayNode arr)
-        {
-            var json = new JsonArray();
-            foreach (var (_, child) in arr.GetChildren())
-            {
-                json.Add(ToJsonNode(child));
-            }
-            return json;
-        }
-
-        private static JsonValue? ExportLeaf(LeafNode leaf)
-        {
-            return JsonValue.Create(leaf.GetValue());
+            var node = DomTreePathHelper.FindNodeAtPath(root, path);
+            return node?.ExportJson();
         }
     }
 }

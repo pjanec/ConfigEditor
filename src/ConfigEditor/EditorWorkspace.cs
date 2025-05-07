@@ -1,61 +1,82 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using ConfigEditor.Dom;
-using ConfigEditor.Schema;
 
-namespace ConfigEditor.Context
+namespace ConfigDom
 {
+    /// <summary>
+    /// The central registry and coordinator of mounted DOM editor contexts.
+    /// Maintains a unified view of all configuration branches for editing.
+    /// Responsible for initializing view models, resolving refs, and tracking updates.
+    /// </summary>
     public class EditorWorkspace
     {
-        private readonly List<IMountedDomEditorContext> _contexts = new();
-        private readonly Dictionary<string, DomNode> _globalPathMap = new();
-        private readonly Dictionary<string, ISchemaNode> _schemaMap = new();
+        private readonly Dictionary<string, IMountedDomEditorContext> _contexts = new();
+        private readonly Dictionary<string, DomNodeViewModel> _mountRoots = new();
 
-        public void RegisterContexts(IEnumerable<(string mountPath, IMountedDomEditorContext context)> contextDefs, RuntimeSchemaCatalog? schemaCatalog = null)
+        /// <summary>
+        /// Registers all known editor contexts and builds the master viewmodel tree.
+        /// Should be called once at initialization.
+        /// </summary>
+        /// <param name="mounts">A mapping from mount paths to their corresponding provider contexts.</param>
+        public void RegisterContexts(Dictionary<string, IMountedDomEditorContext> mounts)
         {
             _contexts.Clear();
-            _globalPathMap.Clear();
-            _schemaMap.Clear();
+            _mountRoots.Clear();
 
-            foreach (var (mountPath, context) in contextDefs)
+            foreach (var kvp in mounts)
             {
-                _contexts.Add(context);
-                foreach (var kvp in context.FlattenedMap)
-                {
-                    var fullPath = string.IsNullOrEmpty(mountPath) ? kvp.Key : $"{mountPath}/{kvp.Key}";
-                    _globalPathMap[fullPath] = kvp.Value;
-                }
+                string mountPath = kvp.Key;
+                var ctx = kvp.Value;
+                _contexts[mountPath] = ctx;
+
+                DomNode root = ctx.GetRoot();
+                var vm = new DomNodeViewModel(root, isEditable: true);
+                _mountRoots[mountPath] = vm;
             }
 
-            if (schemaCatalog != null)
-            {
-                foreach (var (mountPath, schemaRoot) in schemaCatalog.Schemas)
-                {
-                    foreach (var kvp in schemaRoot.Flatten())
-                    {
-                        var fullPath = string.IsNullOrEmpty(mountPath) ? kvp.Key : $"{mountPath}/{kvp.Key}";
-                        _schemaMap[fullPath] = kvp.Value;
+            ResolveAllRefs();
+        }
 
-                        if (_globalPathMap.TryGetValue(fullPath, out var node))
-                            node.SchemaNode = kvp.Value;
-                    }
-                }
+        /// <summary>
+        /// Gets the viewmodel corresponding to the given mount path.
+        /// </summary>
+        /// <param name="mountPath">The registered mount path.</param>
+        /// <returns>The root viewmodel for that mount, or null if not found.</returns>
+        public DomNodeViewModel? GetRootViewModel(string mountPath)
+        {
+            return _mountRoots.TryGetValue(mountPath, out var vm) ? vm : null;
+        }
+
+        /// <summary>
+        /// Resolves all symbolic $ref references across all registered branches.
+        /// Also updates resolved preview values in RefNodeViewModels.
+        /// </summary>
+        public void ResolveAllRefs()
+        {
+            foreach (var vm in _mountRoots.Values)
+            {
+                ResolveRefsRecursive(vm);
             }
         }
 
-        public DomNode? TryGetNode(string fullPath) => _globalPathMap.TryGetValue(fullPath, out var node) ? node : null;
-
-        public ISchemaNode? TryGetSchema(string fullPath) => _schemaMap.TryGetValue(fullPath, out var schema) ? schema : null;
-
-        public IEnumerable<DomNode> AllNodes => _globalPathMap.Values;
-
-        public bool AnyDirty => _contexts.Any(c => c.IsDirty);
-
-        public void SaveAll()
+        private void ResolveRefsRecursive(DomNodeViewModel vm)
         {
-            foreach (var context in _contexts)
-                context.Save();
+            if (vm is RefNodeViewModel refVm)
+            {
+                string targetPath = refVm.RefPath;
+                foreach (var ctx in _contexts.Values)
+                {
+                    if (ctx.TryResolvePath(targetPath, out var target))
+                    {
+                        refVm.ResolvedTargetNode = target;
+                        refVm.ResolvedPreviewValue = target.ExportJson().ToString();
+                        break;
+                    }
+                }
+            }
+
+            foreach (var child in vm.Children)
+                ResolveRefsRecursive(child);
         }
     }
 }

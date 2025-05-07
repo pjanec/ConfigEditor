@@ -1,81 +1,65 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using ConfigEditor.Dom;
+using System.Text.Json;
 
-namespace ConfigEditor.Util
+namespace ConfigDom
 {
-    public class DomFlatteningService
+    /// <summary>
+    /// Provides utilities to flatten a hierarchical DOM tree into path-value pairs
+    /// and to rebuild a tree from such a flat map. Supports indexed array paths.
+    /// </summary>
+    public static class DomFlatteningService
     {
-        public Dictionary<string, DomNode> Flatten(DomNode root)
+        /// <summary>
+        /// Flattens a DOM subtree rooted at the given node into a dictionary of path → value.
+        /// </summary>
+        /// <param name="root">The root DOM node to flatten.</param>
+        /// <returns>A dictionary mapping string paths to exported JsonElement values.</returns>
+        public static Dictionary<string, JsonElement> Flatten(DomNode root)
         {
-            var map = new Dictionary<string, DomNode>();
-            FlattenRecursive(root, root.Path, map);
-            return map;
+            var result = new Dictionary<string, JsonElement>();
+            FlattenRecursive(root, root.Name, result);
+            return result;
         }
 
-        private void FlattenRecursive(DomNode node, string path, Dictionary<string, DomNode> map)
+        private static void FlattenRecursive(DomNode node, string path, Dictionary<string, JsonElement> result)
         {
-            map[path] = node;
-
-            foreach (var (key, child) in node.GetChildren())
+            switch (node)
             {
-                var childPath = string.IsNullOrEmpty(path) ? key! : $"{path}/{key}";
-                FlattenRecursive(child, childPath, map);
+                case LeafNode leaf:
+                    result[path] = leaf.Value;
+                    break;
+                case RefNode refNode:
+                    result[path] = refNode.ExportJson();
+                    break;
+                case ObjectNode obj:
+                    foreach (var child in obj.Children)
+                    {
+                        FlattenRecursive(child.Value, path + "/" + child.Key, result);
+                    }
+                    break;
+                case ArrayNode arr:
+                    for (int i = 0; i < arr.Items.Count; i++)
+                    {
+                        FlattenRecursive(arr[i], path + "/" + i, result);
+                    }
+                    break;
             }
         }
 
-        public DomNode Rebuild(Dictionary<string, DomNode> flatMap)
+        /// <summary>
+        /// Rebuilds a tree from a flattened dictionary of path → JsonElement.
+        /// </summary>
+        /// <param name="flatMap">The flat map to rebuild from.</param>
+        /// <param name="rootName">The name of the root node.</param>
+        /// <returns>The root node of the rebuilt tree.</returns>
+        public static ObjectNode Rebuild(Dictionary<string, JsonElement> flatMap, string rootName)
         {
-            var root = new ObjectNode();
-
-            foreach (var (path, node) in flatMap)
+            var root = new ObjectNode(rootName);
+            foreach (var (path, value) in flatMap)
             {
-                var parts = path.Split('/');
-                DomNode current = root;
-
-                for (int i = 0; i < parts.Length; i++)
-                {
-                    var part = parts[i];
-                    bool isLast = i == parts.Length - 1;
-
-                    if (int.TryParse(part, out int index))
-                    {
-                        var arr = current as ArrayNode ?? throw new InvalidOperationException("Path segment expects array");
-                        if (isLast)
-                        {
-                            arr.Insert(index, node);
-                        }
-                        else
-                        {
-                            while (arr.Items.Count <= index)
-                                arr.Add(new ObjectNode());
-                            current = arr.Items[index];
-                        }
-                    }
-                    else
-                    {
-                        var obj = current as ObjectNode ?? throw new InvalidOperationException("Path segment expects object");
-                        if (isLast)
-                        {
-                            obj.Add(part, node);
-                        }
-                        else
-                        {
-                            if (!obj.ContainsKey(part))
-                            {
-                                var newChild = new ObjectNode();
-                                obj.Add(part, newChild);
-                                current = newChild;
-                            }
-                            else
-                            {
-                                current = obj.GetChild(part)!;
-                            }
-                        }
-                    }
-                }
+                DomTreePathHelper.SetValueAtPath(root, path, value);
             }
-
             return root;
         }
     }

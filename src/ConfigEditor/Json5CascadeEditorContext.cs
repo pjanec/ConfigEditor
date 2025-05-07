@@ -1,67 +1,78 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using ConfigEditor.Dom;
-using ConfigEditor.Util;
 
-namespace ConfigEditor.Context
+namespace ConfigDom
 {
+    /// <summary>
+    /// Represents a provider of a mounted editable DOM subtree from cascading JSON sources.
+    /// Supports merging layers, reference resolution, and file tracking.
+    /// </summary>
     public class Json5CascadeEditorContext : IMountedDomEditorContext
     {
         public string MountPath { get; }
+        private ObjectNode _root;
+        private readonly List<Json5SourceFile> _sourceFiles;
+        private readonly DomEditHistory _editHistory = new();
 
-        private readonly List<string> _cascadeFolders;
-        private readonly List<Json5SourceFile> _sourceFiles = new();
-        private readonly JsonMergeService _mergeService;
-        private readonly DomFlatteningService _flatteningService;
-
-        private ObjectNode _root = new();
-        private Dictionary<string, DomNode> _flatMap = new();
-
-        public Json5CascadeEditorContext(string mountPath, List<string> cascadeFolders, JsonMergeService mergeService, DomFlatteningService flatteningService)
+        public Json5CascadeEditorContext(string mountPath, List<Json5SourceFile> sources, ObjectNode root)
         {
             MountPath = mountPath;
-            _cascadeFolders = cascadeFolders;
-            _mergeService = mergeService;
-            _flatteningService = flatteningService;
-
-            Reload();
+            _sourceFiles = sources;
+            _root = root;
         }
 
-        public DomNode Root => _root;
-
-        public IReadOnlyDictionary<string, DomNode> FlattenedMap => _flatMap;
-
-        public void Reload()
+        public void Load()
         {
-            _sourceFiles.Clear();
-            foreach (var folder in _cascadeFolders)
+            // No-op if already constructed externally.
+        }
+
+        public DomNode GetRoot() => _root;
+
+        public bool TryGetSourceFile(string domPath, out Json5SourceFile? file)
+        {
+            foreach (var f in _sourceFiles)
             {
-                if (!Directory.Exists(folder)) continue;
-                foreach (var file in Directory.GetFiles(folder, "*.json", SearchOption.AllDirectories))
+                if (domPath.StartsWith(MountPath))
                 {
-                    var parsed = Json5SourceFileLoader.Load(file);
-                    if (parsed != null)
-                        _sourceFiles.Add(parsed);
+                    file = f;
+                    return true;
                 }
             }
-
-            _root = _mergeService.MergeFilesToDom(_sourceFiles);
-            _flatMap = _flatteningService.Flatten(_root);
+            file = null;
+            return false;
         }
 
-        public bool IsDirty => _sourceFiles.Any(f => f.IsDirty);
-
-        public IEnumerable<Json5SourceFile> GetEditableSourceFiles() => _sourceFiles;
-
-        public void Save()
+        public void ApplyEdit(DomEditAction action)
         {
-            foreach (var file in _sourceFiles)
+            _editHistory.Apply(action);
+            action.Apply(_root);
+        }
+
+        public void Undo()
+        {
+            var undo = _editHistory.Undo();
+            undo?.Apply(_root);
+        }
+
+        public void Redo()
+        {
+            var redo = _editHistory.Redo();
+            redo?.Apply(_root);
+        }
+
+        public bool CanUndo => _editHistory.CanUndo;
+        public bool CanRedo => _editHistory.CanRedo;
+
+        public bool TryResolvePath(string absolutePath, out DomNode? node)
+        {
+            if (!absolutePath.StartsWith(MountPath.TrimEnd('/')))
             {
-                if (file.IsDirty)
-                    file.Save();
+                node = null;
+                return false;
             }
+
+            node = DomTreePathHelper.FindNodeAtPath(_root, absolutePath);
+            return node != null;
         }
     }
 }

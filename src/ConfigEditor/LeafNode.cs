@@ -1,39 +1,35 @@
-using System;
 using System.Text.Json;
 
-namespace ConfigEditor.Dom
+namespace ConfigDom
 {
+    /// <summary>
+    /// Represents a terminal value node in the DOM tree, analogous to a JSON primitive (string, number, bool, etc.).
+    /// Leaf nodes hold actual data values and do not have any children.
+    /// </summary>
     public class LeafNode : DomNode
     {
-        private object? _value;
+        private readonly JsonElement _value;
 
-        public LeafNode(object? value)
+        /// <summary>
+        /// Initializes a new LeafNode with the specified name, value, and optional parent.
+        /// </summary>
+        /// <param name="name">The key name of the value in the parent's context.</param>
+        /// <param name="value">The JSON value to store as a leaf node.</param>
+        /// <param name="parent">The parent DOM node, if any.</param>
+        public LeafNode(string name, JsonElement value, DomNode? parent = null) : base(name, parent)
         {
             _value = value;
         }
 
-        public override JsonValueKind ValueKind => _value switch
-        {
-            null => JsonValueKind.Null,
-            string => JsonValueKind.String,
-            bool => JsonValueKind.True, // we don't distinguish between true/false in kind
-            int or long or float or double or decimal => JsonValueKind.Number,
-            _ => throw new InvalidOperationException($"Unsupported leaf value type: {_value?.GetType()}")
-        };
+        /// <summary>
+        /// Gets the underlying JSON value represented by this leaf node.
+        /// </summary>
+        public JsonElement Value => _value;
 
-        public override object? GetValue() => _value;
-
-        public override void SetValue(object? value)
-        {
-            if (_value == null || !_value.Equals(value))
-            {
-                _value = value;
-                MarkDirty();
-            }
-        }
-
-        public string? GetAsString() => _value?.ToString();
-
-        public T? GetAs<T>() => _value is T val ? val : default;
+        /// <summary>
+        /// Returns the stored value as a JsonElement.
+        /// </summary>
+        /// <returns>The JSON representation of this leaf node's value.</returns>
+        public override JsonElement ExportJson() => _value.Clone();
     }
 }

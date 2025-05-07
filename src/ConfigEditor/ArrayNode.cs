@@ -1,63 +1,77 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 
-namespace ConfigEditor.Dom
+namespace ConfigDom
 {
+    /// <summary>
+    /// Represents an ordered list of child DomNodes, analogous to a JSON array.
+    /// Used to model structured array data within the DOM tree.
+    /// Maintains the ordering and allows access and manipulation of its elements.
+    /// </summary>
     public class ArrayNode : DomNode
     {
-        private readonly List<DomNode> _items = new();
+        private readonly List<DomNode> _items;
 
-        public override JsonValueKind ValueKind => JsonValueKind.Array;
-
-        public void Add(DomNode item)
+        /// <summary>
+        /// Initializes a new ArrayNode with the specified name and optional parent.
+        /// </summary>
+        /// <param name="name">The name of the node in its parent's context.</param>
+        /// <param name="parent">The parent node, if any.</param>
+        public ArrayNode(string name, DomNode? parent = null) : base(name, parent)
         {
-            _items.Add(item);
-            UpdateItemMetadata(_items.Count - 1);
+            _items = new List<DomNode>();
         }
 
-        public void Insert(int index, DomNode item)
-        {
-            _items.Insert(index, item);
-            UpdateAllMetadata();
-        }
-
-        public bool RemoveAt(int index)
-        {
-            if (index >= 0 && index < _items.Count)
-            {
-                _items.RemoveAt(index);
-                UpdateAllMetadata();
-                MarkDirty();
-                return true;
-            }
-            return false;
-        }
-
-        public override DomNode? GetChild(int index)
-        {
-            return index >= 0 && index < _items.Count ? _items[index] : null;
-        }
-
-        public override IEnumerable<(string? key, DomNode node)> GetChildren()
-        {
-            for (int i = 0; i < _items.Count; i++)
-                yield return (i.ToString(), _items[i]);
-        }
-
+        /// <summary>
+        /// Gets a read-only list of the child nodes contained in this array.
+        /// </summary>
         public IReadOnlyList<DomNode> Items => _items;
 
-        private void UpdateItemMetadata(int index)
+        /// <summary>
+        /// Adds a new child item to the end of the array.
+        /// </summary>
+        /// <param name="item">The DomNode to add.</param>
+        public void AddItem(DomNode item)
         {
-            var item = _items[index];
-            item.Parent = this;
-            item.Path = Path.Length == 0 ? index.ToString() : $"{Path}/{index}";
+            _items.Add(item);
         }
 
-        private void UpdateAllMetadata()
+        /// <summary>
+        /// Removes the item at the specified index.
+        /// </summary>
+        /// <param name="index">Index of the item to remove.</param>
+        public void RemoveAt(int index)
         {
-            for (int i = 0; i < _items.Count; i++)
-                UpdateItemMetadata(i);
+            _items.RemoveAt(index);
+        }
+
+        /// <summary>
+        /// Accesses an item by its index.
+        /// </summary>
+        /// <param name="index">The index to retrieve.</param>
+        /// <returns>The DomNode at the given index.</returns>
+        public DomNode this[int index] => _items[index];
+
+        /// <summary>
+        /// Serializes the array and all child nodes into a JsonElement.
+        /// Used during export and introspection to convert to standard JSON form.
+        /// </summary>
+        /// <returns>A JsonElement representing this array node and its children.</returns>
+        public override JsonElement ExportJson()
+        {
+            using var stream = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(stream))
+            {
+                writer.WriteStartArray();
+                foreach (var item in _items)
+                {
+                    item.ExportJson().WriteTo(writer);
+                }
+                writer.WriteEndArray();
+            }
+            return JsonDocument.Parse(stream.ToArray()).RootElement.Clone();
         }
     }
 }

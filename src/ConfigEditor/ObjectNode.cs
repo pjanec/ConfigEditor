@@ -1,46 +1,65 @@
-using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 
-namespace ConfigEditor.Dom
+namespace ConfigDom
 {
+    /// <summary>
+    /// Represents a DOM node that contains named child nodes, like a JSON object.
+    /// </summary>
     public class ObjectNode : DomNode
     {
-        private readonly Dictionary<string, DomNode> _children = new(StringComparer.Ordinal);
+        /// <summary>
+        /// Named children of this object node.
+        /// </summary>
+        public Dictionary<string, DomNode> Children { get; } = new();
 
-        public override JsonValueKind ValueKind => JsonValueKind.Object;
-
-        public void Add(string key, DomNode node)
+        /// <summary>
+        /// Constructs a new object node with a name and optional parent.
+        /// </summary>
+        /// <param name="name">The key name of this object node in its parent.</param>
+        /// <param name="parent">The parent node in the tree, if any.</param>
+        public ObjectNode(string name, DomNode? parent = null)
+            : base(name, parent)
         {
-            _children[key] = node;
-            node.Parent = this;
-            node.Path = Path.Length == 0 ? key : $"{Path}/{key}";
         }
 
-        public override DomNode? GetChild(string key)
+        /// <summary>
+        /// Adds or replaces a child node under the given name.
+        /// </summary>
+        public void AddChild(DomNode child)
         {
-            _children.TryGetValue(key, out var child);
-            return child;
+            Children[child.Name] = child;
+            child.Parent = this;
         }
 
-        public override IEnumerable<(string? key, DomNode node)> GetChildren()
-        {
-            foreach (var kvp in _children)
-                yield return (kvp.Key, kvp.Value);
-        }
+        /// <summary>
+        /// Attempts to retrieve a child node by name.
+        /// </summary>
+        public bool TryGetChild(string name, out DomNode node) => Children.TryGetValue(name, out node);
 
-        public bool Remove(string key)
+        /// <summary>
+        /// Removes a child node by name if it exists.
+        /// </summary>
+        public void RemoveChild(string name) => Children.Remove(name);
+
+        /// <summary>
+        /// Serializes the node and its children into a JsonElement.
+        /// </summary>
+        public override JsonElement ExportJson()
         {
-            if (_children.Remove(key))
+            using var buffer = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(buffer))
             {
-                MarkDirty();
-                return true;
+                writer.WriteStartObject();
+                foreach (var kvp in Children)
+                {
+                    writer.WritePropertyName(kvp.Key);
+                    kvp.Value.ExportJson().WriteTo(writer);
+                }
+                writer.WriteEndObject();
             }
-            return false;
+            return JsonDocument.Parse(buffer.ToArray()).RootElement.Clone();
         }
-
-        public bool ContainsKey(string key) => _children.ContainsKey(key);
-
-        public IReadOnlyDictionary<string, DomNode> Children => _children;
     }
 }

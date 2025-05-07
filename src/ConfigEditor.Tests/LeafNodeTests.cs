@@ -1,5 +1,4 @@
 using Xunit;
-using ConfigEditor.Dom;
 
 namespace ConfigEditor.Tests
 {
