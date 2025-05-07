@@ -1,6 +1,6 @@
 using System;
 
-namespace ConfigDom
+namespace ConfigDom.Editor
 {
     /// <summary>
     /// Specialized viewmodel for RefNode.
@@ -24,8 +24,11 @@ namespace ConfigDom
         /// Constructs a viewmodel for a RefNode.
         /// </summary>
         /// <param name="node">The RefNode this viewmodel wraps.</param>
-        /// <param name="isEditable">Whether the node is editable in this context.</param>
-        public RefNodeViewModel(RefNode node, bool isEditable) : base(node, isEditable)
+        /// <param name="path">Full path of the node in the DOM.</param>
+        /// <param name="parent">Parent viewmodel node, if any.</param>
+        /// <param name="history">Shared undo history instance.</param>
+        public RefNodeViewModel(RefNode node, string path, DomNodeViewModel? parent = null, DomEditHistory? history = null)
+            : base(node, path, parent, history)
         {
         }
 

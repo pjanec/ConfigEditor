@@ -1,69 +1,67 @@
-using System;
 using System.Collections.Generic;
+using System.Text.Json;
 
 namespace ConfigDom
 {
     /// <summary>
-    /// ViewModel wrapper for a DomNode in the editor context.
-    /// Adds metadata needed for interactive editing, schema display, and validation.
+    /// ViewModel wrapper for a single DomNode.
+    /// Supports binding, dirty tracking, and edit operations.
     /// </summary>
     public class DomNodeViewModel
     {
-        /// <summary>
-        /// The wrapped DOM node that this viewmodel represents.
-        /// </summary>
         public DomNode Node { get; }
-
-        /// <summary>
-        /// Indicates whether the node has unsaved changes.
-        /// </summary>
-        public bool IsDirty { get; private set; }
-
-        /// <summary>
-        /// Indicates whether the node can be edited (based on provider).
-        /// </summary>
-        public bool IsEditable { get; }
-
-        /// <summary>
-        /// Optional schema metadata associated with this node.
-        /// </summary>
-        public ISchemaNode? AttachedSchema { get; set; }
-
-        /// <summary>
-        /// Optional error status provider, set after validation.
-        /// </summary>
-        public IErrorStatusProvider? ValidationStatus { get; set; }
-
-        /// <summary>
-        /// Children ViewModels for object or array nodes.
-        /// </summary>
+        public string Path { get; }
+        public DomNodeViewModel? Parent { get; }
         public List<DomNodeViewModel> Children { get; } = new();
 
-        /// <summary>
-        /// Constructs a new viewmodel wrapper for the given node.
-        /// </summary>
-        /// <param name="node">The node being wrapped.</param>
-        /// <param name="isEditable">Whether the node is editable based on context.</param>
-        public DomNodeViewModel(DomNode node, bool isEditable)
+        public bool IsDirty { get; private set; }
+        public bool IsEditable { get; set; } = true;
+
+        private readonly DomEditHistory _history;
+
+        public DomNodeViewModel(DomNode node, string path, DomNodeViewModel? parent = null, DomEditHistory? history = null)
         {
             Node = node;
-            IsEditable = isEditable;
+            Path = path;
+            Parent = parent;
+            _history = history ?? new DomEditHistory();
+            RebuildChildren();
         }
 
-        /// <summary>
-        /// Marks this node as dirty (changed by user edit).
-        /// </summary>
-        public void MarkDirty()
+        private void RebuildChildren()
         {
-            IsDirty = true;
+            if (Node is ObjectNode obj)
+            {
+                foreach (var child in obj.Children.Values)
+                {
+                    Children.Add(new DomNodeViewModel(child, Path + "/" + child.Name, this, _history));
+                }
+            }
+            else if (Node is ArrayNode arr)
+            {
+                for (int i = 0; i < arr.Items.Count; i++)
+                {
+                    var item = arr.Items[i];
+                    Children.Add(new DomNodeViewModel(item, Path + "/" + i, this, _history));
+                }
+            }
         }
 
-        /// <summary>
-        /// Clears the dirty flag (usually after save).
-        /// </summary>
-        public void ClearDirty()
+        public void ApplyEdit(JsonElement newValue)
         {
-            IsDirty = false;
+            if (!IsEditable) return;
+
+            var oldValue = ExportJsonSubtree.Get(Node, Path)??new();
+            var edit = new DomEditAction(Path, newValue, oldValue);
+            _history.Apply(edit);
+            edit.Apply(Node);
+            MarkDirty();
         }
+
+        public void MarkDirty() => IsDirty = true;
+
+        public JsonElement GetEffectiveValue() => Node.ExportJson();
+
+        public JsonElement CurrentValue => Node.ExportJson();
     }
 }

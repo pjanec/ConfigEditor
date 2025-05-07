@@ -1,82 +1,55 @@
-using System;
 using System.Collections.Generic;
 
 namespace ConfigDom
 {
     /// <summary>
-    /// The central registry and coordinator of mounted DOM editor contexts.
-    /// Maintains a unified view of all configuration branches for editing.
-    /// Responsible for initializing view models, resolving refs, and tracking updates.
+    /// Manages the editable master DOM tree and all mounted config sources during editing.
+    /// Supports both editable contexts and read-only providers.
     /// </summary>
     public class EditorWorkspace
     {
-        private readonly Dictionary<string, IMountedDomEditorContext> _contexts = new();
-        private readonly Dictionary<string, DomNodeViewModel> _mountRoots = new();
+        private readonly ObjectNode _masterRoot;
+        private readonly Dictionary<string, IMountedDomEditorContext> _editableContexts = new();
+        private readonly Dictionary<string, IRuntimeDomProvider> _mountedProviders = new();
 
-        /// <summary>
-        /// Registers all known editor contexts and builds the master viewmodel tree.
-        /// Should be called once at initialization.
-        /// </summary>
-        /// <param name="mounts">A mapping from mount paths to their corresponding provider contexts.</param>
-        public void RegisterContexts(Dictionary<string, IMountedDomEditorContext> mounts)
+        public EditorWorkspace(ObjectNode masterRoot)
         {
-            _contexts.Clear();
-            _mountRoots.Clear();
-
-            foreach (var kvp in mounts)
-            {
-                string mountPath = kvp.Key;
-                var ctx = kvp.Value;
-                _contexts[mountPath] = ctx;
-
-                DomNode root = ctx.GetRoot();
-                var vm = new DomNodeViewModel(root, isEditable: true);
-                _mountRoots[mountPath] = vm;
-            }
-
-            ResolveAllRefs();
+            _masterRoot = masterRoot;
         }
 
         /// <summary>
-        /// Gets the viewmodel corresponding to the given mount path.
+        /// Registers a cascading or flat config source as an editable context.
         /// </summary>
-        /// <param name="mountPath">The registered mount path.</param>
-        /// <returns>The root viewmodel for that mount, or null if not found.</returns>
-        public DomNodeViewModel? GetRootViewModel(string mountPath)
+        public void RegisterContext(string mountPath, IMountedDomEditorContext context)
         {
-            return _mountRoots.TryGetValue(mountPath, out var vm) ? vm : null;
+            _editableContexts[mountPath] = context;
+            MountSubtree(mountPath, context.GetRoot());
         }
 
         /// <summary>
-        /// Resolves all symbolic $ref references across all registered branches.
-        /// Also updates resolved preview values in RefNodeViewModels.
+        /// Registers a fixed provider (e.g., DB snapshot or static content) as read-only.
         /// </summary>
-        public void ResolveAllRefs()
+        public void RegisterProvider(string mountPath, IRuntimeDomProvider provider)
         {
-            foreach (var vm in _mountRoots.Values)
-            {
-                ResolveRefsRecursive(vm);
-            }
+            _mountedProviders[mountPath] = provider;
+            MountSubtree(mountPath, provider.GetRoot());
         }
 
-        private void ResolveRefsRecursive(DomNodeViewModel vm)
+        /// <summary>
+        /// Returns the root node of the full editor DOM.
+        /// </summary>
+        public DomNode GetRoot() => _masterRoot;
+
+        private void MountSubtree(string mountPath, DomNode subtree)
         {
-            if (vm is RefNodeViewModel refVm)
+            var target = DomTreePathHelper.EnsurePathExists(_masterRoot, mountPath);
+            if (target is ObjectNode container)
             {
-                string targetPath = refVm.RefPath;
-                foreach (var ctx in _contexts.Values)
+                foreach (var child in ((ObjectNode)subtree).Children)
                 {
-                    if (ctx.TryResolvePath(targetPath, out var target))
-                    {
-                        refVm.ResolvedTargetNode = target;
-                        refVm.ResolvedPreviewValue = target.ExportJson().ToString();
-                        break;
-                    }
+                    container.AddChild(child.Value);
                 }
             }
-
-            foreach (var child in vm.Children)
-                ResolveRefsRecursive(child);
         }
     }
 }

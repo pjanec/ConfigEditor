@@ -78,5 +78,42 @@ namespace ConfigDom
                 finalObj.AddChild(new LeafNode(leafName, value, finalObj));
             }
         }
+
+        /// <summary>
+        /// Ensures the path exists in the tree, creating object nodes as needed.
+        /// Returns the node at the path.
+        /// </summary>
+        public static DomNode EnsurePathExists(DomNode root, string path)
+        {
+            var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            DomNode current = root;
+
+            for (int i = 1; i < parts.Length; i++) // skip root name
+            {
+                var part = parts[i];
+
+                if (current is ObjectNode obj)
+                {
+                    if (!obj.TryGetChild(part, out var child))
+                    {
+                        child = new ObjectNode(part, obj);
+                        obj.AddChild(child);
+                    }
+                    current = child;
+                }
+                else if (current is ArrayNode arr && int.TryParse(part, out var index))
+                {
+                    while (arr.Items.Count <= index)
+                        arr.AddItem(new ObjectNode(index.ToString(), arr));
+                    current = arr[index];
+                }
+                else
+                {
+                    throw new InvalidOperationException($"Cannot descend into {current.GetType().Name} at {part}");
+                }
+            }
+
+            return current;
+        }
     }
 }
