@@ -18,6 +18,7 @@ This document provides a comprehensive and in-depth description of the configura
 10. Hybrid Workflows and BSON Output
 11. Summary of Design Decisions
 12. Example Use Cases
+13. Schema-Driven Defaults and Required Fields
 
 ---
 
@@ -1172,18 +1173,72 @@ These examples demonstrate the versatility and composability of the configuratio
 
 
 
+## 13. Schema-Driven Defaults and Required Fields
 
+This section defines the behavior of the configuration system regarding required fields and default values in schema definitions. These capabilities ensure that all required fields are explicitly present in the runtime DOM and that defaults are reliably applied during validation and export.
 
+---
 
+### 13.1 Declaring Required and Default Fields
 
+Schema definitions support metadata on each field indicating:
+- Whether the field is **required**
+- Whether the field has a **default value**
 
+Each property in an `ObjectSchemaNode` is represented by a `SchemaProperty`, which includes:
 
+- `Schema`: the data schema (e.g., `LeafSchemaNode`, `ObjectSchemaNode`)
+- `IsRequired`: whether the field is mandatory (default = false) - if it must be present in the sources.
+- `DefaultValue`: an optional default value to apply if not set from the source.
 
+The schema source classes in C# may declare this metadata using:
+- Non-nullable fields (e.g., `int Timeout;`) → treated as required
+- `[Required]` attribute → explicit requirement
+- `[DefaultValue(...)]` attribute → declares default
+- Field initializers (e.g., `= 30`) → treated as default value
 
+If a property has a `DefaultValue` defined, it is required to appear in the final runtime tree, having default value if not set in the source.
 
+---
 
+### 13.2 Editor and Validator Behavior
 
+When loading or editing configurations:
+- Required fields are flagged if missing.
+- Fields with default values are not flagged, but the editor should display the default in the UI as a preview or hint.
+- Editor should offer `Reset to default` operation.
+- Schema validators must:
+  - Raise an error if a required field is missing.
+  - Accept absent fields that have defaults defined.
 
+---
+
+### 13.3 Default Injection at Export Time
+
+Before BSON export, the system performs a **default materialization pass** over the merged and resolved DOM tree.
+
+This process:
+- Walks the DOM against its schema tree
+- For each field:
+  - If the field is present → no action
+  - If missing:
+    - If a `DefaultValue` exists → a new `LeafNode` is created and inserted
+    - If marked `IsRequired` and absent → validation error is raised
+
+This ensures the runtime DOM contains:
+- All required fields
+- All fields with defaults, whether or not they were specified in source
+
+No required/default fields may be omitted from the runtime DOM after export.
+
+---
+
+### 13.4 Summary
+
+- Schema metadata includes `IsRequired` and `DefaultValue` per field
+- Editor validates required fields and uses defaults for hints and for `reset to default` operation
+- BSON export inserts defaults into the DOM tree
+- The runtime sees a fully materialized, self-sufficient configuration tree
 
 
 
