@@ -15,12 +15,8 @@ namespace ConfigDom
             ItemSchema = itemSchema;
         }
 
-        public string? Description { get; set; }
-        public string? Unit { get; set; }
         public string? Format { get; set; }
         public double? Min { get; set; }
         public double? Max { get; set; }
-        public bool IsRequired { get; set; } = false;
-        public Type? ClrType { get; set; }
     }
 }

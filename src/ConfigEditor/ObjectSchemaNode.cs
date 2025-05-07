@@ -9,25 +9,12 @@ namespace ConfigDom
     /// </summary>
     public class ObjectSchemaNode : ISchemaNode
     {
-        /// <summary>
-        /// Maps property names to child schema nodes.
-        /// </summary>
-        public Dictionary<string, ISchemaNode> ChildrenByName { get; } = new();
-
-        /// <summary>
-        /// Optional description for display or documentation.
-        /// </summary>
-        public string? Description { get; set; }
-
+        public Dictionary<string, SchemaProperty> Properties { get; init; } = new();
+    
         /// <summary>
         /// Optional formatting hint (not commonly used at object level).
         /// </summary>
         public string? Format { get; set; }
-
-        /// <summary>
-        /// Optional display unit (for UI rendering).
-        /// </summary>
-        public string? Unit { get; set; }
 
         /// <summary>
         /// Minimum value range (not typically used for objects).
@@ -39,14 +26,5 @@ namespace ConfigDom
         /// </summary>
         public double? Max { get; set; }
 
-        /// <summary>
-        /// Indicates whether this node is required in the config.
-        /// </summary>
-        public bool IsRequired { get; set; } = false;
-
-        /// <summary>
-        /// Optional C# type reference for tooling.
-        /// </summary>
-        public Type? ClrType { get; set; }
     }
 }

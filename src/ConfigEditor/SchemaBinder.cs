@@ -1,46 +1,126 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 
-namespace ConfigDom
+namespace ConfigDom;
+
+public static class SchemaBinder
 {
-    /// <summary>
-    /// Provides schema binding functionality by walking the DOM viewmodel tree
-    /// and attaching ISchemaNode metadata to each compatible node.
-    /// </summary>
-    public static class SchemaBinder
+    public static ISchemaNode FromType(Type t)
     {
-        /// <summary>
-        /// Recursively assigns schema metadata to the corresponding viewmodel tree.
-        /// Logs warnings for mismatches if verbose = true.
-        /// </summary>
-        public static void BindSchemaTree(DomNodeViewModel viewModel, ISchemaNode schemaRoot, bool verbose = false)
+        if (t == typeof(int))
         {
-            viewModel.Schema = schemaRoot;
-
-            if (schemaRoot is ObjectSchemaNode objSchema)
+            return new LeafSchemaNode();
+        }
+        if (t == typeof(string))
+        {
+            return new LeafSchemaNode();
+        }
+        if (t.IsEnum)
+        {
+            return new LeafSchemaNode
             {
-                foreach (var child in viewModel.Children)
+                AllowedValues = Enum.GetNames(t).ToList()
+            };
+        }
+
+        if (t.IsClass)
+        {
+            var obj = new ObjectSchemaNode();
+            var instance = Activator.CreateInstance(t);
+
+            foreach (var prop in t.GetProperties())
+            {
+                var schema = FromType(prop.PropertyType);
+
+                // Range, format, etc.
+                if (schema is LeafSchemaNode leaf)
                 {
-                    if (child.Node is ObjectNode or LeafNode)
+                    var rangeAttr = prop.GetCustomAttribute<RangeAttribute>();
+                    if (rangeAttr != null)
                     {
-                        if (objSchema.ChildrenByName.TryGetValue(child.Node.Name, out var matchingSchema))
-                        {
-                            BindSchemaTree(child, matchingSchema, verbose);
-                        }
-                        else if (verbose)
-                        {
-                            Console.WriteLine($"[SchemaBinder] No schema for child: {child.Path}");
-                        }
+                        leaf.Min = rangeAttr.Min;
+                        leaf.Max = rangeAttr.Max;
+                    }
+                    var formatAttr = prop.GetCustomAttribute<FormatAttribute>();
+                    if (formatAttr != null)
+                    {
+                        leaf.Format = formatAttr.Format;
+                    }
+                    if (prop.PropertyType.IsEnum)
+                    {
+                        leaf.AllowedValues = Enum.GetNames(prop.PropertyType).ToList();
                     }
                 }
-            }
-            else if (schemaRoot is ArraySchemaNode arraySchema)
-            {
-                for (int i = 0; i < viewModel.Children.Count; i++)
+
+                bool isRequired =
+                    prop.PropertyType.IsValueType && Nullable.GetUnderlyingType(prop.PropertyType) == null ||
+                    prop.GetCustomAttribute<RequiredAttribute>() != null;
+
+                object? defaultValue = prop.GetCustomAttribute<DefaultValueAttribute>()?.Value;
+                if (defaultValue == null && instance != null)
                 {
-                    BindSchemaTree(viewModel.Children[i], arraySchema.ItemSchema, verbose);
+                    defaultValue = prop.GetValue(instance);
                 }
+
+                var unit = prop.GetCustomAttribute<UnitAttribute>()?.Unit;
+                var desc = prop.GetCustomAttribute<DescriptionAttribute>()?.Text;
+
+                obj.Properties[prop.Name] = new SchemaProperty
+                {
+                    Schema = schema,
+                    IsRequired = isRequired,
+                    DefaultValue = defaultValue,
+                    Unit = unit,
+                    Description = desc
+                };
             }
+            return obj;
         }
+
+        throw new NotSupportedException();
     }
+}
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class RequiredAttribute : Attribute { }
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class DefaultValueAttribute : Attribute
+{
+    public object? Value { get; }
+    public DefaultValueAttribute(object? value) => Value = value;
+}
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class UnitAttribute : Attribute
+{
+    public string Unit { get; }
+    public UnitAttribute(string unit) => Unit = unit;
+}
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class DescriptionAttribute : Attribute
+{
+    public string Text { get; }
+    public DescriptionAttribute(string text) => Text = text;
+}
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class RangeAttribute : Attribute
+{
+    public int Min { get; }
+    public int Max { get; }
+    public RangeAttribute(int min, int max)
+    {
+        Min = min;
+        Max = max;
+    }
+}
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class FormatAttribute : Attribute
+{
+    public string Format { get; }
+    public FormatAttribute(string format) => Format = format;
 }

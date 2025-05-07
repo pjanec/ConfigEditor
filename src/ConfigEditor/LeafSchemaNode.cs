@@ -9,13 +9,9 @@ namespace ConfigDom
     /// </summary>
     public class LeafSchemaNode : ISchemaNode
     {
-        public string? Description { get; set; }
-        public string? Unit { get; set; }
         public string? Format { get; set; }
         public double? Min { get; set; }
         public double? Max { get; set; }
-        public bool IsRequired { get; set; } = false;
-        public Type? ClrType { get; set; }
 
         /// <summary>
         /// Optional list of allowed values for this leaf node (enum enforcement).

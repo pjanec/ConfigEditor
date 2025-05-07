@@ -5,9 +5,6 @@ using System.Text.RegularExpressions;
 
 namespace ConfigDom
 {
-    /// <summary>
-    /// Performs validation of a DomNode tree against its schema.
-    /// </summary>
     public static class SchemaValidator
     {
         public static List<DomValidationError> ValidateTree(DomNode node, ISchemaNode schema, string path = "", DomNode? domRoot = null)
@@ -16,24 +13,24 @@ namespace ConfigDom
 
             if (schema is ObjectSchemaNode objSchema && node is ObjectNode objNode)
             {
-                foreach (var entry in objSchema.ChildrenByName)
+                foreach (var (fieldName, schemaProp) in objSchema.Properties)
                 {
-                    if (entry.Value.IsRequired && !objNode.Children.ContainsKey(entry.Key))
+                    if (schemaProp.IsRequired && !objNode.Children.ContainsKey(fieldName))
                     {
                         errors.Add(new DomValidationError
                         {
-                            Path = path + "/" + entry.Key,
+                            Path = path + "/" + fieldName,
                             Message = "Required field missing"
                         });
                     }
                 }
 
-                foreach (var child in objNode.Children)
+                foreach (var (childKey, childNode) in objNode.Children)
                 {
-                    var childPath = path + "/" + child.Key;
-                    if (objSchema.ChildrenByName.TryGetValue(child.Key, out var childSchema))
+                    var childPath = path + "/" + childKey;
+                    if (objSchema.Properties.TryGetValue(childKey, out var childSchemaProp))
                     {
-                        errors.AddRange(ValidateTree(child.Value, childSchema, childPath, domRoot));
+                        errors.AddRange(ValidateTree(childNode, childSchemaProp.Schema, childPath, domRoot));
                     }
                     else
                     {
@@ -129,9 +126,6 @@ namespace ConfigDom
         }
     }
 
-    /// <summary>
-    /// Describes a single schema validation error.
-    /// </summary>
     public class DomValidationError
     {
         public string Path { get; init; } = "";
