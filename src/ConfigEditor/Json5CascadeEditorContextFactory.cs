@@ -1,24 +1,34 @@
 ﻿using ConfigDom.Editor;
-using System;
 using System.Collections.Generic;
 using System.IO;
 
 namespace ConfigDom
 {
     /// <summary>
-    /// Factory for creating Json5CascadeEditorContext instances from folders.
-    /// Loads *.json files from each level and merges them by path.
+    /// Factory for constructing cascading editor contexts from multiple levels of JSON5 files.
     /// </summary>
     public static class Json5CascadeEditorContextFactory
     {
         /// <summary>
-        /// Loads all *.json files from the given cascade level folders and constructs a cascading context.
+        /// Loads all *.json files from each folder in cascade order and mounts under the given path.
         /// </summary>
-        /// <param name="mountPath">The virtual mount path in the DOM tree where the context will reside.</param>
-        /// <param name="cascadeFolders">List of folders, from least to most specific (e.g., base → site → local).</param>
         public static Json5CascadeEditorContext LoadCascadeFromFolders(string mountPath, List<string> cascadeFolders)
         {
-            throw new NotImplementedException( "Loading from folders is not implemented yet." );
-		}
+            var allSources = new List<Json5SourceFile>();
+
+            foreach (var folder in cascadeFolders)
+            {
+                var rootLength = folder.TrimEnd(Path.DirectorySeparatorChar).Length + 1;
+                foreach (var file in Directory.GetFiles(folder, "*.json", SearchOption.AllDirectories))
+                {
+                    var relative = file[rootLength..].Replace("\\", "/").Replace(".json", "");
+                    var source = Json5SourceFileLoader.LoadSingleFile(file, relative);
+                    allSources.Add(source);
+                }
+            }
+
+            var merged = JsonMergeService.MergeCascade(allSources);
+            return new Json5CascadeEditorContext(mountPath, allSources, merged);
+        }
     }
 }
