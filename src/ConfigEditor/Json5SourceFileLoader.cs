@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 
-namespace ConfigDom
+namespace ConfigDom.Editor
 {
     /// <summary>
-    /// Responsible for loading and parsing all *.json files in a folder as JSON5.
-    /// Handles error capture, DOM construction, and source metadata extraction.
+    /// Responsible for loading and parsing JSON files as editable source inputs.
+    /// Supports folder-wide loading and targeted single-file loading.
     /// </summary>
     public static class Json5SourceFileLoader
     {
@@ -25,12 +25,7 @@ namespace ConfigDom
             {
                 try
                 {
-                    string text = File.ReadAllText(filePath);
-                    JsonElement element = Json5Parser.Parse(text);
-                    ObjectNode dom = JsonDomBuilder.BuildFromJsonElement(Path.GetFileNameWithoutExtension(filePath), element);
-                    string relativePath = Path.GetRelativePath(folder, filePath).Replace("\\", "/");
-
-                    result.Add(new Json5SourceFile(filePath, relativePath, dom, text));
+                    result.Add(LoadSingleFile(filePath, folder));
                 }
                 catch (Exception ex)
                 {
@@ -39,6 +34,24 @@ namespace ConfigDom
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Loads a single .json file and returns the parsed Json5SourceFile.
+        /// </summary>
+        /// <param name="filePath">Full path to the .json file.</param>
+        /// <param name="baseFolder">Optional base folder for relative path construction.</param>
+        /// <returns>The parsed source file.</returns>
+        public static Json5SourceFile LoadSingleFile(string filePath, string? baseFolder = null)
+        {
+            string text = File.ReadAllText(filePath);
+            JsonElement element = Json5Parser.Parse(text);
+            DomNode dom = JsonDomBuilder.BuildFromJsonElement(Path.GetFileNameWithoutExtension(filePath), element);
+            string relativePath = baseFolder != null
+                ? Path.GetRelativePath(baseFolder, filePath).Replace("\\", "/")
+                : Path.GetFileName(filePath);
+
+            return new Json5SourceFile(filePath, relativePath, dom, text);
         }
     }
 }

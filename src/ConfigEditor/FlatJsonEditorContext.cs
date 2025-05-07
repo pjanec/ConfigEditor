@@ -1,3 +1,4 @@
+using ConfigDom.Editor;
 using System.Collections.Generic;
 
 namespace ConfigDom
@@ -18,12 +19,12 @@ namespace ConfigDom
         {
             MountPath = mountPath;
             _filePath = filePath;
-            _file = Json5SourceFileLoader.LoadAllFromFolder(System.IO.Path.GetDirectoryName(filePath))[0];
+            _file = Json5SourceFileLoader.LoadSingleFile(filePath);
         }
 
         public void Load()
         {
-            _file = Json5SourceFileLoader.LoadAllFromFolder(System.IO.Path.GetDirectoryName(_filePath))[0];
+            _file = Json5SourceFileLoader.LoadSingleFile(_filePath);
         }
 
         public DomNode GetRoot() => _file.DomRoot;

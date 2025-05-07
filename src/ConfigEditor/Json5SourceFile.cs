@@ -1,46 +1,22 @@
-
 namespace ConfigDom
 {
     /// <summary>
-    /// Represents a single parsed JSON5 file in the editor.
-    /// Stores file path, parsed DOM root, and raw text content.
-    /// Used to track editable values and support regeneration.
+    /// Represents a single parsed JSON source file in the editor.
+    /// Includes original text and the corresponding DOM subtree.
     /// </summary>
     public class Json5SourceFile
     {
-        /// <summary>
-        /// Gets the full absolute file path to the source JSON5 file.
-        /// </summary>
-        public string FullPath { get; }
-
-        /// <summary>
-        /// Gets the relative path used to construct the logical DOM mount.
-        /// </summary>
+        public string AbsolutePath { get; }
         public string RelativePath { get; }
+        public DomNode DomRoot { get; }
+        public string OriginalText { get; }
 
-        /// <summary>
-        /// The parsed DOM root node for this file.
-        /// </summary>
-        public ObjectNode DomRoot { get; }
-
-        /// <summary>
-        /// The raw JSON5 text originally read from disk.
-        /// </summary>
-        public string RawText { get; }
-
-        /// <summary>
-        /// Initializes a new Json5SourceFile instance with parsed content.
-        /// </summary>
-        /// <param name="fullPath">Absolute file path on disk.</param>
-        /// <param name="relativePath">Relative path within the cascade folder.</param>
-        /// <param name="domRoot">Parsed ObjectNode tree.</param>
-        /// <param name="rawText">The unmodified original text.</param>
-        public Json5SourceFile(string fullPath, string relativePath, ObjectNode domRoot, string rawText)
+        public Json5SourceFile(string absolutePath, string relativePath, DomNode domRoot, string originalText)
         {
-            FullPath = fullPath;
+            AbsolutePath = absolutePath;
             RelativePath = relativePath;
             DomRoot = domRoot;
-            RawText = rawText;
+            OriginalText = originalText;
         }
     }
 }
