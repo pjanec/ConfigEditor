@@ -10,7 +10,7 @@ namespace ConfigDom
     /// </summary>
     public static class SchemaValidator
     {
-        public static List<DomValidationError> ValidateTree(DomNode node, ISchemaNode schema, string path = "")
+        public static List<DomValidationError> ValidateTree(DomNode node, ISchemaNode schema, string path = "", DomNode? domRoot = null)
         {
             var errors = new List<DomValidationError>();
 
@@ -33,7 +33,7 @@ namespace ConfigDom
                     var childPath = path + "/" + child.Key;
                     if (objSchema.ChildrenByName.TryGetValue(child.Key, out var childSchema))
                     {
-                        errors.AddRange(ValidateTree(child.Value, childSchema, childPath));
+                        errors.AddRange(ValidateTree(child.Value, childSchema, childPath, domRoot));
                     }
                     else
                     {
@@ -51,7 +51,7 @@ namespace ConfigDom
                 {
                     var item = arrNode[i];
                     var itemPath = path + "/" + i;
-                    errors.AddRange(ValidateTree(item, arrSchema.ItemSchema, itemPath));
+                    errors.AddRange(ValidateTree(item, arrSchema.ItemSchema, itemPath, domRoot));
                 }
             }
             else if (node is LeafNode leaf)
@@ -94,6 +94,33 @@ namespace ConfigDom
                             Path = path,
                             Message = $"Value does not match pattern: {leafSchema.RegexPattern}"
                         });
+                    }
+                }
+            }
+            else if (node is RefNode refNode)
+            {
+                if (domRoot == null)
+                {
+                    errors.Add(new DomValidationError
+                    {
+                        Path = path,
+                        Message = "Cannot resolve $ref — root not provided"
+                    });
+                }
+                else
+                {
+                    var target = RefNodeResolver.Resolve(refNode, domRoot);
+                    if (target == null)
+                    {
+                        errors.Add(new DomValidationError
+                        {
+                            Path = path,
+                            Message = "Invalid or unresolved $ref"
+                        });
+                    }
+                    else if (schema != null)
+                    {
+                        errors.AddRange(ValidateTree(target, schema, path + " (resolved)", domRoot));
                     }
                 }
             }
