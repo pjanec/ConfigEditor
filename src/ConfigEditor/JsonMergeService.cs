@@ -1,68 +1,58 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ConfigDom
 {
     /// <summary>
-    /// Provides functionality to merge multiple JSON object trees from different cascade levels.
-    /// Performs deep object merging, with arrays replaced completely.
-    /// Used to build the effective DOM for cascaded configurations.
+    /// Provides cascade-level-aware merging of ObjectNode trees.
     /// </summary>
     public static class JsonMergeService
     {
         /// <summary>
-        /// Merges a list of object-node maps from cascade layers.
-        /// Each dictionary maps relative paths to partial object trees.
+        /// Deep merges multiple ObjectNode roots from lowest to highest priority.
+        /// Fields from later nodes override earlier ones.
         /// </summary>
-        /// <param name="layers">A list of layer maps from lowest (base) to highest (most specific).</param>
-        /// <returns>A merged root ObjectNode representing the combined DOM.</returns>
-        public static ObjectNode MergeCascade(List<Dictionary<string, ObjectNode>> layers)
+        public static ObjectNode MergeCascade(List<ObjectNode> roots)
         {
-            var root = new ObjectNode("root");
+            var result = new ObjectNode("root");
 
-            foreach (var layer in layers)
+            foreach (var source in roots)
             {
-                foreach (var (path, node) in layer)
-                {
-                    ApplyObjectNode(root, path.Split('/'), node);
-                }
+                MergeObjectInto(result, source);
             }
 
-            return root;
+            return result;
         }
 
-        private static void ApplyObjectNode(ObjectNode targetRoot, string[] pathParts, ObjectNode source)
+        /// <summary>
+        /// Overload: extracts roots from source files before merging.
+        /// </summary>
+        public static ObjectNode MergeCascade(List<Json5SourceFile> sources)
         {
-            ObjectNode current = targetRoot;
-            for (int i = 0; i < pathParts.Length - 1; i++)
-            {
-                string part = pathParts[i];
-                if (!current.TryGetChild(part, out var child))
-                {
-                    child = new ObjectNode(part, current);
-                    current.AddChild(child);
-                }
-                current = (ObjectNode)child;
-            }
+            var roots = sources.Select(f => f.DomRoot).OfType<ObjectNode>().ToList();
+            return MergeCascade(roots);
+        }
 
-            string leafKey = pathParts[^1];
-            if (current.TryGetChild(leafKey, out var existing))
+        private static void MergeObjectInto(ObjectNode target, ObjectNode source)
+        {
+            foreach (var (key, value) in source.Children)
             {
-                if (existing is ObjectNode existingObj && source is ObjectNode sourceObj)
+                if (target.Children.TryGetValue(key, out var existing))
                 {
-                    foreach (var child in sourceObj.Children)
+                    if (existing is ObjectNode existingObj && value is ObjectNode sourceObj)
                     {
-                        existingObj.AddChild(child.Value); // override or add
+                        MergeObjectInto(existingObj, sourceObj);
+                    }
+                    else
+                    {
+                        target.AddChild(value); // Override
                     }
                 }
                 else
                 {
-                    current.RemoveChild(leafKey);
-                    current.AddChild(source);
+                    target.AddChild(value);
                 }
-            }
-            else
-            {
-                current.AddChild(source);
             }
         }
     }

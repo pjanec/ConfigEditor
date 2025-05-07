@@ -22,6 +22,13 @@ namespace ConfigDom
             _file = Json5SourceFileLoader.LoadSingleFile(filePath);
         }
 
+        public FlatJsonEditorContext(string mountPath, Json5SourceFile injectedFile)
+        {
+            MountPath = mountPath;
+            _filePath = injectedFile.AbsolutePath;
+            _file = injectedFile;
+        }
+
         public void Load()
         {
             _file = Json5SourceFileLoader.LoadSingleFile(_filePath);

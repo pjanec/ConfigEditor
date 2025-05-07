@@ -13,11 +13,4 @@
     <ProjectReference Include="..\\ConfigEditor\\ConfigEditor.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- JSON handling -->
-    <PackageReference Include="System.Text.Json" Version="8.0.0" />
-    <!-- Optional: CLI args, logging, etc. -->
-    <!-- <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" /> -->
-  </ItemGroup>
-
 </Project>
