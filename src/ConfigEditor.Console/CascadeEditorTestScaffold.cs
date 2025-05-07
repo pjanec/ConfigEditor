@@ -31,7 +31,7 @@ namespace ConfigDom.TestScaffold
 
             var mergedRoot = JsonMergeService.MergeCascade(sources);
 
-            var context = new Json5CascadeEditorContext("config/test", sources, mergedRoot);
+            var context = new Json5CascadeEditorContext("config/test", sources);
 
             void DumpValue(string path)
             {

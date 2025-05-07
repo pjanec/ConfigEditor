@@ -32,6 +32,16 @@ namespace ConfigDom
         public string? SourceFile { get; set; }
 
         /// <summary>
+        /// Human-readable name of the cascade level (e.g. "Base", "Site", "Local").
+        /// </summary>
+        public string? CascadeLevelName { get; set; }
+
+        /// <summary>
+        /// Indicates if this value overrides a value from a lower cascade level.
+        /// </summary>
+        public bool IsOverride { get; set; }
+
+        /// <summary>
         /// If this node is a reference, points to the resolved target node.
         /// </summary>
         public DomNode? ResolvedTargetNode { get; set; }
@@ -42,23 +52,46 @@ namespace ConfigDom
         public string? ResolvedPreviewValue { get; set; }
 
         private readonly DomEditHistory _history;
+        private readonly IMountedDomEditorContext? _context;
 
-        public DomNodeViewModel(DomNode node, string path, DomNodeViewModel? parent = null, DomEditHistory? history = null)
+        public DomNodeViewModel(DomNode node, string path, DomNodeViewModel? parent = null, DomEditHistory? history = null, IMountedDomEditorContext? context = null)
         {
             Node = node;
             Path = path;
             Parent = parent;
             _history = history ?? new DomEditHistory();
+            _context = context;
             RebuildChildren();
+            UpdateOriginInfo();
+        }
+
+        private void UpdateOriginInfo()
+        {
+            if (_context is Json5CascadeEditorContext cascadeContext)
+            {
+                CascadeLevel = cascadeContext.GetLevelIndex(Path);
+                CascadeLevelName = cascadeContext.GetLevelName(Path);
+                if (cascadeContext.TryGetSourceFile(Path, out var file))
+                {
+                    SourceFile = file?.FilePath;
+                }
+
+                // Check if this is an override by comparing with parent's level
+                if (Parent != null && Parent.CascadeLevel.HasValue && CascadeLevel.HasValue)
+                {
+                    IsOverride = CascadeLevel.Value > Parent.CascadeLevel.Value;
+                }
+            }
         }
 
         private void RebuildChildren()
         {
+            Children.Clear();
             if (Node is ObjectNode obj)
             {
                 foreach (var child in obj.Children.Values)
                 {
-                    Children.Add(new DomNodeViewModel(child, Path + "/" + child.Name, this, _history));
+                    Children.Add(new DomNodeViewModel(child, Path + "/" + child.Name, this, _history, _context));
                 }
             }
             else if (Node is ArrayNode arr)
@@ -66,7 +99,7 @@ namespace ConfigDom
                 for (int i = 0; i < arr.Items.Count; i++)
                 {
                     var item = arr.Items[i];
-                    Children.Add(new DomNodeViewModel(item, Path + "/" + i, this, _history));
+                    Children.Add(new DomNodeViewModel(item, Path + "/" + i, this, _history, _context));
                 }
             }
         }
@@ -80,6 +113,7 @@ namespace ConfigDom
             _history.Apply(edit);
             edit.Apply(Node);
             MarkDirty();
+            UpdateOriginInfo();
         }
 
         public void MarkDirty() => IsDirty = true;

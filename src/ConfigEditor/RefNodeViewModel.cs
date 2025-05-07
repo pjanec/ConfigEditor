@@ -9,16 +9,6 @@ namespace ConfigDom.Editor
     /// </summary>
     public class RefNodeViewModel : DomNodeViewModel
     {
-        /// <summary>
-        /// The resolved target node of the $ref, if available.
-        /// May be null if unresolved or invalid.
-        /// </summary>
-        public DomNode? ResolvedTargetNode { get; set; }
-
-        /// <summary>
-        /// A textual preview of the resolved value, used in the editor UI.
-        /// </summary>
-        public string? ResolvedPreviewValue { get; set; }
 
         /// <summary>
         /// Constructs a viewmodel for a RefNode.

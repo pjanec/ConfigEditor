@@ -25,7 +25,7 @@ namespace ConfigDom
         public FlatJsonEditorContext(string mountPath, Json5SourceFile injectedFile)
         {
             MountPath = mountPath;
-            _filePath = injectedFile.AbsolutePath;
+            _filePath = injectedFile.FilePath;
             _file = injectedFile;
         }
 

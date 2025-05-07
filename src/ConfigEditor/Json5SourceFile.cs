@@ -6,14 +6,17 @@ namespace ConfigDom
     /// </summary>
     public class Json5SourceFile
     {
-        public string AbsolutePath { get; }
         public string RelativePath { get; }
         public DomNode DomRoot { get; }
         public string OriginalText { get; }
+        /// <summary>
+        /// The absolute path to the source file.
+        /// </summary>
+        public string FilePath { get; }
 
-        public Json5SourceFile(string absolutePath, string relativePath, DomNode domRoot, string originalText)
+        public Json5SourceFile(string filePath, string relativePath, DomNode domRoot, string originalText)
         {
-            AbsolutePath = absolutePath;
+            FilePath = filePath;
             RelativePath = relativePath;
             DomRoot = domRoot;
             OriginalText = originalText;

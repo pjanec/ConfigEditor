@@ -19,7 +19,7 @@ namespace ConfigDom
         public static DomNode? FindNodeAtPath(DomNode root, string path)
         {
             var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            DomNode current = root;
+            DomNode? current = root;
 
             foreach (var part in parts.Skip(1)) // skip the root name
             {
@@ -48,7 +48,7 @@ namespace ConfigDom
         public static void SetValueAtPath(DomNode root, string path, JsonElement value)
         {
             var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            DomNode current = root;
+            DomNode? current = root;
 
             for (int i = 1; i < parts.Length - 1; i++) // skip root, leave last
             {
@@ -99,7 +99,7 @@ namespace ConfigDom
                         child = new ObjectNode(part, obj);
                         obj.AddChild(child);
                     }
-                    current = child;
+                    current = child!;
                 }
                 else if (current is ArrayNode arr && int.TryParse(part, out var index))
                 {
@@ -109,7 +109,7 @@ namespace ConfigDom
                 }
                 else
                 {
-                    throw new InvalidOperationException($"Cannot descend into {current.GetType().Name} at {part}");
+                    throw new InvalidOperationException($"Cannot descend into {current?.GetType().Name} at {part}");
                 }
             }
 

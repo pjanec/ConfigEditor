@@ -15,6 +15,11 @@ namespace ConfigDom
         public Dictionary<string, DomNode> Children { get; } = new();
 
         /// <summary>
+        /// The source file that this node came from, if any.
+        /// </summary>
+        public Json5SourceFile? File { get; set; }
+
+        /// <summary>
         /// Constructs a new object node with a name and optional parent.
         /// </summary>
         /// <param name="name">The key name of this object node in its parent.</param>
@@ -22,6 +27,9 @@ namespace ConfigDom
         public ObjectNode(string name, DomNode? parent = null)
             : base(name, parent)
         {
+            Name = name;
+            Parent = parent;
+            Children = new Dictionary<string, DomNode>();
         }
 
         /// <summary>
@@ -36,7 +44,7 @@ namespace ConfigDom
         /// <summary>
         /// Attempts to retrieve a child node by name.
         /// </summary>
-        public bool TryGetChild(string name, out DomNode node) => Children.TryGetValue(name, out node);
+        public bool TryGetChild(string name, out DomNode? node) => Children.TryGetValue(name, out node);
 
         /// <summary>
         /// Removes a child node by name if it exists.
@@ -60,6 +68,25 @@ namespace ConfigDom
                 writer.WriteEndObject();
             }
             return JsonDocument.Parse(buffer.ToArray()).RootElement.Clone();
+        }
+
+        /// <summary>
+        /// Gets the absolute path to this node in the DOM tree.
+        /// </summary>
+        public string GetAbsolutePath()
+        {
+            var parts = new List<string>();
+            var current = this;
+            while (current != null)
+            {
+                if (current.Name != null)
+                {
+                    parts.Add(current.Name);
+                }
+                current = current.Parent as ObjectNode;
+            }
+            parts.Reverse();
+            return string.Join("/", parts);
         }
     }
 }
