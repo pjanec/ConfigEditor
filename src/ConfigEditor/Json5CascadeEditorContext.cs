@@ -74,5 +74,6 @@ namespace ConfigDom
             node = DomTreePathHelper.FindNodeAtPath(_root, absolutePath);
             return node != null;
         }
+
     }
 }

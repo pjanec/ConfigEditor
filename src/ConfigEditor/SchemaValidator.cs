@@ -1,0 +1,115 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
+namespace ConfigDom
+{
+    /// <summary>
+    /// Performs validation of a DomNode tree against its schema.
+    /// </summary>
+    public static class SchemaValidator
+    {
+        public static List<DomValidationError> ValidateTree(DomNode node, ISchemaNode schema, string path = "")
+        {
+            var errors = new List<DomValidationError>();
+
+            if (schema is ObjectSchemaNode objSchema && node is ObjectNode objNode)
+            {
+                foreach (var entry in objSchema.ChildrenByName)
+                {
+                    if (entry.Value.IsRequired && !objNode.Children.ContainsKey(entry.Key))
+                    {
+                        errors.Add(new DomValidationError
+                        {
+                            Path = path + "/" + entry.Key,
+                            Message = "Required field missing"
+                        });
+                    }
+                }
+
+                foreach (var child in objNode.Children)
+                {
+                    var childPath = path + "/" + child.Key;
+                    if (objSchema.ChildrenByName.TryGetValue(child.Key, out var childSchema))
+                    {
+                        errors.AddRange(ValidateTree(child.Value, childSchema, childPath));
+                    }
+                    else
+                    {
+                        errors.Add(new DomValidationError
+                        {
+                            Path = childPath,
+                            Message = "Unexpected field"
+                        });
+                    }
+                }
+            }
+            else if (schema is ArraySchemaNode arrSchema && node is ArrayNode arrNode)
+            {
+                for (int i = 0; i < arrNode.Items.Count; i++)
+                {
+                    var item = arrNode[i];
+                    var itemPath = path + "/" + i;
+                    errors.AddRange(ValidateTree(item, arrSchema.ItemSchema, itemPath));
+                }
+            }
+            else if (node is LeafNode leaf)
+            {
+                var json = leaf.Value;
+
+                if (json.ValueKind == JsonValueKind.Number && (schema.Min != null || schema.Max != null))
+                {
+                    if (json.TryGetDouble(out var val))
+                    {
+                        if (schema.Min != null && val < schema.Min)
+                        {
+                            errors.Add(new DomValidationError { Path = path, Message = "Value below minimum" });
+                        }
+                        if (schema.Max != null && val > schema.Max)
+                        {
+                            errors.Add(new DomValidationError { Path = path, Message = "Value above maximum" });
+                        }
+                    }
+                }
+
+                if (schema is LeafSchemaNode leafSchema)
+                {
+                    if (leafSchema.AllowedValues != null &&
+                        !leafSchema.AllowedValues.Contains(json.ToString()))
+                    {
+                        errors.Add(new DomValidationError
+                        {
+                            Path = path,
+                            Message = $"Value '{json.ToString()}' is not in allowed set"
+                        });
+                    }
+
+                    if (leafSchema.RegexPattern != null &&
+                        json.ValueKind == JsonValueKind.String &&
+                        !Regex.IsMatch(json.GetString() ?? "", leafSchema.RegexPattern))
+                    {
+                        errors.Add(new DomValidationError
+                        {
+                            Path = path,
+                            Message = $"Value does not match pattern: {leafSchema.RegexPattern}"
+                        });
+                    }
+                }
+            }
+
+            return errors;
+        }
+    }
+
+    /// <summary>
+    /// Describes a single schema validation error.
+    /// </summary>
+    public class DomValidationError
+    {
+        public string Path { get; init; } = "";
+        public string Message { get; init; } = "";
+        public string? SourceFile { get; init; }
+        public int? CascadeLevel { get; init; }
+    }
+}

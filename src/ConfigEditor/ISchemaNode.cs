@@ -1,29 +1,46 @@
-﻿using System.Collections.Generic;
+﻿using System;
 
 namespace ConfigDom
 {
     /// <summary>
-    /// Interface to represent a strongly typed schema node.
-    /// Real implementations include object, array, primitive schema types.
+    /// Common interface implemented by all schema node types.
+    /// Used to provide UI and validation metadata for each DOM node.
     /// </summary>
     public interface ISchemaNode
     {
         /// <summary>
-        /// Validates the given JsonElement against this schema node.
+        /// Optional description or label for display or tooltip purposes.
         /// </summary>
-        /// <param name="value">The JSON value to validate.</param>
-        /// <param name="path">The DOM path to include in diagnostics.</param>
-        /// <returns>List of validation issues (or empty if valid).</returns>
-        List<IErrorStatusProvider> Validate(System.Text.Json.JsonElement value, string path);
+        string? Description { get; set; }
 
         /// <summary>
-        /// Returns the expected type of this schema node (e.g., object, string).
+        /// Optional unit of measure (e.g., \"MB\", \"seconds\").
         /// </summary>
-        string GetSchemaType();
+        string? Unit { get; set; }
 
         /// <summary>
-        /// Optional hint describing the field usage.
+        /// Optional formatting hint (e.g., \"hex\", \"ip\", \"currency\").
         /// </summary>
-        string? GetHint();
+        string? Format { get; set; }
+
+        /// <summary>
+        /// Minimum valid numeric value (used by leaf nodes).
+        /// </summary>
+        double? Min { get; set; }
+
+        /// <summary>
+        /// Maximum valid numeric value (used by leaf nodes).
+        /// </summary>
+        double? Max { get; set; }
+
+        /// <summary>
+        /// Indicates whether the node is required.
+        /// </summary>
+        bool IsRequired { get; set; }
+
+        /// <summary>
+        /// Optional CLR type for this field, useful for tooling.
+        /// </summary>
+        Type? ClrType { get; set; }
     }
-} 
+}
