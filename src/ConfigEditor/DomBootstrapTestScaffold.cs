@@ -17,7 +17,7 @@ namespace ConfigDom.TestScaffold
             workspace.RegisterContext("config/env1", context);
 
             var meta = new ObjectNode("meta");
-            meta.AddChild(new LeafNode("env", JsonDocument.Parse("\"editor\"").RootElement));
+            meta.AddChild(new ValueNode("env", JsonDocument.Parse("\"editor\"").RootElement));
             workspace.RegisterProvider("meta", new StaticDomBranchProvider(meta));
 
             return workspace;

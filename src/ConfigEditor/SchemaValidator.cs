@@ -51,7 +51,7 @@ namespace ConfigDom
                     errors.AddRange(ValidateTree(item, arrSchema.ItemSchema, itemPath, domRoot));
                 }
             }
-            else if (node is LeafNode leaf)
+            else if (node is ValueNode leaf)
             {
                 var json = leaf.Value;
 

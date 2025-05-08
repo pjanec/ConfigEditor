@@ -75,7 +75,7 @@ namespace ConfigDom
             {
                 if (finalObj.TryGetChild(leafName, out _))
                     finalObj.RemoveChild(leafName);
-                finalObj.AddChild(new LeafNode(leafName, value, finalObj));
+                finalObj.AddChild(new ValueNode(leafName, value, finalObj));
             }
         }
 

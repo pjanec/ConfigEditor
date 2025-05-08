@@ -26,7 +26,7 @@ namespace ConfigDom
         {
             switch (node)
             {
-                case LeafNode leaf:
+                case ValueNode leaf:
                     result[path] = leaf.Value;
                     break;
                 case RefNode refNode:

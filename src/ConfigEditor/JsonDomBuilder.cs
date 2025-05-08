@@ -41,7 +41,7 @@ namespace ConfigDom
                     return arr;
 
                 default:
-                    return new LeafNode(name, element.Clone(), parent);
+                    return new ValueNode(name, element.Clone(), parent);
             }
         }
     }

@@ -31,8 +31,8 @@ namespace ConfigDom
 
         private void GenerateMetrics()
         {
-            _root.AddChild(new LeafNode("cpu", JsonDocument.Parse(_rand.NextDouble().ToString("F2")).RootElement));
-            _root.AddChild(new LeafNode("mem", JsonDocument.Parse(_rand.Next(1000, 8000).ToString()).RootElement));
+            _root.AddChild(new ValueNode("cpu", JsonDocument.Parse(_rand.NextDouble().ToString("F2")).RootElement));
+            _root.AddChild(new ValueNode("mem", JsonDocument.Parse(_rand.Next(1000, 8000).ToString()).RootElement));
         }
     }
 }
