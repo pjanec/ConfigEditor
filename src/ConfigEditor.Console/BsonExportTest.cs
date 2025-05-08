@@ -1,6 +1,9 @@
-﻿using System.Text.Json;
+﻿using ConfigEditor.Dom;
+using ConfigEditor.IO;
+using ConfigEditor.Schema;
+using System.Text.Json;
 
-namespace ConfigDom;
+namespace ConfigEditor;
 
 public static class BsonExportTest
 {
@@ -19,17 +22,17 @@ public static class BsonExportTest
                         {
                             ["ip"] = new SchemaProperty
                             {
-                                Schema = new LeafSchemaNode(),
+                                Schema = new ValueSchemaNode(),
                                 IsRequired = true
                             },
                             ["port"] = new SchemaProperty
                             {
-                                Schema = new LeafSchemaNode(),
+                                Schema = new ValueSchemaNode(),
                                 DefaultValue = 8080
                             },
                             ["host"] = new SchemaProperty
                             {
-                                Schema = new LeafSchemaNode(),
+                                Schema = new ValueSchemaNode(),
                                 DefaultValue = "localhost"
                             }
                         }
@@ -43,12 +46,12 @@ public static class BsonExportTest
         var root = new ObjectNode("root");
         var env = new ObjectNode("env", root);
         root.Children["env"] = env;
-        env.Children["ip"] = new LeafNode("ip", JsonSerializer.SerializeToElement("192.168.0.1"), env);
+        env.Children["ip"] = new ValueNode("ip", JsonSerializer.SerializeToElement("192.168.0.1"), env);
         env.Children["host"] = new RefNode("host", "shared/defaultHost", env);
 
         var shared = new ObjectNode("shared", root);
         root.Children["shared"] = shared;
-        shared.Children["defaultHost"] = new LeafNode("defaultHost", JsonSerializer.SerializeToElement("ref.example.com"), shared);
+        shared.Children["defaultHost"] = new ValueNode("defaultHost", JsonSerializer.SerializeToElement("ref.example.com"), shared);
 
         // Export to BSON
         BsonExporter.ExportToBsonFile(root, schema, "config-out.bson");

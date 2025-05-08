@@ -1333,6 +1333,51 @@ Produces:
 
 This model enables precise validation, powerful UI hints, and robust default injection support before export.
 
+## 15. Layered Editing Model
+
+The configuration editor supports a **layered editing model** that reflects the cascading structure of the underlying configuration system. Each configuration layer corresponds to a source of data (e.g. default settings, environment-specific overrides, local modifications) and is kept **separate** during editing. Only when explicitly requested are these layers merged into the effective configuration used at runtime.
+
+## Key Concepts
+
+- **Cascade Layer**: A single source of configuration, typically corresponding to a folder of `.json` files. Each layer has a numeric index indicating its precedence.
+- **Editor Layer (`Json5EditorLayer`)**: An internal representation of a single layer's parsed configuration, including its `DomNode` tree and a flat path map.
+- **Merged DOM**: The result of deep-merging the DOM trees from layers 0 up to L (inclusive), using object merging and array replacement rules.
+
+## Merge Rules
+
+- **Objects** are merged recursively: properties from higher layers override those from lower ones.
+- **Arrays** are replaced wholesale: a higher layer completely replaces a lower array; individual array element overrides are not supported.
+- **Scalars** and mismatched types are replaced.
+
+## Editing Behavior
+
+The editor operates strictly on one layer at a time:
+
+- Edits are applied only to the selected layer's DOM tree.
+- The merged DOM is computed **on demand** from the underlying layers.
+- This ensures changes to one layer do not unintentionally affect others.
+
+## Dual-Value Display
+
+For each configuration path, the editor can show:
+
+- **Layer-local value**: the value at that path in the currently selected layer (or empty if undefined).
+- **Effective value**: the merged value at that path from all layers 0 through L.
+
+This dual display supports clear visualization of overrides and the cumulative effect of cascading layers.
+
+## Benefits
+
+- Precise control over where changes occur.
+- Transparent understanding of inherited values vs. local overrides.
+- Better support for source tracking, undo history, and file attribution.
+- Robust against accidental changes across layers.
+
+## Runtime Impact
+
+At runtime, only the merged DOM is used. The layered editing model exists purely to support clean editing workflows and does not affect performance or behavior of the deployed system.
+
+
 
 # Further UI reqs
 
@@ -1344,3 +1389,4 @@ Cascading config context editor should allow to add missing property value at an
 - The editor must **create missing intermediate paths in the live DOM**
 - **And** associate the change with a specific **cascade layer** (e.g., "local", "site", "base")
 - Resulting in correct dirty tracking, file targeting, and JSON5 regeneration
+

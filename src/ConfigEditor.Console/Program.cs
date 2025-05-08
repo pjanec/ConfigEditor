@@ -1,6 +1,6 @@
 
-using ConfigDom;
-using ConfigDom.TestScaffold;
+using ConfigEditor;
+using ConfigEditor.TestScaffold;
 
 //DomEditorTestScaffold.Run();
 

@@ -1,9 +1,13 @@
-﻿using System;
+﻿using ConfigEditor.Dom;
+using ConfigEditor.EditCtx;
+using ConfigEditor.History;
+using ConfigEditor.IO;
+using System;
 using System.Text.Json;
 
-namespace ConfigDom.TestScaffold
+namespace ConfigEditor.TestScaffold
 {
-    public static class DomEditorTestScaffold
+	public static class DomEditorTestScaffold
     {
         public static void Run()
         {
@@ -20,7 +24,7 @@ namespace ConfigDom.TestScaffold
             """;
 
             var root = JsonDomBuilder.BuildFromJsonElement("root", JsonDocument.Parse(testJson).RootElement);
-            var file = new Json5SourceFile("mock.json", "mock.json", root, testJson);
+            var file = new SourceFile("mock.json", "mock.json", root, testJson);
             var context = new FlatJsonEditorContext("config/test", file);
 
             var before = ExportJsonSubtree.Get(context.GetRoot(), "config/test/system/hostname");
