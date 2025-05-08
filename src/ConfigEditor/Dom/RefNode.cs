@@ -28,6 +28,8 @@ namespace ConfigEditor.Dom
 			RefPath = refPath;
 		}
 
+		public DomNode ResolvedTarget => RefNodeResolver.Resolve( this, DomTreePathHelper.GetRoot(this) );
+
 		public override DomNode Clone()
 		{
 			return new RefNode( Name, RefPath, Parent );
