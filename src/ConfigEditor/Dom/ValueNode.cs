@@ -26,12 +26,6 @@ namespace ConfigEditor.Dom
 		/// </summary>
 		public JsonElement Value => _value;
 
-		/// <summary>
-		/// Returns the stored value as a JsonElement.
-		/// </summary>
-		/// <returns>The JSON representation of this leaf node's value.</returns>
-		public override JsonElement ExportJson() => _value.Clone();
-
 		public override DomNode Clone()
 		{
 			return new ValueNode( Name, _value, Parent );

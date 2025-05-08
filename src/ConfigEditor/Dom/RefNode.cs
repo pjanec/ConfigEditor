@@ -32,22 +32,5 @@ namespace ConfigEditor.Dom
 		{
 			return new RefNode( Name, RefPath, Parent );
 		}
-
-		/// <summary>
-		/// Returns the reference as a $ref JSON object for editing tools and serialization.
-		/// Actual resolution is performed outside this class.
-		/// </summary>
-		/// <returns>A JsonElement object containing { "$ref": RefPath }</returns>
-		public override JsonElement ExportJson()
-		{
-			using var stream = new MemoryStream();
-			using( var writer = new Utf8JsonWriter( stream ) )
-			{
-				writer.WriteStartObject();
-				writer.WriteString( "$ref", RefPath );
-				writer.WriteEndObject();
-			}
-			return JsonDocument.Parse( stream.ToArray() ).RootElement.Clone();
-		}
 	}
 }

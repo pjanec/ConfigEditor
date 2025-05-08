@@ -115,5 +115,12 @@ namespace ConfigEditor.Dom
 
 			return current;
 		}
+
+		public static DomNode GetRoot(DomNode node)
+		{
+			while (node.Parent != null)
+				node = node.Parent;
+			return node;
+		}
 	}
 }

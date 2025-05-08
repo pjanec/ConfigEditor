@@ -29,12 +29,6 @@ namespace ConfigEditor.Dom
 			Parent = parent;
 		}
 
-		/// <summary>
-		/// Exports the DOM subtree rooted at this node into a JsonElement.
-		/// </summary>
-		/// <returns>Serialized JsonElement representing this node.</returns>
-		public abstract JsonElement ExportJson();
-
 		public abstract DomNode Clone();
 
 		/// <summary>

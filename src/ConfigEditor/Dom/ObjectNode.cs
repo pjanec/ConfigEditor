@@ -66,25 +66,5 @@ namespace ConfigEditor.Dom
 			return clone;
 		}
 
-		/// <summary>  
-		/// Serializes the node and its children into a JsonElement.  
-		/// </summary>  
-		public override JsonElement ExportJson()
-		{
-			using var stream = new MemoryStream();
-			using( var writer = new Utf8JsonWriter( stream ) )
-			{
-				writer.WriteStartObject();
-				foreach( var (key, child) in Children )
-				{
-					writer.WritePropertyName( key );
-					child.ExportJson().WriteTo( writer );
-				}
-				writer.WriteEndObject();
-			}
-			stream.Position = 0;
-			using var document = JsonDocument.Parse( stream );
-			return document.RootElement.Clone();
-		}
 	}
 }

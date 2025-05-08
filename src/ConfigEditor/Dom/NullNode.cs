@@ -17,10 +17,5 @@ public class NullNode : DomNode
 		return new NullNode( Name, Parent );
 	}
 
-	public override JsonElement ExportJson()
-	{
-		return JsonSerializer.SerializeToElement<object?>( null );
-	}
-
 	public override string ToString() => "(null placeholder)";
 }

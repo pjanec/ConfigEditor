@@ -23,14 +23,6 @@ namespace ConfigEditor.Dom
 		/// </summary>
 		public List<DomNode> Items { get; } = new();
 
-		/// <summary>
-		/// Exports this array node to a JSON array representation.
-		/// </summary>
-		public override JsonElement ExportJson()
-		{
-			var elements = Items.ConvertAll( item => item.ExportJson() );
-			return JsonSerializer.SerializeToElement( elements );
-		}
 
 		public override DomNode Clone()
 		{
