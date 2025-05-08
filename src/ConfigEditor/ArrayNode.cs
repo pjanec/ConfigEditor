@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ConfigDom
 {
@@ -29,6 +30,18 @@ namespace ConfigDom
         {
             var elements = Items.ConvertAll(item => item.ExportJson());
             return JsonSerializer.SerializeToElement(elements);
+        }
+
+        public override DomNode Clone()
+        {
+            var clone = new ArrayNode(Name);
+            foreach (var item in Items)
+            {
+                var itemClone = item.Clone();
+                itemClone.SetParent(clone);
+                clone.Items.Add(itemClone);
+            }
+            return clone;
         }
     }
 }

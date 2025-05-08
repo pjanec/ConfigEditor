@@ -12,12 +12,16 @@ namespace ConfigDom
         /// <summary>
         /// The key or name of this node in its parent container.
         /// </summary>
-        public string Name { get; set; }
+        public string Name { get; }
 
         /// <summary>
         /// Optional parent node in the DOM tree.
         /// </summary>
         public DomNode? Parent { get; set; }
+
+        public string? SourceFile { get; set; }
+        public int? SourceLine { get; set; }
+        public int? SourceColumn { get; set; }
 
         protected DomNode(string name, DomNode? parent = null)
         {
@@ -30,6 +34,8 @@ namespace ConfigDom
         /// </summary>
         /// <returns>Serialized JsonElement representing this node.</returns>
         public abstract JsonElement ExportJson();
+
+        public abstract DomNode Clone();
 
         /// <summary>
         /// Gets the absolute path to this node in the DOM tree.
@@ -48,6 +54,11 @@ namespace ConfigDom
             }
             parts.Reverse();
             return string.Join("/", parts);
+        }
+
+        public void SetParent(DomNode? newParent)
+        {
+            Parent = newParent;
         }
     }
 }

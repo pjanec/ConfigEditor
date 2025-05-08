@@ -28,6 +28,11 @@ namespace ConfigDom
             RefPath = refPath;
         }
 
+        public override DomNode Clone()
+        {
+            return new RefNode(Name, RefPath, Parent);
+        }
+
         /// <summary>
         /// Returns the reference as a $ref JSON object for editing tools and serialization.
         /// Actual resolution is performed outside this class.

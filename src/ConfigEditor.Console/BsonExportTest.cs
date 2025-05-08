@@ -44,7 +44,7 @@ public static class BsonExportTest
         var env = new ObjectNode("env", root);
         root.Children["env"] = env;
         env.Children["ip"] = new LeafNode("ip", JsonSerializer.SerializeToElement("192.168.0.1"), env);
-        env.Children["host"] = new RefNode("host", "shared/defaultHost") { Name = "host", Parent = env };
+        env.Children["host"] = new RefNode("host", "shared/defaultHost", env);
 
         var shared = new ObjectNode("shared", root);
         root.Children["shared"] = shared;

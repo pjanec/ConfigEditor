@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ConfigDom
 {
@@ -27,8 +28,6 @@ namespace ConfigDom
         public ObjectNode(string name, DomNode? parent = null)
             : base(name, parent)
         {
-            Name = name;
-            Parent = parent;
             Children = new Dictionary<string, DomNode>();
         }
 
@@ -52,23 +51,39 @@ namespace ConfigDom
         public void RemoveChild(string name) => Children.Remove(name);
 
         /// <summary>
-        /// Serializes the node and its children into a JsonElement.
+        /// Clones the current object node and its children.
         /// </summary>
-        public override JsonElement ExportJson()
+        public override DomNode Clone()
         {
-            using var buffer = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(buffer))
+            var clone = new ObjectNode(Name);
+            foreach (var (key, child) in Children)
             {
-                writer.WriteStartObject();
-                foreach (var kvp in Children)
-                {
-                    writer.WritePropertyName(kvp.Key);
-                    kvp.Value.ExportJson().WriteTo(writer);
-                }
-                writer.WriteEndObject();
+                var childClone = child.Clone();
+                childClone.SetParent(clone);
+                clone.Children[key] = childClone;
             }
-            return JsonDocument.Parse(buffer.ToArray()).RootElement.Clone();
+            return clone;
         }
 
+		/// <summary>  
+		/// Serializes the node and its children into a JsonElement.  
+		/// </summary>  
+		public override JsonElement ExportJson()
+		{
+			using var stream = new MemoryStream();
+			using( var writer = new Utf8JsonWriter( stream ) )
+			{
+				writer.WriteStartObject();
+				foreach( var (key, child) in Children )
+				{
+					writer.WritePropertyName( key );
+					child.ExportJson().WriteTo( writer );
+				}
+				writer.WriteEndObject();
+			}
+			stream.Position = 0;
+			using var document = JsonDocument.Parse( stream );
+			return document.RootElement.Clone();
+		}
     }
 }

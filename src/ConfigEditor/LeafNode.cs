@@ -31,5 +31,10 @@ namespace ConfigDom
         /// </summary>
         /// <returns>The JSON representation of this leaf node's value.</returns>
         public override JsonElement ExportJson() => _value.Clone();
+
+        public override DomNode Clone()
+        {
+            return new LeafNode(Name, _value, Parent);
+        }
     }
 }

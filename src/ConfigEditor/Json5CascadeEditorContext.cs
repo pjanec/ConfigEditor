@@ -1,143 +1,177 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
-namespace ConfigDom
+namespace ConfigDom;
+
+/// <summary>
+/// Provides a mounted editable DOM subtree from cascading JSON sources.
+/// </summary>
+public class Json5CascadeEditorContext : IMountedDomEditorContext
 {
-    /// <summary>
-    /// Represents a provider of a mounted editable DOM subtree from cascading JSON sources.
-    /// Supports merging layers, reference resolution, and file tracking.
-    /// </summary>
-    public class Json5CascadeEditorContext : IMountedDomEditorContext
+    private readonly string _mountPath;
+    private readonly List<CascadeLayer> _sourceLayers;
+    private readonly List<Json5EditorLayer> _editorLayers;
+    private readonly DomEditHistory _editHistory = new();
+    private readonly MergeOriginTracker _originTracker = new();
+
+    public Json5CascadeEditorContext(string mountPath, List<CascadeLayer> sourceLayers)
     {
-        public string MountPath { get; }
-        private ObjectNode _root;
-        private readonly List<CascadeLayer> _layers;
-        private readonly DomEditHistory _editHistory = new();
-        private readonly MergeOriginTracker _originTracker = new();
-
-        public Json5CascadeEditorContext(string mountPath, List<CascadeLayer> layers)
+        _mountPath = mountPath;
+        _sourceLayers = sourceLayers;
+        _editorLayers = sourceLayers.Select((layer, index) =>
         {
-            MountPath = mountPath;
-            _layers = layers;
-            _root = JsonMergeService.MergeCascade(layers, _originTracker);
+            var flatMap = layer.Files.ToDictionary(
+                f => f.RelativePath,
+                f => f.DomRoot.ExportJson()
+            );
+            var rootNode = DomParser.ParseFromFlatMap(flatMap);
+            return new Json5EditorLayer(index, layer.Name, flatMap, rootNode);
+        }).ToList();
+    }
+
+    public string MountPath => _mountPath;
+
+    public IReadOnlyList<Json5EditorLayer> Layers => _editorLayers;
+
+    public void Load()
+    {
+        // Reload all source layers and rebuild editor layers
+        for (int i = 0; i < _sourceLayers.Count; i++)
+        {
+            var sourceLayer = _sourceLayers[i];
+            var editorLayer = _editorLayers[i];
+            
+            // Update flat map with new values
+            foreach (var file in sourceLayer.Files)
+            {
+                editorLayer.FlatPathMap[file.RelativePath] = file.DomRoot.ExportJson();
+            }
+            
+            // Rebuild DOM tree
+            editorLayer.RootNode = DomParser.ParseFromFlatMap(editorLayer.FlatPathMap);
+        }
+    }
+
+    public DomNode GetRoot() => GetMergedDomUpToLayer(_editorLayers.Count - 1);
+
+    public DomNode GetMergedDomUpToLayer(int inclusiveLayerIndex)
+    {
+        return DomMerger.Merge(_editorLayers.Take(inclusiveLayerIndex + 1).Select(x => x.RootNode));
+    }
+
+    public Func<string, DomNode?> GetEffectiveNodeFunc(int inclusiveLayerIndex)
+    {
+        var mergedRoot = GetMergedDomUpToLayer(inclusiveLayerIndex);
+        return path => DomTreePathHelper.FindNodeAtPath(mergedRoot, path);
+    }
+
+    public bool TryGetSourceFile(string domPath, out Json5SourceFile? file, out int layerIndex)
+    {
+        for (int i = _editorLayers.Count - 1; i >= 0; i--)
+        {
+            var layer = _editorLayers[i];
+            if (layer.FlatPathMap.ContainsKey(domPath))
+            {
+                file = _sourceLayers[i].Files.FirstOrDefault(f => f.RelativePath == domPath);
+                layerIndex = i;
+                return file != null;
+            }
         }
 
-        public void Load()
-        {
-            // Reload all sources and rebuild the merged tree
-            _root = JsonMergeService.MergeCascade(_layers, _originTracker);
-        }
+        file = null;
+        layerIndex = -1;
+        return false;
+    }
 
-        public DomNode GetRoot() => _root;
+    public void ApplyEdit(DomEditAction action)
+    {
+        // Determine which layer to write to
+        var origin = _originTracker.GetOrigin(action.Path);
+        var targetLayerIndex = origin?.layerIndex ?? _editorLayers.Count - 1; // Default to most specific
 
-        public bool TryGetSourceFile(string domPath, out Json5SourceFile? file, out int layerIndex)
+        // Get the target layer
+        var targetLayer = _editorLayers[targetLayerIndex];
+        
+        // Create or update the value in the layer's flat map
+        targetLayer.FlatPathMap[action.Path] = action.NewValue;
+        
+        // Rebuild the layer's DOM tree
+        targetLayer.RootNode = DomParser.ParseFromFlatMap(targetLayer.FlatPathMap);
+        
+        // Record the edit for undo/redo
+        _editHistory.Apply(action);
+    }
+
+    public void Undo()
+    {
+        var undo = _editHistory.Undo();
+        if (undo != null)
         {
-            var origin = _originTracker.GetOrigin(domPath);
+            // Find the layer that owns this path
+            var origin = _originTracker.GetOrigin(undo.Path);
             if (origin.HasValue)
             {
-                file = origin.Value.file;
-                layerIndex = origin.Value.layerIndex;
-                return true;
+                var layer = _editorLayers[origin.Value.layerIndex];
+                
+                // Update the layer's flat map
+                layer.FlatPathMap[undo.Path] = undo.NewValue;
+                
+                // Rebuild the layer's DOM tree
+                layer.RootNode = DomParser.ParseFromFlatMap(layer.FlatPathMap);
             }
-            file = null;
-            layerIndex = -1;
+        }
+    }
+
+    public void Redo()
+    {
+        var redo = _editHistory.Redo();
+        if (redo != null)
+        {
+            // Find the layer that owns this path
+            var origin = _originTracker.GetOrigin(redo.Path);
+            if (origin.HasValue)
+            {
+                var layer = _editorLayers[origin.Value.layerIndex];
+                
+                // Update the layer's flat map
+                layer.FlatPathMap[redo.Path] = redo.NewValue;
+                
+                // Rebuild the layer's DOM tree
+                layer.RootNode = DomParser.ParseFromFlatMap(layer.FlatPathMap);
+            }
+        }
+    }
+
+    public bool CanUndo => _editHistory.CanUndo;
+    public bool CanRedo => _editHistory.CanRedo;
+
+    public bool TryResolvePath(string absolutePath, out DomNode? node)
+    {
+        if (!absolutePath.StartsWith(_mountPath.TrimEnd('/')))
+        {
+            node = null;
             return false;
         }
 
-        public bool TryGetOrCreateFileForLayer(int layerIndex, string path, out Json5SourceFile file)
+        node = DomTreePathHelper.FindNodeAtPath(GetRoot(), absolutePath);
+        return node != null;
+    }
+
+    public string GetLevelName(int layerIndex)
+    {
+        return layerIndex >= 0 && layerIndex < _editorLayers.Count
+            ? _editorLayers[layerIndex].LayerName
+            : "Unknown";
+    }
+
+    public int GetLevelIndex(string path)
+    {
+        for (int i = _editorLayers.Count - 1; i >= 0; i--)
         {
-            if (layerIndex < 0 || layerIndex >= _layers.Count)
-            {
-                file = null!;
-                return false;
-            }
-
-            var layer = _layers[layerIndex];
-            foreach (var existingFile in layer.Files)
-            {
-                if (existingFile.RelativePath == path)
-                {
-                    file = existingFile;
-                    return true;
-                }
-            }
-
-            // Create new file in this layer
-            file = new Json5SourceFile(path, path, new ObjectNode(path), "");
-            layer.Files.Add(file);
-            return true;
+            if (_editorLayers[i].FlatPathMap.ContainsKey(path))
+                return i;
         }
-
-        public void ApplyEdit(DomEditAction action)
-        {
-            // Determine which level to write to
-            var origin = _originTracker.GetOrigin(action.Path);
-            var targetLevel = origin?.layerIndex ?? _layers.Count - 1; // Default to most specific
-
-            // Find or create the appropriate source file
-            if (TryGetOrCreateFileForLayer(targetLevel, action.Path, out var targetFile))
-            {
-                // Apply the edit
-                _editHistory.Apply(action);
-                action.Apply(_root);
-                
-                // Update origin tracking
-                _originTracker.TrackOrigin(action.Path, targetFile, targetLevel);
-            }
-        }
-
-        public void Undo()
-        {
-            var undo = _editHistory.Undo();
-            if (undo != null)
-            {
-                undo.Apply(_root);
-                // Note: We don't update origin tracking on undo/redo
-                // as the original origins are preserved in the source files
-            }
-        }
-
-        public void Redo()
-        {
-            var redo = _editHistory.Redo();
-            if (redo != null)
-            {
-                redo.Apply(_root);
-                // Note: We don't update origin tracking on undo/redo
-                // as the original origins are preserved in the source files
-            }
-        }
-
-        public bool CanUndo => _editHistory.CanUndo;
-        public bool CanRedo => _editHistory.CanRedo;
-
-        public bool TryResolvePath(string absolutePath, out DomNode? node)
-        {
-            if (!absolutePath.StartsWith(MountPath.TrimEnd('/')))
-            {
-                node = null;
-                return false;
-            }
-
-            node = DomTreePathHelper.FindNodeAtPath(_root, absolutePath);
-            return node != null;
-        }
-
-        /// <summary>
-        /// Gets the cascade level name for a given path.
-        /// </summary>
-        public string? GetLevelName(string path)
-        {
-            var origin = _originTracker.GetOrigin(path);
-            return origin.HasValue ? _layers[origin.Value.layerIndex].Name : null;
-        }
-
-        /// <summary>
-        /// Gets the cascade level index for a given path.
-        /// </summary>
-        public int? GetLevelIndex(string path)
-        {
-            return _originTracker.GetLayerIndex(path);
-        }
+        return -1;
     }
 }
