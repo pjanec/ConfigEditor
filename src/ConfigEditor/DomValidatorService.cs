@@ -15,14 +15,14 @@ namespace ConfigDom
         /// <param name="node">The DOM node to validate.</param>
         /// <param name="schema">The associated schema node.</param>
         /// <returns>A list of validation errors or an empty list if valid.</returns>
-        public static List<IErrorStatusProvider> Validate(DomNode node, ISchemaNode schema)
+        public static List<IErrorStatusProvider> Validate(DomNode node, SchemaNode schema)
         {
             var result = new List<IErrorStatusProvider>();
             ValidateRecursive(node, schema, result);
             return result;
         }
 
-        private static void ValidateRecursive(DomNode node, ISchemaNode schema, List<IErrorStatusProvider> errors)
+        private static void ValidateRecursive(DomNode node, SchemaNode schema, List<IErrorStatusProvider> errors)
         {
             // This is a placeholder; the actual implementation would dispatch based on schema node type
             // and check data types, required fields, range constraints, etc.

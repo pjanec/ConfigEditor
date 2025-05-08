@@ -7,7 +7,7 @@ namespace ConfigDom
 {
     public static class SchemaValidator
     {
-        public static List<DomValidationError> ValidateTree(DomNode node, ISchemaNode schema, string path = "", DomNode? domRoot = null)
+        public static List<DomValidationError> ValidateTree(DomNode node, SchemaNode schema, string path = "", DomNode? domRoot = null)
         {
             var errors = new List<DomValidationError>();
 

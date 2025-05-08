@@ -6,7 +6,7 @@ namespace ConfigDom;
 
 public static class SchemaBinder
 {
-    public static ISchemaNode FromType(Type t)
+    public static SchemaNode FromType(Type t)
     {
         if (t == typeof(int))
         {
@@ -33,7 +33,7 @@ public static class SchemaBinder
             {
                 var schema = FromType(prop.PropertyType);
 
-                // Range, format, etc.
+                // Range, format, pattern, etc.
                 if (schema is LeafSchemaNode leaf)
                 {
                     var rangeAttr = prop.GetCustomAttribute<RangeAttribute>();
@@ -42,11 +42,19 @@ public static class SchemaBinder
                         leaf.Min = rangeAttr.Min;
                         leaf.Max = rangeAttr.Max;
                     }
+
                     var formatAttr = prop.GetCustomAttribute<FormatAttribute>();
                     if (formatAttr != null)
                     {
                         leaf.Format = formatAttr.Format;
                     }
+
+                    var patternAttr = prop.GetCustomAttribute<PatternAttribute>();
+                    if (patternAttr != null)
+                    {
+                        leaf.RegexPattern = patternAttr.Regex;
+                    }
+
                     if (prop.PropertyType.IsEnum)
                     {
                         leaf.AllowedValues = Enum.GetNames(prop.PropertyType).ToList();
@@ -123,4 +131,11 @@ public sealed class FormatAttribute : Attribute
 {
     public string Format { get; }
     public FormatAttribute(string format) => Format = format;
+}
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class PatternAttribute : Attribute
+{
+    public string Regex { get; }
+    public PatternAttribute(string regex) => Regex = regex;
 }

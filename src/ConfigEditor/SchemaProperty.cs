@@ -2,7 +2,7 @@
 
 public sealed class SchemaProperty
 {
-    public required ISchemaNode Schema { get; init; }
+    public required SchemaNode Schema { get; init; }
 
     // Field-level metadata
     public bool IsRequired { get; init; } = false;

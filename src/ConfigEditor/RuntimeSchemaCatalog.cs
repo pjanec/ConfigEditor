@@ -12,7 +12,7 @@ namespace ConfigDom
     /// </summary>
     public class RuntimeSchemaCatalog
     {
-        private readonly Dictionary<string, ISchemaNode> _schemasByMount = new();
+        private readonly Dictionary<string, SchemaNode> _schemasByMount = new();
 
         /// <summary>
         /// Loads schema classes from all specified assemblies and registers them by mount path.
@@ -26,9 +26,9 @@ namespace ConfigDom
                 foreach (var type in asm.GetTypes())
                 {
                     var attr = type.GetCustomAttribute<ConfigSchemaAttribute>();
-                    if (attr != null && typeof(ISchemaNode).IsAssignableFrom(type))
+                    if (attr != null && typeof(SchemaNode).IsAssignableFrom(type))
                     {
-                        var instance = (ISchemaNode)Activator.CreateInstance(type)!;
+                        var instance = (SchemaNode)Activator.CreateInstance(type)!;
                         _schemasByMount[attr.MountPath] = instance;
                     }
                 }
@@ -40,7 +40,7 @@ namespace ConfigDom
         /// </summary>
         /// <param name="mountPath">The mount path to look up.</param>
         /// <returns>The root schema node, or null if not found.</returns>
-        public ISchemaNode? GetSchemaForMount(string mountPath)
+        public SchemaNode? GetSchemaForMount(string mountPath)
         {
             return _schemasByMount.TryGetValue(mountPath, out var schema) ? schema : null;
         }

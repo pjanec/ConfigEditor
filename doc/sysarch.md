@@ -19,6 +19,7 @@ This document provides a comprehensive and in-depth description of the configura
 11. Summary of Design Decisions
 12. Example Use Cases
 13. Schema-Driven Defaults and Required Fields
+14. Schema Metadata Architecture
 
 ---
 
@@ -1242,4 +1243,92 @@ No required/default fields may be omitted from the runtime DOM after export.
 
 
 
+## 14. Schema Metadata Architecture
 
+This section describes the internal structure and responsibility split of schema metadata used for configuration validation and UI rendering.
+
+---
+
+### 14.1 Two Layers of Schema Information
+
+The configuration system distinguishes **two separate layers of schema metadata**, each serving a different role:
+
+1. **Type-level Schema Metadata**  
+   Describes the structure and constraints of a value *regardless of where it is used*.  
+   Represented by the abstract base class `SchemaNode` and its implementations.
+
+2. **Object Field Metadata (Schema Properties)**  
+   Describes how a field is declared and used *within a specific object*.  
+   Represented by the `SchemaProperty` class.
+
+This separation ensures clear semantics and proper reuse of value schemas.
+
+---
+
+### 14.2 Type-Level Schema: `SchemaNode`
+
+This layer captures intrinsic data structure and constraints. Key types include:
+
+- `LeafSchemaNode`: primitive value schema (e.g., int, string, bool)
+- `ObjectSchemaNode`: named fields mapped to schema properties
+- `ArraySchemaNode`: ordered list of values with homogeneous type
+
+All schema nodes inherit from `SchemaNode`, which provides common metadata:
+
+- `Min` / `Max` → numeric range constraints (leaf-only)
+- `Format` → semantic hint for strings (e.g., `hostname`, `ipv4`)
+- `AllowedValues` → enum-style allowed value set (leaf-only)
+- `RegexPattern` → optional regular expression for string validation
+
+These fields define what makes a value **valid**, independently of whether it’s required or has a default.
+
+---
+
+### 14.3 Field-Level Metadata: `SchemaProperty`
+
+Every named field in an object is represented by a `SchemaProperty`, which contains:
+
+- `Schema`: a `SchemaNode` representing the value type and constraints
+- `IsRequired`: whether this field must appear in the source config
+- `DefaultValue`: a fallback value to inject if missing
+- `Unit`: optional measurement unit (e.g., `MB`, `seconds`)
+- `Description`: optional documentation or tooltip
+
+This metadata is **specific to how a field is declared within an object**, even if the underlying type schema is reused.
+
+For example:
+
+```csharp
+public class NodeConfig
+{
+    [Required]
+    [Unit("MB")]
+    [Range(128, 65536)]
+    [Pattern("^\\d+$")]
+    public int MemoryLimit { get; set; } = 1024;
+}
+```
+
+Produces:
+
+- A `LeafSchemaNode` with `Min=128`, `Max=65536`, `RegexPattern="^\\d+$"`
+- A `SchemaProperty` with `IsRequired=true`, `Unit="MB"`, `DefaultValue=1024`
+
+---
+
+### 14.4 Why This Separation Matters
+
+- **Reuse**: the same `LeafSchemaNode` can be reused in different fields with different required/default rules.
+- **Validation Logic**: type-level rules govern value structure, while property-level rules determine presence and defaults.
+- **UI Clarity**: field-level units and descriptions enable friendly forms without polluting the type schema.
+
+---
+
+### 14.5 Summary
+
+| Layer                | Structure        | Purpose                                              |
+| -------------------- | ---------------- | ---------------------------------------------------- |
+| Type-level schema    | `SchemaNode`     | What kind of value is allowed                        |
+| Field-level metadata | `SchemaProperty` | Whether a field is required, defaulted, or annotated |
+
+This model enables precise validation, powerful UI hints, and robust default injection support before export.

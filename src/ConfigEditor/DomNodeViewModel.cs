@@ -18,7 +18,7 @@ namespace ConfigDom
         public bool IsDirty { get; private set; }
         public bool IsEditable { get; set; } = true;
 
-        public ISchemaNode? Schema { get; set; }
+        public SchemaNode? Schema { get; set; }
 
         /// <summary>
         /// Optional index indicating at which cascade level the value is defined (0 = base, higher = more specific).
