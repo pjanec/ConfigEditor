@@ -29,7 +29,7 @@ namespace ConfigDom
                         current = child;
                         break;
                     case ArrayNode arr when int.TryParse(part, out int index) && index < arr.Items.Count:
-                        current = arr[index];
+                        current = arr.Items[index];
                         break;
                     default:
                         return null;
@@ -65,8 +65,8 @@ namespace ConfigDom
                 else if (current is ArrayNode arr && int.TryParse(part, out var index))
                 {
                     while (arr.Items.Count <= index)
-                        arr.AddItem(new ObjectNode(index.ToString(), arr));
-                    current = arr[index];
+                        arr.Items.Add(new ObjectNode(index.ToString(), arr));
+                    current = arr.Items[index];
                 }
             }
 
@@ -104,8 +104,8 @@ namespace ConfigDom
                 else if (current is ArrayNode arr && int.TryParse(part, out var index))
                 {
                     while (arr.Items.Count <= index)
-                        arr.AddItem(new ObjectNode(index.ToString(), arr));
-                    current = arr[index];
+                        arr.Items.Add(new ObjectNode(index.ToString(), arr));
+                    current = arr.Items[index];
                 }
                 else
                 {

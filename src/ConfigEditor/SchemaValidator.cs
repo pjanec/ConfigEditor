@@ -46,7 +46,7 @@ namespace ConfigDom
             {
                 for (int i = 0; i < arrNode.Items.Count; i++)
                 {
-                    var item = arrNode[i];
+                    var item = arrNode.Items[i];
                     var itemPath = path + "/" + i;
                     errors.AddRange(ValidateTree(item, arrSchema.ItemSchema, itemPath, domRoot));
                 }

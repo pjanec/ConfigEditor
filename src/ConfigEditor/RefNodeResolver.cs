@@ -1,36 +1,85 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Linq;
+using System;
 
-namespace ConfigDom
+namespace ConfigDom;
+
+public static class RefNodeResolver
 {
     /// <summary>
-    /// Resolves RefNode targets based on their RefPath.
-    /// Supports cycle detection and recursive reference resolution.
+    /// Resolves and replaces all $ref nodes within the DOM tree in-place.
+    /// Throws on unresolved or cyclic references.
     /// </summary>
-    public static class RefNodeResolver
+    public static void ResolveAllInPlace(DomNode root)
     {
-        /// <summary>
-        /// Resolves the final target of a RefNode, following chained references if needed.
-        /// </summary>
-        /// <param name="refNode">The RefNode to resolve.</param>
-        /// <param name="domRoot">The root of the DOM tree to resolve against.</param>
-        /// <returns>The resolved target node, or null if invalid or cyclic.</returns>
-        public static DomNode? Resolve(RefNode refNode, DomNode domRoot)
+        ResolveRecursive(root, root, new HashSet<DomNode>());
+    }
+
+    private static void ResolveRecursive(DomNode current, DomNode root, HashSet<DomNode> visited)
+    {
+        if (visited.Contains(current))
+            throw new InvalidOperationException("Reference cycle detected");
+
+        visited.Add(current);
+
+        if (current is ObjectNode obj)
         {
-            return ResolveRecursive(refNode, domRoot, new HashSet<string>());
+            var keys = obj.Children.Keys.ToList();
+            foreach (var key in keys)
+            {
+                var child = obj.Children[key];
+                if (child is RefNode refNode)
+                {
+                    var resolved = Resolve(refNode, root);
+                    obj.Children[key] = DeepCopy(resolved);
+                }
+                else
+                {
+                    ResolveRecursive(child, root, visited);
+                }
+            }
+        }
+        else if (current is ArrayNode arr)
+        {
+            for (int i = 0; i < arr.Items.Count; i++)
+            {
+                if (arr.Items[i] is RefNode refNode)
+                {
+                    var resolved = Resolve(refNode, root);
+                    arr.Items[i] = DeepCopy(resolved);
+                }
+                else
+                {
+                    ResolveRecursive(arr.Items[i], root, visited);
+                }
+            }
         }
 
-        private static DomNode? ResolveRecursive(RefNode refNode, DomNode domRoot, HashSet<string> visitedPaths)
+        visited.Remove(current);
+    }
+
+    /// <summary>
+    /// Resolves a single $ref node against the given root.
+    /// </summary>
+    public static DomNode Resolve(RefNode refNode, DomNode root)
+    {
+        var parts = refNode.RefPath.Split("/", StringSplitOptions.RemoveEmptyEntries);
+        DomNode? node = root;
+        foreach (var part in parts)
         {
-            var path = refNode.RefPath;
-            if (visitedPaths.Contains(path)) return null;
-            visitedPaths.Add(path);
-
-            var target = DomTreePathHelper.FindNodeAtPath(domRoot, path);
-            if (target is RefNode nestedRef)
-                return ResolveRecursive(nestedRef, domRoot, visitedPaths);
-
-            return target;
+            if (node is ObjectNode obj && obj.Children.TryGetValue(part, out var next))
+                node = next;
+            else if (node is ArrayNode arr && int.TryParse(part, out var index) && index >= 0 && index < arr.Items.Count)
+                node = arr.Items[index];
+            else
+                throw new InvalidOperationException($"Invalid $ref path: {refNode.RefPath}");
         }
+        return node;
+    }
+
+    private static DomNode DeepCopy(DomNode node)
+    {
+        var json = node.ExportJson();
+        return JsonDomBuilder.BuildFromJsonElement(node.Name ?? "", json, node.Parent);
     }
 }

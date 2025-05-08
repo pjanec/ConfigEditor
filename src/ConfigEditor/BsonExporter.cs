@@ -1,21 +1,33 @@
-﻿using System.Text.Json;
+﻿using System.IO;
+using System.Text.Json;
 using MongoDB.Bson;
 using MongoDB.Bson.IO;
 using MongoDB.Bson.Serialization;
 
-namespace ConfigDom
+namespace ConfigDom;
+
+public static class BsonExporter
 {
     /// <summary>
-    /// Converts a DomNode subtree into a BSON binary blob.
-    /// Used during editor export to persist a resolved config state.
+    /// Resolves all $ref nodes, applies defaults, and writes the resulting DOM tree as BSON.
     /// </summary>
-    public static class BsonExporter
+    /// <param name="root">The root DOM tree to export.</param>
+    /// <param name="schema">The schema used to inject default values and validate required fields.</param>
+    /// <param name="filePath">Path to the target BSON file.</param>
+    public static void ExportToBsonFile(DomNode root, SchemaNode schema, string filePath)
     {
-        public static byte[] Export(DomNode root)
-        {
-            var json = root.ExportJson();
-            var doc = BsonSerializer.Deserialize<BsonDocument>(json.GetRawText());
-            return doc.ToBson();
-        }
+        // Inline all $ref nodes
+        RefNodeResolver.ResolveAllInPlace(root);
+
+        // Fill in any missing default-valued fields
+        SchemaDefaultInjector.ApplyDefaults(root, schema);
+
+        // Export to JSON first
+        var json = root.ExportJson();
+
+        // Convert to BSON and write to file
+        var bson = BsonSerializer.Deserialize<BsonDocument>(json.GetRawText());
+        using var writer = new BsonBinaryWriter(File.Create(filePath));
+        BsonSerializer.Serialize(writer, bson);
     }
 }

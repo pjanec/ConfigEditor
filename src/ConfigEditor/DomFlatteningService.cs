@@ -41,7 +41,7 @@ namespace ConfigDom
                 case ArrayNode arr:
                     for (int i = 0; i < arr.Items.Count; i++)
                     {
-                        FlattenRecursive(arr[i], path + "/" + i, result);
+                        FlattenRecursive(arr.Items[i], path + "/" + i, result);
                     }
                     break;
             }

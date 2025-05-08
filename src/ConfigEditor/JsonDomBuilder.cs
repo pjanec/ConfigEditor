@@ -35,7 +35,7 @@ namespace ConfigDom
                     foreach (var item in element.EnumerateArray())
                     {
                         var child = BuildFromJsonElement(index.ToString(), item, arr);
-                        arr.AddItem(child);
+                        arr.Items.Add(child);
                         index++;
                     }
                     return arr;
