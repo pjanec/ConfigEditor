@@ -1332,3 +1332,15 @@ Produces:
 | Field-level metadata | `SchemaProperty` | Whether a field is required, defaulted, or annotated |
 
 This model enables precise validation, powerful UI hints, and robust default injection support before export.
+
+
+# Further UI reqs
+
+## Creating missing fields according to schema
+
+Cascading config context editor should allow to add missing property value at any tree path according to the schema-derived tree, while creating the intermediate path in the DOM tree if missing in the current DOM. User needs to be able to select on what level of the cascade adding the new field happens.
+
+- The user should be able to select any **valid field path** based on the schema (even if that field doesn’t currently exist in the DOM), and **insert a new value**, automatically creating intermediate object nodes as needed.
+- The editor must **create missing intermediate paths in the live DOM**
+- **And** associate the change with a specific **cascade layer** (e.g., "local", "site", "base")
+- Resulting in correct dirty tracking, file targeting, and JSON5 regeneration

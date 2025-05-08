@@ -71,7 +71,7 @@ namespace ConfigDom
             {
                 CascadeLevel = cascadeContext.GetLevelIndex(Path);
                 CascadeLevelName = cascadeContext.GetLevelName(Path);
-                if (cascadeContext.TryGetSourceFile(Path, out var file))
+                if (cascadeContext.TryGetSourceFile(Path, out var file, out var layerIndex))
                 {
                     SourceFile = file?.FilePath;
                 }

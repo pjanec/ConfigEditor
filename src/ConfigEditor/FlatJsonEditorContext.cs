@@ -15,18 +15,18 @@ namespace ConfigDom
         private Json5SourceFile _file;
         private readonly DomEditHistory _history = new();
 
+        public FlatJsonEditorContext(string mountPath, Json5SourceFile file)
+        {
+            MountPath = mountPath;
+            _filePath = file.FilePath;
+            _file = file;
+        }
+
         public FlatJsonEditorContext(string mountPath, string filePath)
         {
             MountPath = mountPath;
             _filePath = filePath;
             _file = Json5SourceFileLoader.LoadSingleFile(filePath);
-        }
-
-        public FlatJsonEditorContext(string mountPath, Json5SourceFile injectedFile)
-        {
-            MountPath = mountPath;
-            _filePath = injectedFile.FilePath;
-            _file = injectedFile;
         }
 
         public void Load()
@@ -36,9 +36,10 @@ namespace ConfigDom
 
         public DomNode GetRoot() => _file.DomRoot;
 
-        public bool TryGetSourceFile(string domPath, out Json5SourceFile? file)
+        public bool TryGetSourceFile(string domPath, out Json5SourceFile? file, out int layerIndex)
         {
             file = domPath.StartsWith(MountPath) ? _file : null;
+            layerIndex = 0;
             return file != null;
         }
 

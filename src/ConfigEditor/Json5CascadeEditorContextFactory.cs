@@ -1,6 +1,7 @@
 ﻿using ConfigDom.Editor;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace ConfigDom
 {
@@ -10,17 +11,34 @@ namespace ConfigDom
     public static class Json5CascadeEditorContextFactory
     {
         /// <summary>
-        /// Loads all *.json files from each folder in cascade order and mounts under the given path.
+        /// Creates a context from pre-loaded layers.
         /// </summary>
-        public static Json5CascadeEditorContext LoadCascadeFromFolders(string mountPath, List<string> cascadeFolders)
+        public static Json5CascadeEditorContext FromPreloadedLayers(string mountPath, List<(string Name, List<Json5SourceFile> Files)> layers)
         {
-            var sources = new List<Json5SourceFile>();
-            foreach (var folder in cascadeFolders)
+            var cascadeLayers = layers.Select(l => new CascadeLayer(l.Name, l.Files)).ToList();
+            return new Json5CascadeEditorContext(mountPath, cascadeLayers);
+        }
+
+        public static Json5CascadeEditorContext LoadFromFolders(string mountPath, List<string> folders)
+        {
+			// use folder path as name
+			var layers = folders.Select( folder => (Name: folder, FolderPath: folder) ).ToList();
+			return LoadFromFolders( mountPath, layers );
+		}
+
+		/// <summary>
+		/// Loads all *.json files from each folder in cascade order and mounts under the given path.
+		/// </summary>
+		public static Json5CascadeEditorContext LoadFromFolders(string mountPath, List<(string Name, string FolderPath)> folders)
+        {
+            var layers = new List<CascadeLayer>();
+            foreach (var (name, folder) in folders)
             {
-                sources.AddRange(LoadJsonFilesFromFolder(folder));
+                var files = LoadJsonFilesFromFolder(folder);
+                layers.Add(new CascadeLayer(name, files));
             }
 
-            return new Json5CascadeEditorContext(mountPath, sources);
+            return new Json5CascadeEditorContext(mountPath, layers);
         }
 
         private static List<Json5SourceFile> LoadJsonFilesFromFolder(string folder)

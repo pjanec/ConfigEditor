@@ -1,4 +1,4 @@
-
+﻿
 namespace ConfigDom
 {
     /// <summary>
@@ -29,7 +29,7 @@ namespace ConfigDom
         /// <param name="domPath">The full path to a node.</param>
         /// <param name="file">The file responsible, if found.</param>
         /// <returns>True if found; false otherwise.</returns>
-        bool TryGetSourceFile(string domPath, out Json5SourceFile? file);
+        bool TryGetSourceFile(string domPath, out Json5SourceFile? file, out int layerIndex);
 
         /// <summary>
         /// Applies an edit to the live in-memory model.

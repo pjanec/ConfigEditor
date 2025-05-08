@@ -13,7 +13,7 @@ namespace ConfigDom.TestScaffold
             var workspace = new EditorWorkspace(root);
 
             var folders = new List<string> { "base", "site", "local" };
-            var context = Json5CascadeEditorContextFactory.LoadCascadeFromFolders("config/env1", folders);
+            var context = Json5CascadeEditorContextFactory.LoadFromFolders("config/env1", folders);
             workspace.RegisterContext("config/env1", context);
 
             var meta = new ObjectNode("meta");

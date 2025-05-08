@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json;
 
 namespace ConfigDom
@@ -29,5 +30,24 @@ namespace ConfigDom
         /// </summary>
         /// <returns>Serialized JsonElement representing this node.</returns>
         public abstract JsonElement ExportJson();
+
+        /// <summary>
+        /// Gets the absolute path to this node in the DOM tree.
+        /// </summary>
+        public string GetAbsolutePath()
+        {
+            var parts = new List<string>();
+            var current = this;
+            while (current != null)
+            {
+                if (current.Name != null)
+                {
+                    parts.Add(current.Name);
+                }
+                current = current.Parent;
+            }
+            parts.Reverse();
+            return string.Join("/", parts);
+        }
     }
 }

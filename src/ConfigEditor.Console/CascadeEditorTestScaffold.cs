@@ -29,9 +29,17 @@ namespace ConfigDom.TestScaffold
 
             var sources = new List<Json5SourceFile> { baseFile, siteFile, localFile };
 
-            var mergedRoot = JsonMergeService.MergeCascade(sources);
+            var layers = new List<CascadeLayer>
+			{
+				new CascadeLayer("Base", new List<Json5SourceFile> { baseFile }),
+				new CascadeLayer("Site", new List<Json5SourceFile> { siteFile }),
+				new CascadeLayer("Local", new List<Json5SourceFile> { localFile })
+			};
 
-            var context = new Json5CascadeEditorContext("config/test", sources);
+			var mergeOriginTracker = new MergeOriginTracker();
+			var mergedRoot = JsonMergeService.MergeCascade( layers, mergeOriginTracker );
+
+            var context = new Json5CascadeEditorContext("config/test", layers);
 
             void DumpValue(string path)
             {

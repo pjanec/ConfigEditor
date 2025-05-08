@@ -4,99 +4,95 @@ using System.Linq;
 
 namespace ConfigDom
 {
-    /// <summary>
-    /// Tracks the origin of each node in the merged DOM tree.
-    /// Records which source file and cascade level provided each value.
-    /// </summary>
-    public class MergeOriginTracker
-    {
-        private readonly Dictionary<string, (Json5SourceFile? file, int level)> _originMap = new();
-
-        public void TrackOrigin(string path, Json5SourceFile? file, int level)
-        {
-            _originMap[path] = (file, level);
-        }
-
-        public (Json5SourceFile? file, int level)? GetOrigin(string path)
-        {
-            return _originMap.TryGetValue(path, out var origin) ? origin : null;
-        }
-
-        public string GetLevelName(int level) => level switch
-        {
-            0 => "base",
-            1 => "site",
-            2 => "local",
-            _ => $"level{level}"
-        };
-    }
 
     /// <summary>
-    /// Provides cascade-level-aware merging of ObjectNode trees.
-    /// Supports deep structural merging with proper array replacement and source tracking.
+    /// Provides services for merging JSON DOM trees, with support for cascading layers.
     /// </summary>
     public static class JsonMergeService
     {
         /// <summary>
-        /// Deep merges multiple ObjectNode roots from lowest to highest priority.
-        /// Fields from later nodes override earlier ones.
+        /// Merges multiple cascade layers into a single DOM tree.
+        /// Later layers override earlier ones.
         /// </summary>
-        public static ObjectNode MergeCascade(List<ObjectNode> roots, MergeOriginTracker? tracker = null)
+        public static ObjectNode MergeCascade(List<CascadeLayer> layers, MergeOriginTracker tracker)
         {
-            var result = new ObjectNode("root");
+            if (layers.Count == 0)
+                throw new ArgumentException("At least one layer is required", nameof(layers));
 
-            for (int level = 0; level < roots.Count; level++)
+            // Start with the first layer's root
+            var result = layers[0].Files[0].DomRoot as ObjectNode 
+                ?? throw new InvalidOperationException("First layer must have an object root");
+
+            // Track origins for the first layer
+            foreach (var file in layers[0].Files)
             {
-                var source = roots[level];
-                MergeObjectInto(result, source, level, tracker);
+                TrackOriginsRecursive(file.DomRoot, file, 0, tracker);
+            }
+
+            // Merge subsequent layers
+            for (int i = 1; i < layers.Count; i++)
+            {
+                foreach (var file in layers[i].Files)
+                {
+                    if (file.DomRoot is ObjectNode sourceRoot)
+                    {
+                        MergeObjectInto(result, sourceRoot, file, i, tracker);
+                    }
+                }
             }
 
             return result;
         }
 
-        /// <summary>
-        /// Overload: extracts roots from source files before merging.
-        /// Tracks the origin of each value in the merged result.
-        /// </summary>
-        public static ObjectNode MergeCascade(List<Json5SourceFile> sources, MergeOriginTracker? tracker = null)
+        private static void MergeObjectInto(ObjectNode target, ObjectNode source, Json5SourceFile sourceFile, int layerIndex, MergeOriginTracker tracker)
         {
-            var roots = sources.Select(f => f.DomRoot).OfType<ObjectNode>().ToList();
-            return MergeCascade(roots, tracker);
-        }
-
-        private static void MergeObjectInto(ObjectNode target, ObjectNode source, int level, MergeOriginTracker? tracker)
-        {
-            foreach (var (key, value) in source.Children)
+            foreach (var kvp in source.Children)
             {
-                var path = target.GetAbsolutePath() + "/" + key;
-                
-                if (target.Children.TryGetValue(key, out var existing))
+                var key = kvp.Key;
+                var sourceNode = kvp.Value;
+
+                if (target.Children.TryGetValue(key, out var existingNode))
                 {
-                    if (value is ObjectNode sourceObj && existing is ObjectNode targetObj)
+                    if (sourceNode is ObjectNode sourceObj && existingNode is ObjectNode targetObj)
                     {
-                        // Recursive merge for objects
-                        MergeObjectInto(targetObj, sourceObj, level, tracker);
-                    }
-                    else if (value is ArrayNode sourceArr && existing is ArrayNode targetArr)
-                    {
-                        // Replace entire array (not merge)
-                        target.AddChild(value);
-                        tracker?.TrackOrigin(path, source.File, level);
+                        // Recursively merge objects
+                        MergeObjectInto(targetObj, sourceObj, sourceFile, layerIndex, tracker);
                     }
                     else
                     {
-                        // Override leaf value or different types
-                        target.AddChild(value);
-                        tracker?.TrackOrigin(path, source.File, level);
+                        // Replace non-object nodes
+                        target.Children[key] = sourceNode;
+                        TrackOriginsRecursive(sourceNode, sourceFile, layerIndex, tracker);
                     }
                 }
                 else
                 {
-                    // New value
-                    target.AddChild(value);
-                    tracker?.TrackOrigin(path, source.File, level);
+                    // Add new nodes
+                    target.Children[key] = sourceNode;
+                    TrackOriginsRecursive(sourceNode, sourceFile, layerIndex, tracker);
+                }
+            }
+        }
+
+        private static void TrackOriginsRecursive(DomNode node, Json5SourceFile file, int layerIndex, MergeOriginTracker tracker)
+        {
+            tracker.TrackOrigin(node.GetAbsolutePath(), file, layerIndex);
+
+            if (node is ObjectNode obj)
+            {
+                foreach (var child in obj.Children.Values)
+                {
+                    TrackOriginsRecursive(child, file, layerIndex, tracker);
+                }
+            }
+            else if (node is ArrayNode arr)
+            {
+                foreach (var item in arr.Items)
+                {
+                    TrackOriginsRecursive(item, file, layerIndex, tracker);
                 }
             }
         }
     }
 }
+

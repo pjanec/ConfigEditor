@@ -70,23 +70,5 @@ namespace ConfigDom
             return JsonDocument.Parse(buffer.ToArray()).RootElement.Clone();
         }
 
-        /// <summary>
-        /// Gets the absolute path to this node in the DOM tree.
-        /// </summary>
-        public string GetAbsolutePath()
-        {
-            var parts = new List<string>();
-            var current = this;
-            while (current != null)
-            {
-                if (current.Name != null)
-                {
-                    parts.Add(current.Name);
-                }
-                current = current.Parent as ObjectNode;
-            }
-            parts.Reverse();
-            return string.Join("/", parts);
-        }
     }
 }
