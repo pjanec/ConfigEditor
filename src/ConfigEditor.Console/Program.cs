@@ -1,6 +1,9 @@
 
+using ConfigDom;
 using ConfigDom.TestScaffold;
 
-DomEditorTestScaffold.Run();
+//DomEditorTestScaffold.Run();
 
-CascadeEditorTestScaffold.Run();
+//CascadeEditorTestScaffold.Run();
+
+BsonExportTest.Run();
