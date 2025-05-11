@@ -513,3 +513,324 @@ Array Editing: Numbered items. Delete key should delete selected. Insert key sho
 
 ---
 
+
+
+# Node Value Renderer and Editor
+
+``` csharp
+public interface INodeValueRenderer
+{
+    FrameworkElement BuildRendererView(DomNode node);
+    FrameworkElement? BuildHoverDetailsView(DomNode node); // Optional
+}
+
+public interface INodeValueEditor
+{
+    bool IsModal { get; }
+    FrameworkElement BuildEditorView(DomNode node);
+    bool TryGetEditedValue(out object newValue);
+    void CancelEdit();
+    void ConfirmEdit();
+}
+
+```
+
+
+
+
+
+# DomNodeViewModel
+
+
+
+``` csharp
+
+public class DomNodeViewModel : INotifyPropertyChanged
+{
+    // Reference to the wrapped DOM node
+    public DomNode DomNode { get; }
+
+    // Whether the node is currently selected
+    public bool IsSelected { get; set; }
+
+    // Whether the node is expanded in the tree
+    public bool IsExpanded { get; set; }
+
+    // Whether the node is being edited
+    public bool IsEditing { get; set; }
+
+    // Whether the node is currently visible (after filtering)
+    public bool IsVisible { get; set; } = true;
+
+    // Temporary editable value
+    public object? EditingValue { get; set; }
+
+    // Whether current editing value is invalid
+    public bool HasValidationError { get; set; }
+
+    // Optional error message for validation
+    public string? ValidationErrorMessage { get; set; }
+
+    // Active editor instance, if editing
+    public INodeValueEditor? EditorInstance { get; set; }
+
+    // Renderer instance, if needed
+    public INodeValueRenderer? RendererInstance { get; set; }
+
+    // Child ViewModels (for objects/arrays)
+    public List<DomNodeViewModel> Children { get; } = new();
+
+    // Cached CLR type of the node's value
+    public Type ValueClrType { get; }  // Cached on ViewModel creation
+
+
+```
+
+
+
+``` csharp
+/*
+
+Purpose
+ * Centralize all state management:
+ * DOM data
+ * ViewModel caching
+ * Selection and editing state
+ * Filter state
+ * UI expansion state
+
+Core Responsibilities
+ * Hold the Root DOM Node
+ * Manage ViewModels for All Nodes
+ * Track Current Selection and Editing
+ * Manage Filtering
+ * Coordinate Table Rendering State
+ 
+Behavioral Notes
+ * ViewModels are created on initialization, using the schema resolver to set ValueClrType.
+ * Filter recomputes the FilteredViewModels and auto-expands relevant parents.
+ * Selection state updates SelectedNodes and ensures only one ActiveEditor at a time.
+ * Clear() resets all state when the DOM is replaced.
+ 
+*/
+
+    /// <summary>
+    /// Manages global editor state including node viewmodels, selection, filtering, and editing.
+    /// </summary>
+    public class DomTableEditorViewModel
+    {
+        /// <summary>
+        /// Root DOM node of the loaded configuration.
+        /// </summary>
+        public ObjectNode RootNode { get; private set; }
+
+        /// <summary>
+        /// Cache of viewmodels for all nodes in the DOM tree.
+        /// </summary>
+        public Dictionary<DomNode, DomNodeViewModel> NodeViewModels { get; private set; } = new();
+
+        /// <summary>
+        /// Currently selected node(s) in the editor.
+        /// </summary>
+        public List<DomNodeViewModel> SelectedNodes { get; private set; } = new();
+
+        /// <summary>
+        /// Currently active editor, if any.
+        /// </summary>
+        public INodeValueEditor? ActiveEditor { get; private set; }
+
+        /// <summary>
+        /// Current live filter text.
+        /// </summary>
+        public string FilterText { get; private set; } = string.Empty;
+
+        /// <summary>
+        /// List of nodes visible after filtering.
+        /// </summary>
+        public List<DomNodeViewModel> FilteredViewModels { get; private set; } = new();
+
+        /// <summary>
+        /// Provides schema-based CLR type resolution.
+        /// </summary>
+        public DomSchemaTypeResolver SchemaTypeResolver { get; private set; }
+
+        /// <summary>
+        /// Initializes the viewmodel with the provided DOM root and schema resolver.
+        /// </summary>
+        public void Initialize(ObjectNode root, DomSchemaTypeResolver schemaResolver);
+
+        /// <summary>
+        /// Clears the current editor state and viewmodel cache.
+        /// </summary>
+        public void Clear();
+
+        /// <summary>
+        /// Selects a single node.
+        /// </summary>
+        public void SelectSingle(DomNodeViewModel node);
+
+        /// <summary>
+        /// Selects a range of nodes from start to end.
+        /// </summary>
+        public void SelectRange(DomNodeViewModel start, DomNodeViewModel end);
+
+        /// <summary>
+        /// Toggles selection state for a node.
+        /// </summary>
+        public void ToggleSelection(DomNodeViewModel node);
+
+        /// <summary>
+        /// Begins editing the specified node.
+        /// </summary>
+        public void BeginEdit(DomNodeViewModel node);
+
+        /// <summary>
+        /// Confirms the current edit, applying changes.
+        /// </summary>
+        public void ConfirmEdit();
+
+        /// <summary>
+        /// Cancels the current edit, reverting changes.
+        /// </summary>
+        public void CancelEdit();
+
+        /// <summary>
+        /// Applies a live filter to the node tree.
+        /// </summary>
+        public void ApplyFilter(string filterText);
+
+        /// <summary>
+        /// Clears the active filter and resets visibility.
+        /// </summary>
+        public void ClearFilter();
+
+        /// <summary>
+        /// Retrieves the viewmodel associated with a given DOM node.
+        /// </summary>
+        public DomNodeViewModel GetViewModelForNode(DomNode node);
+    }
+
+```
+
+# **✅ User Interaction Model for DOM Table Editor**
+
+## **1\. Interaction Groups**
+
+### **1.1 Tree Navigation**
+
+* **Arrow Up/Down**: Move selection **up/down** the visible, filtered node list.
+
+* **Shift \+ Arrow Up/Down**: Extend selection **up/down** (multi-select).
+
+### **1.2 Node Selection**
+
+* **Click on Node Row**:
+
+  * **Single select** that node.
+
+  * **No edit starts automatically**.
+
+* **Ctrl \+ Click**: **Toggle multi-select** on node.
+
+* **Shift \+ Click**: **Range select** from active to clicked.
+
+### **1.3 Editing Activation**
+
+* **Enter or Double-Click on Selected Node**:
+
+  * **Starts editor** if one exists for the node’s type.
+
+---
+
+## **2\. Editing Behavior**
+
+### **2.1 For Primitive or Inline Editable Types (TextBox, Checkbox)**
+
+* **Starts editing inline** after activation.
+
+* **Applies on LostFocus or Enter**.
+
+* **Cancels on Escape**.
+
+### **2.2 For Complex or Modal Editors (ComboBox, Dialog)**
+
+* **Starts modal or dropdown** on activation.
+
+* **Applies on Selection Change, LostFocus, or Confirm Button**.
+
+* **Cancels on Escape or Cancel Button**.
+
+### **2.3 Editing Lifecycle**
+
+* **BeginEdit(node)**: Prepares the editor instance, stores initial value.
+
+* **ConfirmEdit()**: Validates and commits changes.
+
+* **CancelEdit()**: Restores the original value.
+
+---
+
+## **3\. Array Editing**
+
+### **3.1 Item Manipulation**
+
+* **Delete Key**: Deletes selected items.
+
+* **Insert Key**: Inserts default item(s) above selection.
+
+* **Ctrl+C / Ctrl+V**: Copies and pastes selected items above selection.
+
+* **Pseudo-Item at End**: Inserts at end on click or Enter.
+
+### **3.2 Editing Activation**
+
+* **Requires Enter or Double-Click** (never starts on navigation alone).
+
+* **Expands children** if no editor is assigned for the array item type.
+
+---
+
+## **4\. Filtering Interaction**
+
+### **4.1 Filter Application**
+
+* **Live updates** as the user types in the filter box.
+
+* **Matches node names** (partial, case-insensitive).
+
+* **Expands parents** of matching nodes to show context.
+
+### **4.2 Clear Filter**
+
+* **Esc clears filter** when filter box is focused.
+
+* **Collapses tree** back to default state.
+
+---
+
+## **5\. Visual Feedback**
+
+* **Highlight** for current selection.
+
+* **Expansion indicator** for expandable nodes.
+
+* **Edit mode indicator** (e.g., border or background change).
+
+* **Validation error indicator** (e.g., red border or tooltip).
+
+---
+
+## **6\. User Guidance**
+
+* **Optional legend** explaining:
+
+  * Arrow Keys \= Navigate
+
+  * Enter/Double-Click \= Edit
+
+  * Esc \= Cancel or Clear Filter
+
+  * Ctrl+Click / Shift+Click \= Multi-Select
+
+  * Delete/Insert/Ctrl+C/Ctrl+V \= Array Editing
+
