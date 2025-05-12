@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using WpfUI.Models;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace WpfUI.ViewModels;
 
@@ -100,7 +102,25 @@ public class DomNodeViewModel : INotifyPropertyChanged
     /// </summary>
     private void BuildChildren()
     {
-        // ... existing code ...
+        if (DomNode is ObjectNode objectNode)
+        {
+            foreach (var child in objectNode.Children.Values)
+            {
+                var childType = child is ValueNode ? ValueClrType : typeof(object);
+                var childVm = new DomNodeViewModel(child, childType);
+                Children.Add(childVm);
+            }
+        }
+        else if (DomNode is ArrayNode arrayNode)
+        {
+            for (int i = 0; i < arrayNode.Items.Count; i++)
+            {
+                var item = arrayNode.Items[i];
+                var itemType = item is ValueNode ? ValueClrType.GetGenericArguments()[0] : typeof(object);
+                var itemVm = new DomNodeViewModel(item, itemType);
+                Children.Add(itemVm);
+            }
+        }
     }
 
     /// <summary>
@@ -110,7 +130,54 @@ public class DomNodeViewModel : INotifyPropertyChanged
     /// </summary>
     public void UpdateValidation()
     {
-        // ... existing code ...
+        if (DomNode is ValueNode valueNode)
+        {
+            try
+            {
+                var value = valueNode.Value;
+                if (value.ValueKind == JsonValueKind.Null && !ValueClrType.IsValueType)
+                {
+                    HasValidationError = false;
+                    ValidationErrorMessage = null;
+                }
+                else
+                {
+                    JsonSerializer.Deserialize(value.GetRawText(), ValueClrType);
+                    HasValidationError = false;
+                    ValidationErrorMessage = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                HasValidationError = true;
+                ValidationErrorMessage = ex.Message;
+            }
+        }
+        else if (DomNode is ArrayNode arrayNode)
+        {
+            var itemType = ValueClrType.GetGenericArguments()[0];
+            var hasError = false;
+            var errorMessage = new List<string>();
+
+            foreach (var item in arrayNode.Items)
+            {
+                if (item is ValueNode valueItem)
+                {
+                    try
+                    {
+                        JsonSerializer.Deserialize(valueItem.Value.GetRawText(), itemType);
+                    }
+                    catch (Exception ex)
+                    {
+                        hasError = true;
+                        errorMessage.Add($"Item {arrayNode.Items.IndexOf(item)}: {ex.Message}");
+                    }
+                }
+            }
+
+            HasValidationError = hasError;
+            ValidationErrorMessage = hasError ? string.Join("\n", errorMessage) : null;
+        }
     }
 
     /// <summary>
@@ -119,6 +186,17 @@ public class DomNodeViewModel : INotifyPropertyChanged
     /// </summary>
     public string GetNodePath()
     {
-        // ... existing code ...
+        var path = new List<string>();
+        var current = DomNode;
+        
+        while (current != null)
+        {
+            path.Add(current.Name);
+            current = current.Parent;
+        }
+        
+        path.Reverse();
+        return string.Join("/", path);
     }
+
 } 

@@ -109,7 +109,7 @@ namespace WpfUI
 		{
 			if (sender is FrameworkElement element && element.DataContext is DomNodeViewModel node)
 			{
-				_viewModel.HandleMouseClick(node, e.ChangedButton, Keyboard.Modifiers);
+				_viewModel.SelectNode(node);
 			}
 		}
 

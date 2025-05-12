@@ -4,14 +4,14 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:WpfUI"
-        xmlns:vm="clr-namespace:WpfUI.ViewModels"
         xmlns:controls="clr-namespace:WpfUI.Controls"
+        xmlns:converters="clr-namespace:WpfUI.Converters"
         mc:Ignorable="d"
         Title="DOM Tree Editor" Height="600" Width="800">
     
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
-        <local:ArrayItemNumberConverter x:Key="ArrayItemNumberConverter"/>
+        <converters:ArrayItemNumberConverter x:Key="ArrayItemNumberConverter"/>
+        <controls:EditorTemplateSelector x:Key="EditorTemplateSelector"/>
         
         <!-- Validation Error Template -->
         <ControlTemplate x:Key="ValidationErrorTemplate">
@@ -108,67 +108,49 @@
                               ContentTemplateSelector="{StaticResource EditorTemplateSelector}"/>
             </StackPanel>
         </DataTemplate>
-
-        <!-- Template Selector -->
-        <controls:EditorTemplateSelector x:Key="EditorTemplateSelector"/>
     </Window.Resources>
 
     <DockPanel>
         <!-- Toolbar -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="5">
-            <TextBox Width="200" Margin="0,0,10,0"
+            <TextBox Width="200" Margin="0,0,10,0" 
                      Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
-                     ToolTip="Filter nodes by name"/>
-            <Button Content="Undo" Command="{Binding UndoCommand}" Margin="0,0,5,0"/>
-            <Button Content="Redo" Command="{Binding RedoCommand}" Margin="0,0,5,0"/>
-            <Separator Margin="5,0"/>
+                     />
             <Button Content="Copy" Command="{Binding CopyArrayItemCommand}" Margin="0,0,5,0"/>
-            <Button Content="Paste" Command="{Binding PasteArrayItemCommand}" Margin="0,0,5,0"/>
-            <Button Content="Insert" Command="{Binding InsertArrayItemCommand}" Margin="0,0,5,0"/>
-            <Button Content="Delete" Command="{Binding DeleteArrayItemCommand}"/>
+            <Button Content="Paste" Command="{Binding PasteArrayItemCommand}"/>
         </StackPanel>
 
-        <!-- Main Tree View -->
+        <!-- Main Table / Tree View -->
         <Grid>
-            <TreeView ItemsSource="{Binding FilteredViewModels}"
-                      KeyDown="TreeView_KeyDown"
-                      KeyUp="TreeView_KeyUp">
+            <TreeView ItemsSource="{Binding FilteredViewModels}">
                 <TreeView.ItemTemplate>
                     <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                        <Grid MouseDoubleClick="Grid_MouseDoubleClick"
-                              MouseDown="Grid_MouseDown">
+                        <Grid MouseDown="Grid_MouseDown">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="2*"/>
                                 <ColumnDefinition Width="3*"/>
                             </Grid.ColumnDefinitions>
 
                             <!-- Node Name -->
-                            <ContentControl Grid.Column="0" 
-                                          Content="{Binding}"
-                                          ContentTemplate="{StaticResource NodeNameTemplate}"/>
+                            <TextBlock Grid.Column="0" 
+                                     Text="{Binding DomNode.Name, Converter={StaticResource ArrayItemNumberConverter}}" 
+                                     TextWrapping="Wrap"/>
 
                             <!-- Node Value -->
-                            <Grid Grid.Column="1">
-                                <ContentControl Content="{Binding}"
-                                              ContentTemplateSelector="{StaticResource EditorTemplateSelector}"/>
-                                <Popup IsOpen="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}"
-                                       PlacementTarget="{Binding ElementName=ValueContent}"
-                                       Placement="Right">
-                                    <ContentControl Content="{Binding}"
-                                                  ContentTemplate="{StaticResource HoverDetailsTemplate}"/>
-                                </Popup>
-                            </Grid>
+                            <ContentControl Grid.Column="1" 
+                                          Content="{Binding}" 
+                                          ContentTemplateSelector="{StaticResource EditorTemplateSelector}"/>
                         </Grid>
                     </HierarchicalDataTemplate>
                 </TreeView.ItemTemplate>
             </TreeView>
         </Grid>
 
-        <!-- Validation Panel -->
-        <TextBlock DockPanel.Dock="Bottom"
-                   Text="{Binding ValidationMessage}"
-                   Foreground="Red"
-                   Margin="5"
-                   Visibility="{Binding HasValidationMessage, Converter={StaticResource BoolToVisibilityConverter}}"/>
+        <!-- Validation / Error Panel -->
+        <TextBlock DockPanel.Dock="Bottom" 
+                   Text="{Binding ValidationMessage}" 
+                   Foreground="Red" 
+                   Margin="5" 
+                   Visibility="{Binding HasValidationMessage, Converter={StaticResource BooleanToVisibilityConverter}}"/>
     </DockPanel>
 </Window>

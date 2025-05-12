@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using WpfUI.Models;
 using WpfUI.ViewModels;
 
 namespace WpfUI.Commands;

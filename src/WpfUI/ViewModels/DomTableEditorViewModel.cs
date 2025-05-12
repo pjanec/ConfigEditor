@@ -7,6 +7,7 @@ using WpfUI.Commands;
 using WpfUI.Models;
 using System.Text.Json;
 using System.Windows;
+using WpfUI.Windows;
 
 namespace WpfUI.ViewModels;
 
