@@ -81,8 +81,10 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         InsertArrayItemCommand = new RelayCommand(InsertArrayItem, CanInsertArrayItem);
         CopyArrayItemCommand = new RelayCommand(CopyArrayItem, CanCopyArrayItem);
         PasteArrayItemCommand = new RelayCommand(PasteArrayItem, CanPasteArrayItem);
-        UndoCommand = new RelayCommand(Undo, CanUndo);
-        RedoCommand = new RelayCommand(Redo, CanRedo);
+        
+        // FIXME: does not compile
+        //UndoCommand = new RelayCommand(Undo, CanUndo);
+        //RedoCommand = new RelayCommand(Redo, CanRedo);
     }
 
     /// <summary>
@@ -409,7 +411,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
 
         foreach (var item in _clipboardItems)
         {
-            var newItem = new ValueNode($"Item {targetArray.Items.Count + 1}", item.Value);
+            var newItem = new ValueNode($"Item {targetArray.Items.Count + 1}", (item as ValueNode)?.Value??new JsonElement());
             targetArray.Items.Insert(insertIndex++, newItem);
             var viewModel = new DomNodeViewModel(newItem, arrayItemType);
             _nodeViewModels[newItem] = viewModel;
@@ -561,7 +563,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         if (change.Node is ValueNode valueNode)
         {
             var oldValue = valueNode.Value;
-            valueNode.Value = isUndo ? change.OldValue : change.NewValue;
+            valueNode.Value = isUndo ? (JsonElement)change.OldValue : (JsonElement)change.NewValue;
             if (_nodeViewModels.TryGetValue(change.Node, out var vm))
             {
                 vm.OnPropertyChanged(nameof(DomNodeViewModel.DomNode));
@@ -721,7 +723,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         if (string.IsNullOrEmpty(path)) return null;
 
         var parts = path.Split('/');
-        var current = _rootNode;
+        DomNode current = _rootNode;
 
         for (int i = 1; i < parts.Length; i++) // Skip "Root"
         {
@@ -745,6 +747,54 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
 
         return current;
     }
+	private void ToggleSelection( DomNodeViewModel node )
+	{
+		if( _selectedNodes.Contains( node ) )
+		{
+			node.IsSelected = false;
+			_selectedNodes.Remove( node );
+		}
+		else
+		{
+			node.IsSelected = true;
+			_selectedNodes.Add( node );
+		}
+
+		OnPropertyChanged( nameof( SelectedNodes ) );
+	}
+	private void SelectRange( DomNodeViewModel startNode, DomNodeViewModel endNode )
+	{
+		if( startNode == null || endNode == null ) return;
+
+		// Get the indices of the start and end nodes in the filtered viewmodels
+		int startIndex = _filteredViewModels.IndexOf( startNode );
+		int endIndex = _filteredViewModels.IndexOf( endNode );
+
+		if( startIndex == -1 || endIndex == -1 ) return;
+
+		// Ensure the range is in the correct order
+		if( startIndex > endIndex )
+		{
+			(startIndex, endIndex) = (endIndex, startIndex);
+		}
+
+		// Clear the current selection
+		foreach( var node in _selectedNodes )
+		{
+			node.IsSelected = false;
+		}
+		_selectedNodes.Clear();
+
+		// Select all nodes in the range
+		for( int i = startIndex; i <= endIndex; i++ )
+		{
+			var node = _filteredViewModels[i];
+			node.IsSelected = true;
+			_selectedNodes.Add( node );
+		}
+
+		OnPropertyChanged( nameof( SelectedNodes ) );
+	}
 }
 
 /// <summary>
