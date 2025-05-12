@@ -834,3 +834,53 @@ Behavioral Notes
 
   * Delete/Insert/Ctrl+C/Ctrl+V \= Array Editing
 
+# **✅ Formal Copy/Paste Specification for Array Node Items**
+
+## **1\. Copy Behavior**
+
+### **Scope**
+
+* **Applies only to array items.**
+
+### **Rules**
+
+* Only **currently selected items** in the same array can be copied.
+
+* Only allowed if **all selected items share the same CLR type**.
+
+### **Clipboard Content**
+
+* **Deep clones** of the selected array items.
+
+* **Clipboard remembers the CLR type** of the copied items for validation on paste.
+
+---
+
+## **2\. Paste Behavior**
+
+### **Scope**
+
+* **Paste target must be an array**.
+
+* **Paste allowed only if:**
+
+  * The **target array’s item type matches** the clipboard’s item type.
+
+  * The clipboard contains **only one type** of item.
+
+### **Paste Target Position**
+
+* **Inserts items above the first selected item** if selection exists in the array.
+
+* **Otherwise inserts at the end**.
+
+### **Invalid Paste Handling**
+
+* **Paste is disabled** or **has no effect** if:
+
+  * The target is **not an array**.
+
+  * The target array’s **item type does not match** the clipboard’s item type.
+
+  * The clipboard **contains mixed types**.
+
