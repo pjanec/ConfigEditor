@@ -578,7 +578,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
                         foreach (var item in items)
                         {
                             arrayNode.Items.Add(item);
-                            BuildChildren(NodeViewModels[item]);
+                            BuildChildren(_nodeViewModels[item]);
                         }
                     }
                     else
@@ -602,7 +602,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
                     {
                         var item = (DomNode)change.OldValue;
                         arrayNode.Items.Add(item);
-                        BuildChildren(NodeViewModels[item]);
+                        BuildChildren(_nodeViewModels[item]);
                     }
                     break;
             }
