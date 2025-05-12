@@ -17,27 +17,30 @@ namespace WpfUI.ViewModels;
 /// </summary>
 public class DomTableEditorViewModel : INotifyPropertyChanged
 {
-    public ObjectNode RootNode { get; private set; }
-    public Dictionary<DomNode, DomNodeViewModel> NodeViewModels { get; } = new();
-    public List<DomNodeViewModel> SelectedNodes { get; } = new();
-    public INodeValueEditor? ActiveEditor { get; private set; }
-    public string FilterText { get; private set; } = string.Empty;
-    public List<DomNodeViewModel> FilteredViewModels { get; } = new();
-    public DomSchemaTypeResolver SchemaTypeResolver { get; }
-    public DomEditorRegistry EditorRegistry { get; }
+    private readonly DomSchemaTypeResolver _schemaResolver;
+    private readonly DomEditorRegistry _editorRegistry;
+    private ObjectNode _rootNode;
+    private Dictionary<DomNode, DomNodeViewModel> _nodeViewModels = new();
+    private List<DomNodeViewModel> _selectedNodes = new();
+    private INodeValueEditor? _activeEditor;
+    private string _filterText = string.Empty;
+    private List<DomNodeViewModel> _filteredViewModels = new();
 
-    private string? _validationMessage;
-    public string? ValidationMessage
-    {
-        get => _validationMessage;
-        set => SetField(ref _validationMessage, value);
-    }
-
-    private bool _hasValidationMessage;
-    public bool HasValidationMessage
-    {
-        get => _hasValidationMessage;
-        set => SetField(ref _hasValidationMessage, value);
+    public ObjectNode RootNode => _rootNode;
+    public IReadOnlyList<DomNodeViewModel> FilteredViewModels => _filteredViewModels;
+    public IReadOnlyList<DomNodeViewModel> SelectedNodes => _selectedNodes;
+    public INodeValueEditor? ActiveEditor => _activeEditor;
+    public string FilterText 
+    { 
+        get => _filterText;
+        set
+        {
+            if (_filterText != value)
+            {
+                _filterText = value;
+                ApplyFilter(value);
+            }
+        }
     }
 
     public ICommand EditNodeCommand { get; }
@@ -59,15 +62,25 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
     private readonly Stack<List<DomChange>> _redoStack = new();
     private const int MaxUndoStackSize = 100;
 
-    public DomTableEditorViewModel(DomSchemaTypeResolver schemaTypeResolver, DomEditorRegistry editorRegistry)
+    public string ValidationMessage { get; set; }
+
+    private bool _hasValidationMessage;
+    public bool HasValidationMessage
     {
-        SchemaTypeResolver = schemaTypeResolver;
-        EditorRegistry = editorRegistry;
-        EditNodeCommand = new EditNodeCommand(this);
-        DeleteArrayItemCommand = new DeleteArrayItemCommand(this);
-        InsertArrayItemCommand = new InsertArrayItemCommand(this);
-        CopyArrayItemCommand = new CopyArrayItemCommand(this);
-        PasteArrayItemCommand = new PasteArrayItemCommand(this);
+        get => _hasValidationMessage;
+        set => SetField(ref _hasValidationMessage, value);
+    }
+
+    public DomTableEditorViewModel(DomSchemaTypeResolver schemaResolver, DomEditorRegistry editorRegistry)
+    {
+        _schemaResolver = schemaResolver;
+        _editorRegistry = editorRegistry;
+
+        EditNodeCommand = new RelayCommand(EditNode, CanEditNode);
+        DeleteArrayItemCommand = new RelayCommand(DeleteArrayItem, CanDeleteArrayItem);
+        InsertArrayItemCommand = new RelayCommand(InsertArrayItem, CanInsertArrayItem);
+        CopyArrayItemCommand = new RelayCommand(CopyArrayItem, CanCopyArrayItem);
+        PasteArrayItemCommand = new RelayCommand(PasteArrayItem, CanPasteArrayItem);
         UndoCommand = new RelayCommand(Undo, CanUndo);
         RedoCommand = new RelayCommand(Redo, CanRedo);
     }
@@ -78,143 +91,119 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
     /// </summary>
     public void Initialize(ObjectNode root)
     {
-        RootNode = root;
-        BuildViewModelTree(root);
-        ApplyFilter(FilterText);
+        _rootNode = root;
+        _nodeViewModels.Clear();
+        _selectedNodes.Clear();
+        _activeEditor = null;
+        _filterText = string.Empty;
+        BuildViewModelTree();
+        UpdateFilteredViewModels();
     }
 
     /// <summary>
     /// Recursively builds the viewmodel tree from the DOM structure.
     /// Creates and caches viewmodels for all nodes, resolving their CLR types from the schema.
     /// </summary>
-    private void BuildViewModelTree(DomNode node)
+    private void BuildViewModelTree()
     {
-        var type = SchemaTypeResolver.ResolveType(node) ?? typeof(object);
-        var viewModel = new DomNodeViewModel(node, type);
-        NodeViewModels[node] = viewModel;
+        var rootVm = new DomNodeViewModel(_rootNode, typeof(object));
+        _nodeViewModels[_rootNode] = rootVm;
+        BuildChildren(rootVm);
+    }
 
-        if (node is ObjectNode objectNode)
+    private void BuildChildren(DomNodeViewModel parentVm)
+    {
+        if (parentVm.DomNode is ObjectNode objectNode)
         {
             foreach (var child in objectNode.Children.Values)
             {
-                BuildViewModelTree(child);
-                viewModel.Children.Add(NodeViewModels[child]);
+                var childType = _schemaResolver.ResolveType(child);
+                var childVm = new DomNodeViewModel(child, childType);
+                _nodeViewModels[child] = childVm;
+                parentVm.Children.Add(childVm);
+                BuildChildren(childVm);
             }
         }
-        else if (node is ArrayNode arrayNode)
+        else if (parentVm.DomNode is ArrayNode arrayNode)
         {
-            foreach (var item in arrayNode.Items)
+            for (int i = 0; i < arrayNode.Items.Count; i++)
             {
-                BuildViewModelTree(item);
-                viewModel.Children.Add(NodeViewModels[item]);
+                var item = arrayNode.Items[i];
+                var itemType = _schemaResolver.ResolveType(item);
+                var itemVm = new DomNodeViewModel(item, itemType);
+                _nodeViewModels[item] = itemVm;
+                parentVm.Children.Add(itemVm);
+                BuildChildren(itemVm);
             }
         }
     }
 
-    public void SelectSingle(DomNodeViewModel node)
+    public void SelectNode(DomNodeViewModel node)
     {
-        SelectedNodes.Clear();
-        SelectedNodes.Add(node);
-        OnPropertyChanged(nameof(SelectedNodes));
+        if (_activeEditor != null) return;
+
+        _selectedNodes.Clear();
+        _selectedNodes.Add(node);
+        node.IsSelected = true;
     }
 
-    public void SelectRange(DomNodeViewModel start, DomNodeViewModel end)
+    private void EditNode(object? parameter)
     {
-        if (start == null || end == null) return;
-
-        var startIndex = FilteredViewModels.IndexOf(start);
-        var endIndex = FilteredViewModels.IndexOf(end);
-
-        if (startIndex == -1 || endIndex == -1) return;
-
-        var minIndex = Math.Min(startIndex, endIndex);
-        var maxIndex = Math.Max(startIndex, endIndex);
-
-        SelectedNodes.Clear();
-        for (int i = minIndex; i <= maxIndex; i++)
+        if (parameter is DomNodeViewModel node && CanEditNode(node))
         {
-            SelectedNodes.Add(FilteredViewModels[i]);
+            BeginEdit(node);
         }
-
-        OnPropertyChanged(nameof(SelectedNodes));
     }
 
-    public void ToggleSelection(DomNodeViewModel node)
+    private bool CanEditNode(object? parameter)
     {
-        if (SelectedNodes.Contains(node))
-        {
-            SelectedNodes.Remove(node);
-        }
-        else
-        {
-            SelectedNodes.Add(node);
-        }
-        OnPropertyChanged(nameof(SelectedNodes));
+        return parameter is DomNodeViewModel node && 
+               _activeEditor == null && 
+               node.DomNode is ValueNode;
     }
 
-    /// <summary>
-    /// Begins editing a node by activating its appropriate editor.
-    /// For modal editors, opens a dialog window to host the editor view.
-    /// </summary>
-    public void BeginEdit(DomNodeViewModel node)
+    private void DeleteArrayItem(object? parameter)
     {
-        if (ActiveEditor != null)
-            return;
-
-        var editor = EditorRegistry.GetEditor(node.ValueClrType);
-        if (editor == null)
-            return;
-
-        ActiveEditor = editor;
-        node.IsEditing = true;
-
-        if (editor.IsModal)
-        {
-            var editorView = editor.BuildEditorView(node.DomNode);
-            var dialog = new ModalEditorWindow();
-            dialog.SetContent(editorView);
-            dialog.Owner = Application.Current.MainWindow;
-
-            if (dialog.ShowDialog() == true)
-            {
-                ConfirmEdit();
-            }
-            else
-            {
-                CancelEdit();
-            }
-        }
-
-        OnPropertyChanged(nameof(ActiveEditor));
+        // Implementation will be added
     }
 
-    public void ConfirmEdit()
+    private bool CanDeleteArrayItem(object? parameter)
     {
-        if (ActiveEditor == null)
-            return;
-
-        if (ActiveEditor.TryGetEditedValue(out var newValue))
-        {
-            if (SelectedNodes.Count == 1 && SelectedNodes[0].DomNode is ValueNode valueNode)
-            {
-                var oldValue = valueNode.Value;
-                valueNode.Value = JsonSerializer.SerializeToElement(newValue);
-                RecordChange(valueNode, oldValue, valueNode.Value, "Edit");
-            }
-        }
-
-        ActiveEditor = null;
-        OnPropertyChanged(nameof(ActiveEditor));
+        return _selectedNodes.Count > 0 && 
+               _selectedNodes[0].DomNode.Parent is ArrayNode;
     }
 
-    public void CancelEdit()
+    private void InsertArrayItem(object? parameter)
     {
-        if (ActiveEditor == null)
-            return;
+        // Implementation will be added
+    }
 
-        ActiveEditor.CancelEdit();
-        ActiveEditor = null;
-        OnPropertyChanged(nameof(ActiveEditor));
+    private bool CanInsertArrayItem(object? parameter)
+    {
+        return _selectedNodes.Count > 0 && 
+               _selectedNodes[0].DomNode.Parent is ArrayNode;
+    }
+
+    private void CopyArrayItem(object? parameter)
+    {
+        // Implementation will be added
+    }
+
+    private bool CanCopyArrayItem(object? parameter)
+    {
+        return _selectedNodes.Count > 0 && 
+               _selectedNodes[0].DomNode.Parent is ArrayNode;
+    }
+
+    private void PasteArrayItem(object? parameter)
+    {
+        // Implementation will be added
+    }
+
+    private bool CanPasteArrayItem(object? parameter)
+    {
+        return _selectedNodes.Count > 0 && 
+               _selectedNodes[0].DomNode.Parent is ArrayNode;
     }
 
     /// <summary>
@@ -224,7 +213,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
     /// </summary>
     public void ApplyFilter(string filterText)
     {
-        FilterText = filterText;
+        _filterText = filterText;
         UpdateFilteredViewModels();
         OnPropertyChanged(nameof(FilterText));
         OnPropertyChanged(nameof(FilteredViewModels));
@@ -232,47 +221,30 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
 
     private void UpdateFilteredViewModels()
     {
-        FilteredViewModels.Clear();
-        if (string.IsNullOrWhiteSpace(FilterText))
+        _filteredViewModels.Clear();
+        if (string.IsNullOrWhiteSpace(_filterText))
         {
-            FilteredViewModels.Add(NodeViewModels[RootNode]);
-            return;
+            _filteredViewModels.Add(_nodeViewModels[_rootNode]);
         }
-
-        var filterLower = FilterText.ToLower();
-        var hasMatches = false;
-
-        // First pass: Mark matching nodes and their parents
-        foreach (var vm in NodeViewModels.Values)
+        else
         {
-            vm.IsVisible = vm.DomNode.Name.ToLower().Contains(filterLower);
-            if (vm.IsVisible)
+            var matchingNodes = _nodeViewModels.Values
+                .Where(vm => vm.DomNode.Name.Contains(_filterText, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (matchingNodes.Any())
             {
-                hasMatches = true;
-                // Expand all parent nodes
-                var parent = vm.DomNode.Parent;
-                while (parent != null)
+                // Add root and expand parents of matching nodes
+                _filteredViewModels.Add(_nodeViewModels[_rootNode]);
+                foreach (var node in matchingNodes)
                 {
-                    if (NodeViewModels.TryGetValue(parent, out var parentVm))
-                    {
-                        parentVm.IsExpanded = true;
-                    }
-                    parent = parent.Parent;
+                    ExpandParents(node);
                 }
             }
         }
 
-        // Second pass: Add visible nodes to filtered list
-        foreach (var vm in NodeViewModels.Values)
-        {
-            if (vm.IsVisible)
-            {
-                FilteredViewModels.Add(vm);
-            }
-        }
-
         // Update validation message for no matches
-        if (!hasMatches)
+        if (!_filteredViewModels.Any())
         {
             ValidationMessage = "No matches found";
             HasValidationMessage = true;
@@ -286,11 +258,60 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(FilteredViewModels));
     }
 
+    private void ExpandParents(DomNodeViewModel node)
+    {
+        var current = node;
+        while (current.DomNode.Parent != null)
+        {
+            var parentVm = _nodeViewModels[current.DomNode.Parent];
+            parentVm.IsExpanded = true;
+            current = parentVm;
+        }
+    }
+
+    /// <summary>
+    /// Begins editing a node by activating its appropriate editor.
+    /// For modal editors, opens a dialog window to host the editor view.
+    /// </summary>
+    public void BeginEdit(DomNodeViewModel node)
+    {
+        if (_activeEditor != null)
+            return;
+
+        var editor = _editorRegistry.GetEditor(node.ValueClrType);
+        if (editor == null)
+            return;
+
+        node.IsEditing = true;
+        _activeEditor = editor;
+
+        if (editor.IsModal)
+        {
+            var editorView = editor.BuildEditorView(node.DomNode);
+            var dialog = new ModalEditorWindow();
+            dialog.SetContent(editorView);
+            dialog.Owner = Application.Current.MainWindow;
+
+            if (dialog.ShowDialog() == true)
+            {
+                editor.ConfirmEdit();
+            }
+            else
+            {
+                editor.CancelEdit();
+            }
+            node.IsEditing = false;
+            _activeEditor = null;
+        }
+
+        OnPropertyChanged(nameof(ActiveEditor));
+    }
+
     public void DeleteSelectedArrayItems()
     {
-        if (ActiveEditor != null) return;
+        if (_activeEditor != null) return;
 
-        var arrayNodes = SelectedNodes
+        var arrayNodes = _selectedNodes
             .Where(n => n.DomNode.Parent is ArrayNode)
             .GroupBy(n => n.DomNode.Parent)
             .ToList();
@@ -304,22 +325,22 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
                 {
                     deletedItems.Add(node.DomNode);
                     arrayNode.Items.Remove(node.DomNode);
-                    NodeViewModels.Remove(node.DomNode);
+                    _nodeViewModels.Remove(node.DomNode);
                 }
                 RecordChange(arrayNode, deletedItems, null, "Delete");
             }
         }
 
-        SelectedNodes.Clear();
+        _selectedNodes.Clear();
         OnPropertyChanged(nameof(SelectedNodes));
         OnPropertyChanged(nameof(FilteredViewModels));
     }
 
     public void InsertArrayItemAboveSelection()
     {
-        if (ActiveEditor != null) return;
+        if (_activeEditor != null) return;
 
-        var arrayNodes = SelectedNodes
+        var arrayNodes = _selectedNodes
             .Where(n => n.DomNode.Parent is ArrayNode)
             .GroupBy(n => n.DomNode.Parent)
             .ToList();
@@ -328,15 +349,15 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         {
             if (group.Key is ArrayNode arrayNode)
             {
-                var firstSelectedIndex = arrayNode.Items.IndexOf(group.First().DomNode);
-                var itemType = SchemaTypeResolver.ResolveType(arrayNode)?.GetGenericArguments()[0] ?? typeof(object);
+                var firstSelectedIndex = arrayNode.Items.IndexOf(_selectedNodes.First().DomNode);
+                var itemType = _schemaResolver.ResolveType(arrayNode)?.GetGenericArguments()[0] ?? typeof(object);
                 
                 var newItem = new ValueNode($"Item {arrayNode.Items.Count + 1}", 
                     JsonSerializer.SerializeToElement(Activator.CreateInstance(itemType)));
                 
                 arrayNode.Items.Insert(firstSelectedIndex, newItem);
                 var viewModel = new DomNodeViewModel(newItem, itemType);
-                NodeViewModels[newItem] = viewModel;
+                _nodeViewModels[newItem] = viewModel;
                 RecordChange(arrayNode, null, newItem, "Insert");
             }
         }
@@ -346,9 +367,9 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
 
     public void CopySelectedArrayItems()
     {
-        if (ActiveEditor != null) return;
+        if (_activeEditor != null) return;
 
-        var arrayItems = SelectedNodes
+        var arrayItems = _selectedNodes
             .Where(n => n.DomNode.Parent is ArrayNode)
             .Select(n => n.DomNode)
             .ToList();
@@ -356,11 +377,11 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         if (!arrayItems.Any()) return;
 
         var firstItem = arrayItems.First();
-        var itemType = SchemaTypeResolver.ResolveType(firstItem);
+        var itemType = _schemaResolver.ResolveType(firstItem);
         if (itemType == null) return;
 
         // Verify all items are of the same type
-        if (arrayItems.Any(item => SchemaTypeResolver.ResolveType(item) != itemType))
+        if (arrayItems.Any(item => _schemaResolver.ResolveType(item) != itemType))
             return;
 
         _clipboardItems = arrayItems;
@@ -369,21 +390,21 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
 
     public void PasteArrayItems()
     {
-        if (ActiveEditor != null || _clipboardItems == null || _clipboardItemType == null) return;
+        if (_activeEditor != null || _clipboardItems == null || _clipboardItemType == null) return;
 
-        var targetArray = SelectedNodes
+        var targetArray = _selectedNodes
             .FirstOrDefault(n => n.DomNode is ArrayNode)
             ?.DomNode as ArrayNode;
 
         if (targetArray == null) return;
 
-        var arrayItemType = SchemaTypeResolver.ResolveType(targetArray)?.GetGenericArguments()[0];
+        var arrayItemType = _schemaResolver.ResolveType(targetArray)?.GetGenericArguments()[0];
         if (arrayItemType != _clipboardItemType) return;
 
         var insertIndex = targetArray.Items.Count;
-        if (SelectedNodes.Any(n => n.DomNode.Parent == targetArray))
+        if (_selectedNodes.Any(n => n.DomNode.Parent == targetArray))
         {
-            insertIndex = targetArray.Items.IndexOf(SelectedNodes.First(n => n.DomNode.Parent == targetArray).DomNode);
+            insertIndex = targetArray.Items.IndexOf(_selectedNodes.First(n => n.DomNode.Parent == targetArray).DomNode);
         }
 
         foreach (var item in _clipboardItems)
@@ -391,7 +412,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
             var newItem = new ValueNode($"Item {targetArray.Items.Count + 1}", item.Value);
             targetArray.Items.Insert(insertIndex++, newItem);
             var viewModel = new DomNodeViewModel(newItem, arrayItemType);
-            NodeViewModels[newItem] = viewModel;
+            _nodeViewModels[newItem] = viewModel;
         }
 
         OnPropertyChanged(nameof(FilteredViewModels));
@@ -399,7 +420,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
 
     public void HandleKeyDown(Key key, ModifierKeys modifiers)
     {
-        if (ActiveEditor != null) return;
+        if (_activeEditor != null) return;
 
         _isShiftPressed = (modifiers & ModifierKeys.Shift) != 0;
         _isCtrlPressed = (modifiers & ModifierKeys.Control) != 0;
@@ -423,7 +444,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
 
     public void HandleMouseClick(DomNodeViewModel node, MouseButton button, ModifierKeys modifiers)
     {
-        if (ActiveEditor != null) return;
+        if (_activeEditor != null) return;
 
         _isShiftPressed = (modifiers & ModifierKeys.Shift) != 0;
         _isCtrlPressed = (modifiers & ModifierKeys.Control) != 0;
@@ -438,7 +459,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         }
         else
         {
-            SelectSingle(node);
+            SelectNode(node);
         }
 
         _lastSelectedNode = node;
@@ -446,38 +467,38 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
 
     private void MoveSelectionUp()
     {
-        if (SelectedNodes.Count == 0) return;
+        if (_selectedNodes.Count == 0) return;
 
-        var currentIndex = FilteredViewModels.IndexOf(SelectedNodes.First());
+        var currentIndex = _filteredViewModels.IndexOf(_selectedNodes.First());
         if (currentIndex <= 0) return;
 
-        var targetNode = FilteredViewModels[currentIndex - 1];
+        var targetNode = _filteredViewModels[currentIndex - 1];
         if (_isShiftPressed)
         {
-            SelectRange(_lastSelectedNode ?? SelectedNodes.First(), targetNode);
+            SelectRange(_lastSelectedNode ?? _selectedNodes.First(), targetNode);
         }
         else
         {
-            SelectSingle(targetNode);
+            SelectNode(targetNode);
         }
         _lastSelectedNode = targetNode;
     }
 
     private void MoveSelectionDown()
     {
-        if (SelectedNodes.Count == 0) return;
+        if (_selectedNodes.Count == 0) return;
 
-        var currentIndex = FilteredViewModels.IndexOf(SelectedNodes.First());
-        if (currentIndex >= FilteredViewModels.Count - 1) return;
+        var currentIndex = _filteredViewModels.IndexOf(_selectedNodes.First());
+        if (currentIndex >= _filteredViewModels.Count - 1) return;
 
-        var targetNode = FilteredViewModels[currentIndex + 1];
+        var targetNode = _filteredViewModels[currentIndex + 1];
         if (_isShiftPressed)
         {
-            SelectRange(_lastSelectedNode ?? SelectedNodes.First(), targetNode);
+            SelectRange(_lastSelectedNode ?? _selectedNodes.First(), targetNode);
         }
         else
         {
-            SelectSingle(targetNode);
+            SelectNode(targetNode);
         }
         _lastSelectedNode = targetNode;
     }
@@ -541,7 +562,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         {
             var oldValue = valueNode.Value;
             valueNode.Value = isUndo ? change.OldValue : change.NewValue;
-            if (NodeViewModels.TryGetValue(change.Node, out var vm))
+            if (_nodeViewModels.TryGetValue(change.Node, out var vm))
             {
                 vm.OnPropertyChanged(nameof(DomNodeViewModel.DomNode));
             }
@@ -557,7 +578,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
                         foreach (var item in items)
                         {
                             arrayNode.Items.Add(item);
-                            BuildViewModelTree(item);
+                            BuildChildren(NodeViewModels[item]);
                         }
                     }
                     else
@@ -566,7 +587,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
                         foreach (var item in items)
                         {
                             arrayNode.Items.Remove(item);
-                            NodeViewModels.Remove(item);
+                            _nodeViewModels.Remove(item);
                         }
                     }
                     break;
@@ -575,13 +596,13 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
                     {
                         var item = (DomNode)change.NewValue;
                         arrayNode.Items.Remove(item);
-                        NodeViewModels.Remove(item);
+                        _nodeViewModels.Remove(item);
                     }
                     else
                     {
                         var item = (DomNode)change.OldValue;
                         arrayNode.Items.Add(item);
-                        BuildViewModelTree(item);
+                        BuildChildren(NodeViewModels[item]);
                     }
                     break;
             }
@@ -615,11 +636,11 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         var state = new DomEditorUiState
         {
             FilterText = FilterText,
-            LastEditNodePath = ActiveEditor != null ? GetNodePath(SelectedNodes.FirstOrDefault()?.DomNode) : null
+            LastEditNodePath = ActiveEditor != null ? GetNodePath(_selectedNodes.FirstOrDefault()?.DomNode) : null
         };
 
         // Capture expanded nodes
-        foreach (var vm in NodeViewModels.Values)
+        foreach (var vm in _nodeViewModels.Values)
         {
             if (vm.IsExpanded)
             {
@@ -628,7 +649,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         }
 
         // Capture selected nodes
-        foreach (var node in SelectedNodes)
+        foreach (var node in _selectedNodes)
         {
             state.SelectedNodePaths.Add(GetNodePath(node.DomNode));
         }
@@ -651,20 +672,20 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         foreach (var path in state.ExpandedNodePaths)
         {
             var node = FindNodeByPath(path);
-            if (node != null && NodeViewModels.TryGetValue(node, out var vm))
+            if (node != null && _nodeViewModels.TryGetValue(node, out var vm))
             {
                 vm.IsExpanded = true;
             }
         }
 
         // Restore selection
-        SelectedNodes.Clear();
+        _selectedNodes.Clear();
         foreach (var path in state.SelectedNodePaths)
         {
             var node = FindNodeByPath(path);
-            if (node != null && NodeViewModels.TryGetValue(node, out var vm))
+            if (node != null && _nodeViewModels.TryGetValue(node, out var vm))
             {
-                SelectedNodes.Add(vm);
+                _selectedNodes.Add(vm);
             }
         }
         OnPropertyChanged(nameof(SelectedNodes));
@@ -673,7 +694,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         if (!string.IsNullOrEmpty(state.LastEditNodePath))
         {
             var node = FindNodeByPath(state.LastEditNodePath);
-            if (node != null && NodeViewModels.TryGetValue(node, out var vm))
+            if (node != null && _nodeViewModels.TryGetValue(node, out var vm))
             {
                 BeginEdit(vm);
             }
@@ -700,7 +721,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         if (string.IsNullOrEmpty(path)) return null;
 
         var parts = path.Split('/');
-        var current = RootNode;
+        var current = _rootNode;
 
         for (int i = 1; i < parts.Length; i++) // Skip "Root"
         {
