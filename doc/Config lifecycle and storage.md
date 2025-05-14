@@ -78,10 +78,10 @@ Both **shared config fragments** and **app-specific configs** participate in thi
   "_id": "apps/myAppType1/myAppInstance1/cascade",
   "description": "Cascade definition for myAppInstance1",
   "layers": [
-    "system/global",
-    "system/region/eu",
-    "apps/myAppType1/default",
-    "apps/myAppType1/myAppInstance1"
+    { "id": "system/global", "name": "System Global Defaults" },
+    { "id": "system/region/eu", "name": "EU Region Overrides" },
+    { "id": "apps/myAppType1/default", "name": "App Type Default Settings" },
+    { "id": "apps/myAppType1/myAppInstance1", "name": "My App Instance Settings" }
   ]
 }
 ```
@@ -102,6 +102,213 @@ Both **shared config fragments** and **app-specific configs** participate in thi
   ```json
   { "$ref": "system/settings/network" }
   ```
+
+---
+
+## 5. Schema Export, Import, and Versioning
+
+### 5.1 Purpose
+
+The configuration schema system supports **exporting** and **importing** schema definitions in **portable JSON format**.
+This allows:
+
+* External schema **documentation and review**.
+* **Version tracking** and **compatibility checks**.
+* **Runtime schema loading without reflection**.
+
+---
+
+### 5.2 Export Strategy
+
+The schema is **exported as a hierarchical JSON structure** that mirrors the **object graph** of the configuration model.
+
+* **SchemaNodes** define **types** (object, array, leaf, enum).
+* **SchemaProperties** define **field-level metadata** (required, default, description, etc.).
+
+This format is **self-contained** and **human-readable**, suitable for inspection and tooling.
+
+---
+
+### 5.3 Example Export Format
+
+```json
+{
+  "Type": "Object",
+  "Properties": [
+    {
+      "Name": "Verbosity",
+      "IsRequired": true,
+      "DefaultValue": "Medium",
+      "Unit": "Level",
+      "Description": "Sets the verbosity level",
+      "Schema": {
+        "Type": "Leaf",
+        "Min": 0,
+        "Max": 100,
+        "AllowedValues": ["Low", "Medium", "High"],
+        "Format": "level"
+      }
+    },
+    {
+      "Name": "OutputPath",
+      "IsRequired": false,
+      "Description": "Optional output file path",
+      "Schema": {
+        "Type": "Leaf",
+        "Format": "file-path"
+      }
+    },
+    {
+      "Name": "Targets",
+      "IsRequired": false,
+      "Description": "List of output targets",
+      "Schema": {
+        "Type": "Array",
+        "ItemSchema": {
+          "Type": "Object",
+          "Properties": [
+            {
+              "Name": "TargetName",
+              "IsRequired": true,
+              "Schema": {
+                "Type": "Leaf"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+
+---
+
+### 5.4 Import Strategy
+
+The **importer** reconstructs the schema tree from JSON, making it available for:
+
+* **Runtime validation**
+* **Editor metadata**
+* **Version comparison**
+
+The **imported schema tree** is fully functional without requiring runtime reflection.
+
+---
+
+### 5.5 On-Demand Flattening for Version Comparison
+
+While the **hierarchical format** is ideal for human and tooling consumption, **flattening** can be performed **on-demand** to produce:
+
+* **Path-based maps** of schema nodes and properties.
+* **Stable identifiers** for change detection.
+
+Example flattened map:
+
+| Path                      | Type | IsRequired | AllowedValues                |
+| ------------------------- | ---- | ---------- | ---------------------------- |
+| `Verbosity`               | Leaf | true       | \[ "Low", "Medium", "High" ] |
+| `OutputPath`              | Leaf | false      | -                            |
+| `Targets/Item/TargetName` | Leaf | true       | -                            |
+
+This enables:
+
+* **Schema diffing**
+* **Breaking change detection**
+* **Compatibility reporting**
+
+---
+
+### 5.6 Change Detection Rules
+
+| **Change**                        | **Compatibility Impact** |
+| --------------------------------- | ------------------------ |
+| Added Property                    | Non-breaking             |
+| Removed Property                  | Breaking                 |
+| Property Made Required            | Breaking                 |
+| Property Made Optional            | Non-breaking             |
+| Default Value Changed             | Non-breaking             |
+| Enum Value Added                  | Non-breaking             |
+| Enum Value Removed                | Breaking                 |
+| Range Narrowed (min/max stricter) | Breaking                 |
+| Range Relaxed (min/max looser)    | Non-breaking             |
+
+---
+
+### 5.7 Meta-Schema Definition
+
+The following meta-schema describes the allowed structure of the exported schema itself:
+
+```json
+{
+  "Type": "Object",
+  "Properties": [
+    {
+      "Name": "Type",
+      "IsRequired": true,
+      "Schema": { "Type": "Leaf", "AllowedValues": ["Object", "Array", "Leaf"] }
+    },
+    {
+      "Name": "Properties",
+      "IsRequired": false,
+      "Schema": {
+        "Type": "Array",
+        "ItemSchema": {
+          "Type": "Object",
+          "Properties": [
+            { "Name": "Name", "IsRequired": true, "Schema": { "Type": "Leaf" } },
+            { "Name": "IsRequired", "IsRequired": true, "Schema": { "Type": "Leaf" } },
+            { "Name": "DefaultValue", "IsRequired": false, "Schema": { "Type": "Leaf" } },
+            { "Name": "Unit", "IsRequired": false, "Schema": { "Type": "Leaf" } },
+            { "Name": "Description", "IsRequired": false, "Schema": { "Type": "Leaf" } },
+            { "Name": "Schema", "IsRequired": true, "Schema": { "$ref": "#/" } }
+          ]
+        }
+      }
+    },
+    {
+      "Name": "ItemSchema",
+      "IsRequired": false,
+      "Schema": { "$ref": "#/" }
+    },
+    {
+      "Name": "Min",
+      "IsRequired": false,
+      "Schema": { "Type": "Leaf" }
+    },
+    {
+      "Name": "Max",
+      "IsRequired": false,
+      "Schema": { "Type": "Leaf" }
+    },
+    {
+      "Name": "AllowedValues",
+      "IsRequired": false,
+      "Schema": {
+        "Type": "Array",
+        "ItemSchema": { "Type": "Leaf" }
+      }
+    },
+    {
+      "Name": "Format",
+      "IsRequired": false,
+      "Schema": { "Type": "Leaf" }
+    }
+  ]
+}
+```
+
+This meta-schema is recursive, allowing nested structures and reflecting the hierarchical nature of the exported schema.
+
+---
+
+### 5.8 Summary
+
+* **Primary Export**: Hierarchical, human-readable JSON.
+* **Import**: Reconstructs full schema tree without reflection.
+* **Flattening**: On-demand for version comparison.
+* **Version Comparison**: Detects breaking and non-breaking changes.
+* **Meta-Schema**: Describes the structure of the exported schema JSON.
 
 ---
 
