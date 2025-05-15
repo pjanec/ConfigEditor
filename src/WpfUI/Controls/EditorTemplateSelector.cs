@@ -9,24 +9,32 @@ namespace WpfUI.Controls;
 /// </summary>
 public class EditorTemplateSelector : DataTemplateSelector
 {
-    public override DataTemplate SelectTemplate(object item, DependencyObject container)
-    {
-        if (item is DomNodeViewModel vm)
-        {
-            if (vm.IsEditing)
-            {
-                // Return editor template based on type
-                var key = vm.ValueClrType.Name + "EditorTemplate";
-                return Application.Current.Resources[key] as DataTemplate;
-            }
-            else
-            {
-                // Return renderer template based on type
-                var key = vm.ValueClrType.Name + "RendererTemplate";
-                return Application.Current.Resources[key] as DataTemplate;
-            }
-        }
+	public override DataTemplate SelectTemplate( object item, DependencyObject container )
+	{
+		if( item is DomNodeViewModel vm )
+		{
+			if( vm.ValueClrType == null ) // container nodes
+				return null;
 
-        return null;
-    }
+			// Traverse up the visual tree to find the MainWindow
+			var mainWindow = Window.GetWindow( container );
+			if( mainWindow == null )
+				return null;
+
+			if( vm.IsEditing )
+			{
+				// Look for editor template in MainWindow resources
+				var key = vm.ValueClrType.Name + "EditorTemplate";
+				return mainWindow.Resources[key] as DataTemplate;
+			}
+			else
+			{
+				// Look for renderer template in MainWindow resources
+				var key = vm.ValueClrType.Name + "RendererTemplate";
+				return mainWindow.Resources[key] as DataTemplate;
+			}
+		}
+
+		return null;
+	}
 } 

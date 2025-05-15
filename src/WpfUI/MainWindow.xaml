@@ -122,7 +122,7 @@
 
        <!-- Main Table / Tree View -->
        <Grid>
-           <TreeView ItemsSource="{Binding FilteredViewModels}">
+           <TreeView ItemsSource="{Binding FilteredViewModels}" KeyDown="TreeView_KeyDown" KeyUp="TreeView_KeyUp">
                <TreeView.ItemTemplate>
                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                        <Grid MouseDown="Grid_MouseDown">
