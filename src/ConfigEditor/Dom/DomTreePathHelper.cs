@@ -65,7 +65,7 @@ namespace ConfigEditor.Dom
 				else if( current is ArrayNode arr && int.TryParse( part, out var index ) )
 				{
 					while( arr.Items.Count <= index )
-						arr.Items.Add( new ObjectNode( index.ToString(), arr ) );
+						arr.AddItem( new ObjectNode( index.ToString(), arr ) );
 					current = arr.Items[index];
 				}
 			}
@@ -104,7 +104,7 @@ namespace ConfigEditor.Dom
 				else if( current is ArrayNode arr && int.TryParse( part, out var index ) )
 				{
 					while( arr.Items.Count <= index )
-						arr.Items.Add( new ObjectNode( index.ToString(), arr ) );
+						arr.AddItem( new ObjectNode( index.ToString(), arr ) );
 					current = arr.Items[index];
 				}
 				else

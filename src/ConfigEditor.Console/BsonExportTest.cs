@@ -44,14 +44,14 @@ public static class BsonExportTest
 
         // Build a sample DOM
         var root = new ObjectNode("root");
-        var env = new ObjectNode("env", root);
-        root.Children["env"] = env;
-        env.Children["ip"] = new ValueNode("ip", JsonSerializer.SerializeToElement("192.168.0.1"), env);
-        env.Children["host"] = new RefNode("host", "shared/defaultHost", env);
+        var env = new ObjectNode("env");
+        root.AddChild(env);
+        env.AddChild(new ValueNode("ip", JsonSerializer.SerializeToElement("192.168.0.1"), env));
+        env.AddChild(new RefNode("host", "shared/defaultHost", env));
 
-        var shared = new ObjectNode("shared", root);
-        root.Children["shared"] = shared;
-        shared.Children["defaultHost"] = new ValueNode("defaultHost", JsonSerializer.SerializeToElement("ref.example.com"), shared);
+        var shared = new ObjectNode("shared");
+        root.AddChild(shared);
+        shared.AddChild(new ValueNode("defaultHost", JsonSerializer.SerializeToElement("ref.example.com"), shared));
 
         // Export to BSON
         BsonExporter.ExportToBsonFile(root, schema, "config-out.bson");

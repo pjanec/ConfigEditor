@@ -412,7 +412,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         foreach (var item in _clipboardItems)
         {
             var newItem = new ValueNode($"Item {targetArray.Items.Count + 1}", (item as ValueNode)?.Value??new JsonElement());
-            targetArray.Items.Insert(insertIndex++, newItem);
+            targetArray.InsertItem(insertIndex++, newItem);
             var viewModel = new DomNodeViewModel(newItem, arrayItemType);
             _nodeViewModels[newItem] = viewModel;
         }
@@ -603,7 +603,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
                     else
                     {
                         var item = (DomNode)change.OldValue;
-                        arrayNode.Items.Add(item);
+                        arrayNode.AddItem(item);
                         BuildChildren(_nodeViewModels[item]);
                     }
                     break;

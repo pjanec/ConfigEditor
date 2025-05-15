@@ -52,15 +52,17 @@ public static class DomMerger
 				else
 				{
 					// Replace non-object nodes
-					target.Children[key] = sourceNode.Clone();
-					target.Children[key].SetParent( target );
+					var clone = sourceNode.Clone();
+					clone.SetParent( target );
+					target.AddChild(clone);
 				}
 			}
 			else
 			{
 				// Add new nodes
-				target.Children[key] = sourceNode.Clone();
-				target.Children[key].SetParent( target );
+				var clone = sourceNode.Clone();
+				clone.SetParent( target );
+				target.AddChild(clone);
 			}
 		}
 	}

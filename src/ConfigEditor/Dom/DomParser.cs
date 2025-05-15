@@ -45,7 +45,7 @@ public static class DomParser
 
 		if( isLast )
 		{
-			current.Children[key] = new ValueNode( key, value, current );
+			current.AddChild(new ValueNode( key, value, current ));
 			return;
 		}
 
@@ -57,7 +57,7 @@ public static class DomParser
 			existing = nextIsArray
 				? new ArrayNode( key, current )
 				: new ObjectNode( key, current );
-			current.Children[key] = existing;
+			current.AddChild(existing);
 		}
 
 		if( nextIsArray )

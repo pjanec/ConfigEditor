@@ -20,6 +20,12 @@ public class ObjectNode : DomNode
     public ObjectNode(string name) : base(name)
     {
     }
+
+    public void AddChild(DomNode child)
+    {
+        Children[child.Name] = child;
+        child.Parent = this;
+    }
 }
 
 public class ArrayNode : DomNode
@@ -28,6 +34,18 @@ public class ArrayNode : DomNode
 
     public ArrayNode(string name) : base(name)
     {
+    }
+
+    public void AddItem(DomNode item)
+    {
+        item.Parent = this;
+        Items.Add(item);
+    }
+
+    public void InsertItem(int index, DomNode item)
+    {
+        item.Parent = this;
+        Items.Insert(index, item);
     }
 }
 

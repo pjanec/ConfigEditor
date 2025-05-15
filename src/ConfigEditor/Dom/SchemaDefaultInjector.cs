@@ -20,7 +20,7 @@ public static class SchemaDefaultInjector
 					if( prop.DefaultValue != null )
 					{
 						var json = JsonSerializer.SerializeToElement( prop.DefaultValue );
-						objNode.Children[key] = new ValueNode( key, json, objNode );
+						objNode.AddChild( new ValueNode( key, json, objNode ) );
 					}
 					else if( prop.IsRequired )
 					{

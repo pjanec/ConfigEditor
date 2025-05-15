@@ -23,6 +23,23 @@ namespace ConfigEditor.Dom
 		/// </summary>
 		public List<DomNode> Items { get; } = new();
 
+		/// <summary>
+		/// Adds an item to the end of the array and sets its parent.
+		/// </summary>
+		public void AddItem(DomNode item)
+		{
+			item.SetParent(this);
+			Items.Add(item);
+		}
+
+		/// <summary>
+		/// Inserts an item at the specified index and sets its parent.
+		/// </summary>
+		public void InsertItem(int index, DomNode item)
+		{
+			item.SetParent(this);
+			Items.Insert(index, item);
+		}
 
 		public override DomNode Clone()
 		{
@@ -31,7 +48,7 @@ namespace ConfigEditor.Dom
 			{
 				var itemClone = item.Clone();
 				itemClone.SetParent( clone );
-				clone.Items.Add( itemClone );
+				clone.AddItem( itemClone );
 			}
 			return clone;
 		}

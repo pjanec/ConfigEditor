@@ -64,25 +64,25 @@ namespace WpfUI
 
 			// Add some test properties
 			var settings = new ObjectNode("Settings");
-			root.Children["Settings"] = settings;
+			root.AddChild(settings);
 
-			settings.Children["Hostname"] = new ValueNode("Hostname", JsonSerializer.SerializeToElement("localhost"));
-			settings.Children["Port"] = new ValueNode("Port", JsonSerializer.SerializeToElement(8080));
-			settings.Children["IsEnabled"] = new ValueNode("IsEnabled", JsonSerializer.SerializeToElement(true));
+			settings.AddChild(new ValueNode("Hostname", JsonSerializer.SerializeToElement("localhost")));
+			settings.AddChild(new ValueNode("Port", JsonSerializer.SerializeToElement(8080)));
+			settings.AddChild(new ValueNode("IsEnabled", JsonSerializer.SerializeToElement(true)));
 
 			// Add an array of users
 			var users = new ArrayNode("Users");
-			root.Children["Users"] = users;
+			root.AddChild(users);
 
 			var user1 = new ObjectNode("User1");
-			user1.Children["Name"] = new ValueNode("Name", JsonSerializer.SerializeToElement("Alice"));
-			user1.Children["Age"] = new ValueNode("Age", JsonSerializer.SerializeToElement(30));
-			users.Items.Add(user1);
+			user1.AddChild(new ValueNode("Name", JsonSerializer.SerializeToElement("Alice")));
+			user1.AddChild(new ValueNode("Age", JsonSerializer.SerializeToElement(30)));
+			users.AddItem(user1);
 
 			var user2 = new ObjectNode("User2");
-			user2.Children["Name"] = new ValueNode("Name", JsonSerializer.SerializeToElement("Bob"));
-			user2.Children["Age"] = new ValueNode("Age", JsonSerializer.SerializeToElement(25));
-			users.Items.Add(user2);
+			user2.AddChild(new ValueNode("Name", JsonSerializer.SerializeToElement("Bob")));
+			user2.AddChild(new ValueNode("Age", JsonSerializer.SerializeToElement(25)));
+			users.AddItem(user2);
 
 			// Register types in schema resolver
 			schemaResolver.RegisterType("Root/Settings/Hostname", typeof(string));
