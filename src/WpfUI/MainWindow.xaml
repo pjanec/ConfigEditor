@@ -47,14 +47,18 @@
            </StackPanel>
        </DataTemplate>
 
+        <!-- None Renderer Template -->
+        <DataTemplate x:Key="NoRendererTemplate">
+        </DataTemplate>
+        
        <!-- Default Renderer Template -->
        <DataTemplate x:Key="DefaultRendererTemplate">
            <TextBlock Text="{Binding DomNode.Value}" TextWrapping="Wrap"/>
        </DataTemplate>
 
        <!-- String Renderer Template -->
-       <DataTemplate x:Key="StringRendererTemplate">
-           <TextBlock Text="{Binding DomNode.Value}" TextWrapping="Wrap"/>
+       <DataTemplate x:Key="StringRendererTemplate">  
+          <TextBlock Text="{Binding DomNode.Value}" TextWrapping="Wrap" Foreground="Blue"/>  
        </DataTemplate>
 
        <!-- String Editor Template -->
@@ -62,6 +66,7 @@
            <TextBox Text="{Binding EditingValue, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}"
                     Validation.ErrorTemplate="{StaticResource ValidationErrorTemplate}"
                     BorderThickness="1"
+                    Foreground="Green"
                     Padding="2"/>
        </DataTemplate>
 
@@ -125,21 +130,26 @@
            <TreeView ItemsSource="{Binding FilteredViewModels}" KeyDown="TreeView_KeyDown" KeyUp="TreeView_KeyUp">
                <TreeView.ItemTemplate>
                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                       <Grid MouseDown="Grid_MouseDown">
+                       <Grid
+                           MouseDown="Grid_MouseDown">
                            <Grid.ColumnDefinitions>
                                <ColumnDefinition Width="2*"/>
+                               <ColumnDefinition Width="20"/> <!-- Added a spacer column -->
                                <ColumnDefinition Width="3*"/>
                            </Grid.ColumnDefinitions>
 
                            <!-- Node Name -->
                            <TextBlock Grid.Column="0" 
-                                    Text="{Binding DomNode.Name, Converter={StaticResource ArrayItemNumberConverter}}" 
-                                    TextWrapping="Wrap"/>
+                                      Focusable="False"
+                                      Text="{Binding DomNode.Name, Converter={StaticResource ArrayItemNumberConverter}}" 
+                                      TextWrapping="Wrap"/>
 
                            <!-- Node Value -->
-                           <ContentControl Grid.Column="1" 
-                                         Content="{Binding}" 
-                                         ContentTemplateSelector="{StaticResource EditorTemplateSelector}"/>
+                           <ContentControl Grid.Column="2" 
+                                          Focusable="False"
+                                           x:Name="ValueElement"
+                                           Content="{Binding}" 
+                                           ContentTemplateSelector="{StaticResource EditorTemplateSelector}"/>
                        </Grid>
                    </HierarchicalDataTemplate>
                </TreeView.ItemTemplate>

@@ -13,13 +13,16 @@ public class EditorTemplateSelector : DataTemplateSelector
 	{
 		if( item is DomNodeViewModel vm )
 		{
-			if( vm.ValueClrType == null ) // container nodes
-				return null;
-
 			// Traverse up the visual tree to find the MainWindow
 			var mainWindow = Window.GetWindow( container );
 			if( mainWindow == null )
 				return null;
+
+			if( vm.ValueClrType == null || vm.ValueClrType == typeof(object) ) // container nodes or root node
+			{
+				var key = "NoRendererTemplate";
+				return mainWindow.Resources[key] as DataTemplate;
+			}
 
 			if( vm.IsEditing )
 			{
@@ -32,6 +35,12 @@ public class EditorTemplateSelector : DataTemplateSelector
 				// Look for renderer template in MainWindow resources
 				var key = vm.ValueClrType.Name + "RendererTemplate";
 				return mainWindow.Resources[key] as DataTemplate;
+			}
+
+
+			{
+			var key = "DefaultRendererTemplate";
+			return mainWindow.Resources[key] as DataTemplate;
 			}
 		}
 

@@ -140,11 +140,20 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
         }
     }
 
+    private void ClearSelection()
+    {
+        foreach( var x in _selectedNodes )
+        {
+            x.IsSelected = false;
+        }
+        _selectedNodes.Clear();
+    }
+    
     public void SelectNode(DomNodeViewModel node)
     {
         if (_activeEditor != null) return;
 
-        _selectedNodes.Clear();
+        ClearSelection();
         _selectedNodes.Add(node);
         node.IsSelected = true;
     }
@@ -778,12 +787,7 @@ public class DomTableEditorViewModel : INotifyPropertyChanged
 			(startIndex, endIndex) = (endIndex, startIndex);
 		}
 
-		// Clear the current selection
-		foreach( var node in _selectedNodes )
-		{
-			node.IsSelected = false;
-		}
-		_selectedNodes.Clear();
+        ClearSelection();
 
 		// Select all nodes in the range
 		for( int i = startIndex; i <= endIndex; i++ )

@@ -173,5 +173,16 @@ namespace WpfUI
 		{
 			_viewModel.HandleKeyUp(Keyboard.Modifiers);
 		}
+
+		private void LeftColumn_MouseDown(object sender, MouseButtonEventArgs e)
+		{
+			var textBlock = sender as DependencyObject;
+			var grid = VisualTreeHelper.GetParent(textBlock) as Grid;
+			if (grid != null)
+			{
+				var valueElement = grid.FindName("ValueElement") as UIElement;
+				valueElement?.Focus();
+			}
+		}
 	}
 }
