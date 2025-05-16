@@ -4,11 +4,11 @@
 
 C\# WPF .net 8
 
-Two columns. In the left column a hierarchy dom unfoldable tree (each line one node), the right column shows the node value. Pluggable value renderers for custom node value clr type. When the right column cell is clicked, it changes into an edit field filling the cell, editing the node value. The edit field is smart, selecting different edit controls based on the clr data type of the dom node value. Text field for texts and numeric types, dropdown with text values for enums, checkbox for booleans etc. Pluggable custom edit controls for custom types. For array nodes, ability to add, remove and insert new item of clr type as specified in the schema. Sample dom tree to fill the table. Pluggable renderers and editor controls for primitive types.
+Grid with Two columns. In the left column a hierarchy dom foldable tree (each line one node), the right column shows the node value. Pluggable value renderers for custom node value clr type. When the right column cell is clicked, it changes into an edit field filling the cell, editing the node value. The edit field is smart, selecting different edit controls based on the clr data type of the dom node value. Text field for texts and numeric types, dropdown with text values for enums, checkbox for booleans etc. Pluggable custom edit controls for custom types. For array nodes, ability to add, remove and insert new item of clr type as specified in the schema. Sample dom tree to fill the table. Pluggable renderers and editor controls for primitive types.
 
 Keyboard navigation is mandatory. cursor up/down moves selection row up/down. Numpad plus/minus unfolds/folds node. enter or click activates edit mode for a row (not always, see below for more details). Once in edit mode, esc cancels it without changing node value, enter confirms and updates the node and exits edit mode. Whole table starts unfolded, folding is not persistent, kept only until the app restarts. While in edit mode, table navigation/folding is disabled. The edit mode of a row showing primitive type should start automatically on enter and validate and apply on leave. For text fields on enter all the text should be initially selected so that when typing starts, it overwrites previous value.
 
-For primitive types no enter key now needed to activate edit mode, automatic on get focus. Esc returns back the original unmodified value captured on getting focus. Validate and apply on lost focus. Some edit controls might capture the row navigation keys while in edit mode (like enum dropdown) so some confirmation key or lost focus event is needed to exit edit mode and validate and apply. Those also require some edit mode activation event (not just “got focus”) to allow for smooth row navigation over them if the user does not want to change value. Plain single line text fields or checkboxes should not block the row navigation. Pls suggest other ui best practices for pleasant keyboard control.
+Esc returns back the original unmodified value captured on getting focus. Validate and apply on lost focus. Some edit controls might capture the row navigation keys while in edit mode (like enum dropdown) so some confirmation key or lost focus event is needed to exit edit mode and validate and apply. Those also require some edit mode activation event (not just “got focus”) to allow for smooth row navigation over them if the user does not want to change value. Plain single line text fields or checkboxes should not block the row navigation. Pls suggest other ui best practices for pleasant keyboard control.
 
 Row height is primarily controlled by the node value renderer \- can be multiple lines. Row is always at least one text line high. Node names in the left column should wrap to be always displayed in full (all characters of the string). Schema provides concrete clr type for each dom element. 
 
@@ -35,28 +35,25 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 
 ## **🏗️ Core Features**
 
-1. **Hierarchical Tree-Table Layout**
-
-   * Two columns: **Node Name** and **Node Value**.
-
-   * Expandable/collapsible **tree structure** with support for objects and arrays.
-
+1. **Flat Table Layout with Folding**
+   - Flat row list representing the DOM hierarchy.
+   - Expandable/foldable sections managed by view model state.
+   - Indented left column simulating tree depth.
+   
 2. **Advanced Editing Capabilities**
-
-   * **Pluggable type-specific editors** (text, number, bool, enum, object, array).
-
+   * **Pluggable type-specific editors** (text, number, bool, enum, array).
+   
    * **Validation with error feedback**.
-
+   
    * **Modal or inline editing** based on control type.
-
+   
 3. **Array Item Management**
-
    * **Numbered display**, **Add/Delete/Insert**, **Multi-selection**.
-
+   
    * **Copy/Paste** between arrays **of the same item type only**.
-
+   
    * **Pseudo-item at end** for quick appending.
-
+   
 4. **Powerful Keyboard Navigation**
 
    * **Arrow navigation**, **multi-select**, **edit activation by Enter/Double-Click**.
@@ -66,19 +63,17 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
    * **Filter clearing by Escape**.
 
 5. **Live Filtering**
-
    * **Instant search** on **node names** with **context-preserving expansion**.
-
+   
 6. **Separation of Concerns**
-
    * **DomTableEditorViewModel** for global state.
-
+   
    * **DomNodeViewModel** per node with cached CLR type.
-
+   
    * **ArrayItemCollectionViewModel** for array-specific logic.
-
+   
    * **ClipboardViewModel** for cross-array copy/paste control.
-
+   
 7. **Customizable Renderers and Editors**
 
    * **Independent rendering and editing services** for all types.
@@ -127,21 +122,22 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 
 ---
 
-### **2\. Main Table View**
+### 2. **Rendering Strategy**
 
-* **Tree/Table Hybrid**:
+- **Flat Row List:**
+   The DOM is rendered as a **flat, linear list of rows**, where **hierarchy is simulated by indentation**.
+- **Two Fixed Columns:**
+  - **Left Column:** Node label with indentation based on depth (no TreeView shifting).
+  - **Right Column:** Inline or modal editor based on node type.
+- **Indentation Rule:**
+  - Apply `Margin.Left = depth * IndentUnit`
+  - Example: `Margin = new Thickness(Depth * 12, 0, 0, 0)`
 
-  * Node hierarchy with expansion buttons.
+### **Row Expansion/Collapse Logic**
 
-  * Two columns:
-
-    * **Node Name** (wraps to fit, expandable hierarchy).
-
-    * **Node Value** (rendered or editable).
-
-* **Renderer or Editor shown inline or in modal**, based on the node's type and activation.
-
----
+- **▶ / ▼ Icon** toggles `IsExpanded` on the row’s ViewModel.
+- Child nodes **appear as separate rows below** their parent when expanded.
+- Collapsing **hides child rows** from the flat list.
 
 ### **3\. Array Editing Features**
 
@@ -167,106 +163,305 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 
 ## **✅ Navigation and Focus**
 
-* **Arrow keys** navigate between rows.
+* **Up/Down Arrow keys** navigate between rows.
 
 * **Enter or Double-Click** starts editing.
 
-* **Tab/Shift+Tab** move between editable fields.
-
 * **Esc cancels edit or clears filter**.
+
 
 ---
 
 ## **✅ Screen Scaling and Responsiveness**
 
-* **Tree/Table resizes** with window.
+* **Table resizes** with window.
 
 * **Toolbar stays at the top**.
 
 * **Error panel stays at the bottom**, collapsible or inline.
 
-# Example DOM editor layout
+## ✅ **DataGrid Example Layout**
 
-\<Window x:Class="DomEditorApp.MainWindow"  
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"  
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"  
-        Title="DOM Table Editor" Height="600" Width="800"\>
+```xml
+xmlCopyEdit<DataGrid ItemsSource="{Binding FlatRowViewModels}" 
+          AutoGenerateColumns="False" 
+          HeadersVisibility="Column"
+          GridLinesVisibility="None"
+          CanUserAddRows="False"
+          CanUserResizeRows="False"
+          CanUserResizeColumns="True"
+          CanUserReorderColumns="False"
+          IsReadOnly="True"
+          SelectionMode="Single"
+          SelectionUnit="FullRow">
 
-    \<DockPanel\>
+    <!-- Property Column with Indentation and Expand/Collapse Button -->
+    <DataGridTemplateColumn Header="Property" Width="2*">
+        <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+                <StackPanel Orientation="Horizontal" Margin="{Binding IndentMargin}">
+                    <Button Content="{Binding ExpansionIcon}"
+                            Command="{Binding ToggleExpandCommand}"
+                            Visibility="{Binding HasChildren, Converter={StaticResource BoolToVisibilityConverter}}"
+                            Padding="0"
+                            BorderThickness="0"
+                            Background="Transparent" />
+                    <TextBlock Text="{Binding DomNode.Name}" TextWrapping="Wrap"/>
+                </StackPanel>
+            </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+    </DataGridTemplateColumn>
 
-        \<\!-- Toolbar \--\>  
-        \<StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="5"\>  
-            \<TextBox Width="200" Margin="0,0,10,0"   
-                     PlaceholderText="Filter..."  
-                     Text="{Binding FilterViewModel.FilterText, UpdateSourceTrigger=PropertyChanged}"/\>  
-            \<Button Content="Copy" Command="{Binding CopyArrayItemCommand}" Margin="0,0,5,0"/\>  
-            \<Button Content="Paste" Command="{Binding PasteArrayItemCommand}"/\>  
-        \</StackPanel\>
-
-        \<\!-- Main Table / Tree View \--\>  
-        \<Grid\>  
-            \<Grid.Resources\>  
-                \<\!-- You can define your DataTemplates here \--\>  
-            \</Grid.Resources\>
-
-            \<TreeView ItemsSource="{Binding FilteredViewModels}"\>  
-                \<TreeView.ItemTemplate\>  
-                    \<HierarchicalDataTemplate ItemsSource="{Binding Children}"\>  
-                        \<Grid\>  
-                            \<Grid.ColumnDefinitions\>  
-                                \<ColumnDefinition Width="2\*"/\>  
-                                \<ColumnDefinition Width="3\*"/\>  
-                            \</Grid.ColumnDefinitions\>
-
-                            \<\!-- Node Name \--\>  
-                            \<TextBlock Grid.Column="0" Text="{Binding DomNode.Name}" TextWrapping="Wrap"/\>
-
-                            \<\!-- Node Value \--\>  
-                            \<ContentControl Grid.Column="1"   
-                                            Content="{Binding}"   
-                                            ContentTemplateSelector="{StaticResource EditorTemplateSelector}"/\>
-
-                        \</Grid\>  
-                    \</HierarchicalDataTemplate\>  
-                \</TreeView.ItemTemplate\>  
-            \</TreeView\>  
-        \</Grid\>
-
-        \<\!-- Validation / Error Panel \--\>  
-        \<TextBlock DockPanel.Dock="Bottom"   
-                   Text="{Binding ValidationMessage}"   
-                   Foreground="Red"   
-                   Margin="5"  
-                   Visibility="{Binding HasValidationMessage, Converter={StaticResource BoolToVisibilityConverter}}"/\>
-
-    \</DockPanel\>
-
-\</Window\>
+    <!-- Value Column with Pluggable Editor or Renderer -->
+    <DataGridTemplateColumn Header="Value" Width="3*">
+        <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+                <ContentControl Content="{Binding}" 
+                                ContentTemplateSelector="{StaticResource EditorTemplateSelector}" />
+            </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+    </DataGridTemplateColumn>
+    
+</DataGrid>
+```
 
 # **DOM tree node classes**
 
-    public abstract class DomNode  
-    {  
-        public string Name; { get; }  
-        public DomNode? Parent { get; set; }  
+```csharp
+public abstract class DomNode
+{
+    public string Name { get; }
+    public DomNode? Parent { get; set; }
+
+    protected DomNode(string name)
+    {
+        Name = name;
+    }
+}
+
+public class ObjectNode : DomNode
+{
+    public Dictionary<string, DomNode> Children { get; } = new();
+
+    public ObjectNode(string name) : base(name)
+    {
     }
 
-    public class ObjectNode : DomNode  
-    {  
-        public Dictionary\<string, DomNode\> Children { get; } \= new();  
+    public void AddChild(DomNode child)
+    {
+        Children[child.Name] = child;
+        child.Parent = this;
+    }
+}
+
+public class ArrayNode : DomNode
+{
+    public List<DomNode> Items { get; } = new();
+
+    public ArrayNode(string name) : base(name)
+    {
     }
 
-    public class ArrayNode : DomNode  
-    {  
-        public List\<DomNode\> Items { get; } \= new();  
+    public void AddItem(DomNode item)
+    {
+        item.Parent = this;
+        Items.Add(item);
     }
 
-    public class ValueNode : DomNode  
-    {  
-        public JsonElement Value { get; set; }  
+    public void InsertItem(int index, DomNode item)
+    {
+        item.Parent = this;
+        Items.Insert(index, item);
     }
+}
+
+public class ValueNode : DomNode
+{
+    public JsonElement Value { get; set; }
+
+    public ValueNode(string name, JsonElement value) : base(name)
+    {
+        Value = value;
+    }
+} 
+```
+
+# DOM Node view model skeleton
+
+```csharp
+public class DomNodeViewModel : INotifyPropertyChanged
+{
+    // Original DOM node reference
+    public DomNode DomNode { get; }
+
+    // Hierarchy depth (0 = root, 1 = child, etc.)
+    public int Depth { get; }
+
+	// clrType of the value represented by the node
+    public Type ValueClrType { get; }
+
+    // Controls child visibility in FlatRowViewModels list
+    private bool _isExpanded;
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (_isExpanded != value)
+            {
+                _isExpanded = value;
+                OnPropertyChanged(nameof(IsExpanded));
+                OnPropertyChanged(nameof(ExpansionIcon));
+                ToggleChildVisibility();
+            }
+        }
+    }
+
+    // Icon for expand/collapse
+    public string ExpansionIcon => HasChildren ? (IsExpanded ? "▼" : "▶") : "";
+
+    // Whether this node has visible children
+    public bool HasChildren => Children.Count > 0;
+
+    // Indentation margin for layout
+    public Thickness IndentMargin => new Thickness(Depth * 12, 0, 0, 0);
+
+    // Child ViewModels (for object/array nodes)
+    public List<DomNodeViewModel> Children { get; } = new List<DomNodeViewModel>();
+
+    // Toggle child visibility in the owning FlatRowViewModels list (handled externally)
+    public ICommand ToggleExpandCommand { get; }
+
+    // Event to notify owning viewmodel to rebuild FlatRowViewModels
+    public event Action<DomNodeViewModel>? OnExpansionToggled;
+
+    public DomNodeViewModel(DomNode domNode, int depth, Type valueClrType)
+    {
+        DomNode = domNode;
+        Depth = depth;
+        ToggleExpandCommand = new RelayCommand(_ => ToggleExpansion());
+        ValueClrType = valueClrType;
+    }
+
+    private void ToggleExpansion()
+    {
+        IsExpanded = !IsExpanded;
+        OnExpansionToggled?.Invoke(this);
+    }
+
+    private void ToggleChildVisibility()
+    {
+        // Hook for the owning editor viewmodel to rebuild FlatRowViewModels when expanded/collapsed
+        OnExpansionToggled?.Invoke(this);
+    }
+
+    // INotifyPropertyChanged implementation
+    public event PropertyChangedEventHandler? PropertyChanged;
+    protected void OnPropertyChanged(string propertyName)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+```
+
+## ✅ **Summary of Key Properties**
+
+| Property                | Purpose                                        |
+| ----------------------- | ---------------------------------------------- |
+| **DomNode**             | Underlying DOM data reference                  |
+| **Depth**               | Indentation level for layout                   |
+| **IsExpanded**          | Expanded/collapsed state                       |
+| **ExpansionIcon**       | Icon string for button display                 |
+| **HasChildren**         | Indicates if the node has child nodes          |
+| **IndentMargin**        | Calculated left margin based on depth          |
+| **Children**            | List of child DomNodeViewModels                |
+| **ToggleExpandCommand** | Command to trigger expand/collapse logic       |
+| **OnExpansionToggled**  | Event to notify parent to rebuild visible rows |
 
 # 
+
+# DomTableEditorViewModel skeleton example
+
+
+
+```csharp
+public class DomTableEditorViewModel : INotifyPropertyChanged
+{
+    // Root node of the entire DOM
+    public DomNodeViewModel RootNodeViewModel { get; }
+
+    // Flat list of visible rows (expanded nodes only)
+    public ObservableCollection<DomNodeViewModel> FlatRowViewModels { get; } = new();
+
+    // Constructor
+    public DomTableEditorViewModel(DomNodeViewModel rootNode)
+    {
+        RootNodeViewModel = rootNode;
+
+        // Subscribe to expansion toggles recursively
+        SubscribeToExpansionEvents(RootNodeViewModel);
+
+        // Build initial flat view
+        RebuildFlatRowViewModels();
+    }
+
+    // Subscribe to expansion toggle events recursively
+    private void SubscribeToExpansionEvents(DomNodeViewModel node)
+    {
+        node.OnExpansionToggled += _ => RebuildFlatRowViewModels();
+        foreach (var child in node.Children)
+        {
+            SubscribeToExpansionEvents(child);
+        }
+    }
+
+    // Rebuilds the flat list based on IsExpanded states
+    public void RebuildFlatRowViewModels()
+    {
+        FlatRowViewModels.Clear();
+        AddVisibleNodesRecursively(RootNodeViewModel);
+    }
+
+    private void AddVisibleNodesRecursively(DomNodeViewModel node)
+    {
+        FlatRowViewModels.Add(node);
+        if (node.IsExpanded)
+        {
+            foreach (var child in node.Children)
+            {
+                AddVisibleNodesRecursively(child);
+            }
+        }
+    }
+
+    // Optional: Filtered view state (not implemented here)
+    // public void ApplyFilter(string filterText) { ... }
+
+    // Optional: Validation summary across all rows
+    public string? ValidationSummaryMessage =>
+        FlatRowViewModels.FirstOrDefault(vm => vm.HasValidationError)?.ValidationErrorMessage;
+
+    // INotifyPropertyChanged implementation
+    public event PropertyChangedEventHandler? PropertyChanged;
+    protected void OnPropertyChanged(string propertyName)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+
+```
+
+
+
+## ✅ **Managed By DomTableEditorViewModel**
+
+Your **DomTableEditorViewModel** should:
+
+1. Hold the **full hierarchy** of `DomNodeViewModel`s.
+2. Rebuild **FlatRowViewModels** based on `IsExpanded` states.
+3. Subscribe to `OnExpansionToggled` events to **refresh the visible row list**.
+
+
 
 # **✅ Unified Keyboard and Editing Specification (WPF DOM Table Editor)**
 
@@ -322,19 +517,21 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 
 * **Escape** cancels edit without applying changes.
 
-### **Array Items (New Rule)**
-
-* **Always require explicit activation** (Enter/Double-Click).
+### **Object Items**
 
 * **If editor exists for item type**:
-
   * Use **editor view only**, **hide subnodes**.
 
 * **If no editor exists**:
-
   * Show **expandable subnodes** inline as normal object nodes.
 
 ---
+
+### **Array Items**
+
+* **Always require explicit activation** (Enter/Double-Click).
+
+  
 
 ## **4\. Array Manipulation**
 
@@ -381,12 +578,11 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 ## **1\. Filter Scope**
 
 * **Partial Matching on Node Name Only**
-
-  * The filter applies **only to node names** (the `Name` property of each `DomNode`).
-
-  * **Values are not searched**.
-
-  * **Partial match** is sufficient (case-insensitive substring match).
+* The filter applies **only to node names** (the `Name` property of each `DomNode`).
+  
+* **Values are not searched**.
+  
+* **Partial match** is sufficient (case-insensitive substring match).
 
 ## **2\. Matching Behavior**
 
@@ -395,8 +591,7 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 ## **3\. Context Preservation**
 
 * **Parent Hierarchy Visibility**
-
-  * If a child node matches, **all its ancestor nodes are shown and expanded**, even if the ancestors themselves do not match.
+* If a child node matches, **all its ancestor nodes are shown and expanded**, even if the ancestors themselves do not match.
 
 ## **4\. Automatic Expansion**
 
@@ -468,7 +663,7 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 
 ### **Activation**
 
-* Automatically activated **on focus** or **explicitly (click/enter)** depending on control type.
+* **explicitly (click/enter)**
 
 ### **Modal Behavior**
 
@@ -503,16 +698,13 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 ## **6\. Integration with Node Rendering Logic**
 
 * **If Editor Exists for Node:**
-
-  * **Block tree expansion** and use editor \+ renderer for display/editing.
-
+  * **Block table expansion** and use editor \+ renderer for display/editing.
+  
 * **If Only Renderer Exists:**
-
   * **Show renderer preview and expand children.**
-
+  
 * **If Neither Exists:**
-
-  * **Show children as usual.**
+* **Show children as usual.**
 
 ---
 
@@ -535,12 +727,10 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
   * Optional **Insert Above/Below** buttons next to each item.
 
 * **Remove**:
-
   * Button to **remove individual items**, possibly with **confirmation** for non-trivial deletions.
-
+  
 * **Reorder**:
-
-  * **Move Up/Down** buttons or **drag & drop** to change order.
+* **Move Up/Down** buttons or **drag & drop** to change order.
 
 ---
 
@@ -574,7 +764,7 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 
 * **Enter** starts inline edit for the selected item.
 
-* **Ctrl+Up/Down** or **Alt+Up/Down** for moving items.
+* **Alt+Up/Down** for moving items.
 
 ---
 
@@ -610,8 +800,8 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 ## **✅ Example Layout**
 
 `Users (Array)`  
- `├─ 1 [ Username: "Alice"  IsActive: true  ] [▲][▼][✎][✖]`  
- `├─ 2 [ Username: "Bob"    IsActive: false ] [▲][▼][✎][✖]`  
+ `├─ 1 [ "Alice"  IsActive: true  ] [▲][▼][✎][✖]`  
+ `├─ 2 [ "Bob"    IsActive: false ] [▲][▼][✎][✖]`  
  `└─ [+ Add New User]`
 
 ---
@@ -674,7 +864,7 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 
 * Treat **delete, insert, reorder, and paste** as **atomic actions** for future undo/redo support.
 
-## **9\. Consistency with Tree Editing Behavior**
+## **9\. Consistency with Table Editing Behavior**
 
 * Array item editing **follows the same keyboard and validation rules** as other nodes (see earlier keyboard control spec).
 
@@ -791,229 +981,56 @@ A **WPF desktop user interface component** that allows **interactive browsing, f
 
 # Node Value Renderer and Editor
 
+```csharp
 public interface INodeValueRenderer
-
 {
-
    FrameworkElement BuildRendererView(DomNode node);
-
    FrameworkElement? BuildHoverDetailsView(DomNode node);
-
 }
 
-​
 
 public interface INodeValueEditor
-
 {
-
    bool IsModal { get; }
-
    FrameworkElement BuildEditorView(DomNode node);
-
    bool TryGetEditedValue(out object newValue);
-
    void CancelEdit();
-
    void ConfirmEdit();
-
 }
 
-​
+```
 
-## DomNodeViewModel
 
-​
 
-public class DomNodeViewModel : INotifyPropertyChanged  
-{  
-   // Reference to the wrapped DOM node  
-   public DomNode DomNode { get; }  
-​  
-   // Whether the node is currently selected  
-   public bool IsSelected { get; set; }  
-​  
-   // Whether the node is expanded in the tree  
-   public bool IsExpanded { get; set; }  
-​  
-   // Whether the node is being edited  
-   public bool IsEditing { get; set; }  
-​  
-   // Whether the node is currently visible (after filtering)  
-   public bool IsVisible { get; set; } \= true;  
-​  
-   // Temporary editable value  
-   public object? EditingValue { get; set; }  
-​  
-   // Whether current editing value is invalid  
-   public bool HasValidationError { get; set; }  
-​  
-   // Optional error message for validation  
-   public string? ValidationErrorMessage { get; set; }  
-​  
-   // Active editor instance, if editing  
-   public INodeValueEditor? EditorInstance { get; set; }  
-​  
-   // Renderer instance, if needed  
-   public INodeValueRenderer? RendererInstance { get; set; }  
-​  
-   // Child ViewModels (for objects/arrays)  
-   public List\<DomNodeViewModel\> Children { get; } \= new();  
-​  
-   // Cached CLR type of the node's value  
-   public Type ValueClrType { get; }  // Cached on ViewModel creation  
-​  
-​  
-/\*  
-​  
-Purpose  
-\* Centralize all state management:  
-\* DOM data  
-\* ViewModel caching  
-\* Selection and editing state  
-\* Filter state  
-\* UI expansion state  
-​  
-Core Responsibilities  
-\* Hold the Root DOM Node  
-\* Manage ViewModels for All Nodes  
-\* Track Current Selection and Editing  
-\* Manage Filtering  
-\* Coordinate Table Rendering State
 
-Behavioral Notes  
-\* ViewModels are created on initialization, using the schema resolver to set ValueClrType.  
-\* Filter recomputes the FilteredViewModels and auto-expands relevant parents.  
-\* Selection state updates SelectedNodes and ensures only one ActiveEditor at a time.  
-\* Clear() resets all state when the DOM is replaced.
-
-\*/  
-​  
-   /// \<summary\>  
-   /// Manages global editor state including node viewmodels, selection, filtering, and editing.  
-   /// \</summary\>  
-   public class DomTableEditorViewModel  
-   {  
-       /// \<summary\>  
-       /// Root DOM node of the loaded configuration.  
-       /// \</summary\>  
-       public ObjectNode RootNode { get; private set; }  
-​  
-       /// \<summary\>  
-       /// Cache of viewmodels for all nodes in the DOM tree.  
-       /// \</summary\>  
-       public Dictionary\<DomNode, DomNodeViewModel\> NodeViewModels { get; private set; } \= new();  
-​  
-       /// \<summary\>  
-       /// Currently selected node(s) in the editor.  
-       /// \</summary\>  
-       public List\<DomNodeViewModel\> SelectedNodes { get; private set; } \= new();  
-​  
-       /// \<summary\>  
-       /// Currently active editor, if any.  
-       /// \</summary\>  
-       public INodeValueEditor? ActiveEditor { get; private set; }  
-​  
-       /// \<summary\>  
-       /// Current live filter text.  
-       /// \</summary\>  
-       public string FilterText { get; private set; } \= string.Empty;  
-​  
-       /// \<summary\>  
-       /// List of nodes visible after filtering.  
-       /// \</summary\>  
-       public List\<DomNodeViewModel\> FilteredViewModels { get; private set; } \= new();  
-​  
-       /// \<summary\>  
-       /// Provides schema-based CLR type resolution.  
-       /// \</summary\>  
-       public DomSchemaTypeResolver SchemaTypeResolver { get; private set; }  
-​  
-       /// \<summary\>  
-       /// Initializes the viewmodel with the provided DOM root and schema resolver.  
-       /// \</summary\>  
-       public void Initialize(ObjectNode root, DomSchemaTypeResolver schemaResolver);  
-​  
-       /// \<summary\>  
-       /// Clears the current editor state and viewmodel cache.  
-       /// \</summary\>  
-       public void Clear();  
-​  
-       /// \<summary\>  
-       /// Selects a single node.  
-       /// \</summary\>  
-       public void SelectSingle(DomNodeViewModel node);  
-​  
-       /// \<summary\>  
-       /// Selects a range of nodes from start to end.  
-       /// \</summary\>  
-       public void SelectRange(DomNodeViewModel start, DomNodeViewModel end);  
-​  
-       /// \<summary\>  
-       /// Toggles selection state for a node.  
-       /// \</summary\>  
-       public void ToggleSelection(DomNodeViewModel node);  
-​  
-       /// \<summary\>  
-       /// Begins editing the specified node.  
-       /// \</summary\>  
-       public void BeginEdit(DomNodeViewModel node);  
-​  
-       /// \<summary\>  
-       /// Confirms the current edit, applying changes.  
-       /// \</summary\>  
-       public void ConfirmEdit();  
-​  
-       /// \<summary\>  
-       /// Cancels the current edit, reverting changes.  
-       /// \</summary\>  
-       public void CancelEdit();  
-​  
-       /// \<summary\>  
-       /// Applies a live filter to the node tree.  
-       /// \</summary\>  
-       public void ApplyFilter(string filterText);  
-​  
-       /// \<summary\>  
-       /// Clears the active filter and resets visibility.  
-       /// \</summary\>  
-       public void ClearFilter();  
-​  
-       /// \<summary\>  
-       /// Retrieves the viewmodel associated with a given DOM node.  
-       /// \</summary\>  
-       public DomNodeViewModel GetViewModelForNode(DomNode node);  
-   }
-
-​
 
 # **✅ User Interaction Model for DOM Table Editor**
 
 ## **1\. Interaction Groups**
 
-### **1.1 Tree Navigation**
+### **1.1 Table Navigation**
 
 * **Arrow Up/Down**: Move selection **up/down** the visible, filtered node list.  
-    
+  
 * **Shift \+ Arrow Up/Down**: Extend selection **up/down** (multi-select).
 
 ### **1.2 Node Selection**
 
 * **Click on Node Row**:  
-    
+  
   * **Single select** that node.  
-      
+    
   * **No edit starts automatically**.
 
 
 * **Ctrl \+ Click**: **Toggle multi-select** on node.  
-    
+  
 * **Shift \+ Click**: **Range select** from active to clicked.
 
 ### **1.3 Editing Activation**
 
 * **Enter or Double-Click on Selected Node**:  
-    
+  
   * **Starts editor** if one exists for the node’s type.
 
 ---
@@ -1023,25 +1040,25 @@ Behavioral Notes
 ### **2.1 For Primitive or Inline Editable Types (TextBox, Checkbox)**
 
 * **Starts editing inline** after activation.  
-    
+  
 * **Applies on LostFocus or Enter**.  
-    
+  
 * **Cancels on Escape**.
 
 ### **2.2 For Complex or Modal Editors (ComboBox, Dialog)**
 
 * **Starts modal or dropdown** on activation.  
-    
+  
 * **Applies on Selection Change, LostFocus, or Confirm Button**.  
-    
+  
 * **Cancels on Escape or Cancel Button**.
 
 ### **2.3 Editing Lifecycle**
 
 * **BeginEdit(node)**: Prepares the editor instance, stores initial value.  
-    
+  
 * **ConfirmEdit()**: Validates and commits changes.  
-    
+  
 * **CancelEdit()**: Restores the original value.
 
 ---
@@ -1051,17 +1068,17 @@ Behavioral Notes
 ### **3.1 Item Manipulation**
 
 * **Delete Key**: Deletes selected items.  
-    
+  
 * **Insert Key**: Inserts default item(s) above selection.  
-    
+  
 * **Ctrl+C / Ctrl+V**: Copies and pastes selected items above selection.  
-    
+  
 * **Pseudo-Item at End**: Inserts at end on click or Enter.
 
 ### **3.2 Editing Activation**
 
 * **Requires Enter or Double-Click** (never starts on navigation alone).  
-    
+  
 * **Expands children** if no editor is assigned for the array item type.
 
 ---
@@ -1071,15 +1088,15 @@ Behavioral Notes
 ### **4.1 Filter Application**
 
 * **Live updates** as the user types in the filter box.  
-    
+  
 * **Matches node names** (partial, case-insensitive).  
-    
+  
 * **Expands parents** of matching nodes to show context.
 
 ### **4.2 Clear Filter**
 
 * **Esc clears filter** when filter box is focused.  
-    
+  
 * **Collapses tree** back to default state.
 
 ---
@@ -1087,11 +1104,11 @@ Behavioral Notes
 ## **5\. Visual Feedback**
 
 * **Highlight** for current selection.  
-    
+  
 * **Expansion indicator** for expandable nodes.  
-    
+  
 * **Edit mode indicator** (e.g., border or background change).  
-    
+  
 * **Validation error indicator** (e.g., red border or tooltip).
 
 ---
@@ -1099,15 +1116,15 @@ Behavioral Notes
 ## **6\. User Guidance**
 
 * **Optional legend** explaining:  
-    
+  
   * Arrow Keys \= Navigate  
-      
+    
   * Enter/Double-Click \= Edit  
-      
+    
   * Esc \= Cancel or Clear Filter  
-      
+    
   * Ctrl+Click / Shift+Click \= Multi-Select  
-      
+    
   * Delete/Insert/Ctrl+C/Ctrl+V \= Array Editing
 
 # **✅ Formal Copy/Paste Specification for Array Node Items**
@@ -1121,13 +1138,13 @@ Behavioral Notes
 ### **Rules**
 
 * Only **currently selected items** in the same array can be copied.  
-    
+  
 * Only allowed if **all selected items share the same CLR type**.
 
 ### **Clipboard Content**
 
 * **Deep clones** of the selected array items.  
-    
+  
 * **Clipboard remembers the CLR type** of the copied items for validation on paste.
 
 ---
@@ -1137,27 +1154,27 @@ Behavioral Notes
 ### **Scope**
 
 * **Paste target must be an array**.  
-    
+  
 * **Paste allowed only if:**  
-    
+  
   * The **target array’s item type matches** the clipboard’s item type.  
-      
+    
   * The clipboard contains **only one type** of item.
 
 ### **Paste Target Position**
 
 * **Inserts items above the first selected item** if selection exists in the array.  
-    
+  
 * **Otherwise inserts at the end**.
 
 ### **Invalid Paste Handling**
 
 * **Paste is disabled** or **has no effect** if:  
-    
+  
   * The target is **not an array**.  
-      
+    
   * The target array’s **item type does not match** the clipboard’s item type.  
-      
+    
   * The clipboard **contains mixed types**.
 
 # Numeric Value Editor
@@ -1767,36 +1784,44 @@ CopyEdit
 
 ## **3\. Template Selector API Example**
 
-csharp  
-CopyEdit  
-`public class EditorTemplateSelector : DataTemplateSelector`  
-`{`  
-    `public override DataTemplate SelectTemplate(object item, DependencyObject container)`  
-    `{`  
-        `if (item is DomNodeViewModel vm)`  
-        `{`  
-            `if (vm.IsEditing)`  
-                `return GetEditorTemplate(vm.ValueClrType);`
+```csharp
+public class EditorTemplateSelector : DataTemplateSelector
+{
+	public override DataTemplate SelectTemplate( object item, DependencyObject container )
+	{
+		if( item is DomNodeViewModel vm )
+		{
+			// Traverse up the visual tree to find the MainWindow
+			var mainWindow = Window.GetWindow( container );
+			if( mainWindow == null )
+				return null;
 
-            `return GetRendererTemplate(vm.ValueClrType);`  
-        `}`
+			if( vm.ValueClrType == null || vm.ValueClrType == typeof(object) ) // container nodes or root node
+			{
+				var key = "NoRendererTemplate";
+				return mainWindow.Resources[key] as DataTemplate;
+			}
 
-        `return base.SelectTemplate(item, container);`  
-    `}`
+			if( vm.IsEditing )
+			{
+				// Look for editor template in MainWindow resources
+				var key = vm.ValueClrType.Name + "EditorTemplate";
+				return mainWindow.Resources[key] as DataTemplate;
+			}
+			else
+			{
+				// Look for renderer template in MainWindow resources
+				var key = vm.ValueClrType.Name + "RendererTemplate";
+				return mainWindow.Resources[key] as DataTemplate;
+			}
+		}
 
-    `private DataTemplate GetEditorTemplate(Type clrType)`  
-    `{`  
-        `// Example lookup: "NumericEditorTemplate", "BooleanEditorTemplate"`  
-        `var key = clrType.Name + "EditorTemplate";`  
-        `return Application.Current.Resources[key] as DataTemplate;`  
-    `}`
+		return null;
+	}
+} 
+```
 
-    `private DataTemplate GetRendererTemplate(Type clrType)`  
-    `{`  
-        `var key = clrType.Name + "RendererTemplate";`  
-        `return Application.Current.Resources[key] as DataTemplate;`  
-    `}`  
-`}`
+
 
 ---
 
@@ -1812,7 +1837,7 @@ CopyEdit
     `<DataTemplate x:Key="StringRendererTemplate">...</DataTemplate>`  
     `<DataTemplate x:Key="NumericRendererTemplate">...</DataTemplate>`  
     `<DataTemplate x:Key="BooleanRendererTemplate">...</DataTemplate>`
-
+    
     `<local:EditorTemplateSelector x:Key="EditorTemplateSelector" />`  
 `</Window.Resources>`
 
@@ -2040,24 +2065,14 @@ Example Change Record:
 
 * **Discard oldest history** when exceeding limit.
 
-# **✅ UI State Persistence Specification**
+# 
 
-## **1\. Why This Matters**
-
-* Provides **a smoother user experience** by **remembering user context** when reopening the editor.
-
-* Supports **session continuity**.
-
----
-
-## **2\. UI State Elements Worth Persisting**
-
-| State Element | Purpose |
+|      |      |
 | ----- | ----- |
-| **Expanded/Collapsed Nodes** | Restore **tree structure visibility** |
-| **Filter Text** | Restore **last applied search** |
-| **Selection State** | Restore **selected node(s)** |
-| **Last Edit Position** | Restore **active editing context** (optional) |
+|      |      |
+|      |      |
+|      |      |
+|      |      |
 
 ---
 
