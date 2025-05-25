@@ -1,268 +1,343 @@
-# JSON Configuration Editor - Specification Document
+# JSON Configuration Editor \- Specification Document
 
-## 1. Overview
+## 1\. Overview
 
-* This document describes the specifications for a C# WPF-based editor for JSON configuration files.
-* The editor will provide a user-friendly interface for viewing, editing, and validating JSON data based on a defined schema.
-* The editor is designed to handle JSON files of moderate size (under 1MB).
+* This document describes the specifications for a C\# WPF-based editor for JSON configuration files.  
+* The editor will provide a user-friendly interface for viewing, editing, and validating JSON data based on a defined schema.  
+* The editor is designed to handle JSON files of moderate size (under 1MB); loading larger files may result in performance degradation but will not be rejected outright.
 
-## 2. Functional Requirements
+## 2\. Functional Requirements
 
 ### 2.1. JSON Loading and DOM Representation
 
-* The editor shall load a JSON file from the file system.
-* The JSON shall be parsed and represented in memory as a Document Object Model (DOM) tree.
-* The DOM tree shall be built using the following C# classes:
-    * `DomNode` (abstract base class):
-        * `Name` (string): The name of the node (property name or array index).
-        * `Parent` (DomNode): Reference to the parent node.
-    * `ObjectNode` (inherits from `DomNode`):
-        * `Children` (Dictionary<string, DomNode>): Dictionary of child nodes.
-        * Represents a JSON object.
-    * `ArrayNode` (inherits from `DomNode`):
-        * `Items` (List<DomNode>): List of array elements.
-        * Represents a JSON array.
-    * `ValueNode` (inherits from `DomNode`):
-        * `Value` (JsonElement): The value of the node.
-        * Represents a JSON primitive value.
+* The editor shall load a JSON file from the file system.  
+* The JSON shall be parsed and represented in memory as a Document Object Model (DOM) tree.  
+* The DOM tree shall be built using the following C\# classes:  
+  * `DomNode` (abstract base class):  
+    * `Name` (string): The name of the node (property name or array index as a string, e.g., "0", "1").  
+    * `Parent` (DomNode): Reference to the parent node.  
+  * `ObjectNode` (inherits from `DomNode`):  
+    * `Children` (Dictionary\&lt;string, DomNode\>): Dictionary of child nodes.  
+    * Represents a JSON object.  
+  * `ArrayNode` (inherits from `DomNode`):  
+    * `Items` (List\&lt;DomNode\>): List of array elements.  
+    * Represents a JSON array.  
+  * `ValueNode` (inherits from `DomNode`):  
+    * `Value` (JsonElement): The value of the node. When updated, the `ValueNode` instance remains the same, but its `Value` property references a newly created `JsonElement`.  
+* Error Handling during Loading/Parsing: If the loaded JSON file is malformed, errors should be reported to the user (specific mechanism not detailed but implied).
 
-### 2.2. Schema Definition and Handling
+### 2.2. Schema Definition and Handling (JSON-less Approach)
 
-* The schema shall be derived from a set of **C# model classes** that define the structure and data types of the JSON. These classes will serve as the source of truth for the schema.
-* **Schema Instantiation:** For specific branches of the DOM tree (concrete paths), a top-level C# class will be designated. The schema for that branch will then be inferred from the properties and nested classes of that C# class.
-* **`DomNode` to `SchemaNode` Mapping:** A `Dictionary<DomNode, SchemaNode>` (or a similar data structure) shall maintain a direct mapping between each `DomNode` instance in the loaded DOM tree and its corresponding `SchemaNode` instance (if one exists). This dictionary will be populated during or immediately after the DOM tree construction. When a new `DomNode` is added, the editor shall automatically try to map a `SchemaNode` to it and update this mapping. If a `DomNode` is removed, its corresponding mapping entry should also be removed.
-* **`FindSchemaNode` Implementation:** The `FindSchemaNode(DomNode domNode)` method will primarily perform a direct lookup in this `Dictionary<DomNode, SchemaNode>`.
-* **Schema Fallback Behavior:**
-    * If a `DomNode` has a corresponding `SchemaNode` in the mapping dictionary, editing and validation shall proceed according to the rules defined in that `SchemaNode` (including `ClrType`, `Min`, `Max`, `RegexPattern`, `AllowedValues`, etc.).
-    * If a `DomNode` does **not** have a corresponding `SchemaNode` in the mapping dictionary (i.e., it represents an "un-schematized" part of the JSON):
-        * It shall still be editable if it's a `ValueNode`.
-        * Editing will be based solely on the `JsonElement.ValueKind` of the `ValueNode`.
-        * Numbers will be edited as `double`s.
-        * Booleans will default to a `CheckBox` editor.
-        * `null` values are allowed as a node value only in the case of un-schematized nodes.
-        * No advanced validation (Min/Max, Regex, AllowedValues) or specific `ClrType` support (beyond basic primitive parsing) will be applied.
-        * The default editor (e.g., `TextBox`) will be used, with basic parsing attempts based on `JsonValueKind`.
+* The schema shall be derived directly from a set of C\# model classes at runtime by reading specified assemblies. These classes and their attributes serve as the source of truth for the schema.  
+* Schema Loading:  
+  * The editor will scan C\# assemblies found in paths configured in `editor_config.json` (see section 4.1).  
+  * It will look for classes annotated with a `[ConfigSchemaAttribute(string mountPath, Type schemaClassType)]`.  
+  * The `mountPath` string is a full path in the DOM tree (e.g., "section/subsection"), using a forward slash as a separator, with no wildcards.  
+  * A specific `MountPath` can only be defined once across all scanned assemblies. If an overlap (duplicate `MountPath`) is detected during schema loading, an error shall be reported to the user.  
+* Schema Representation (In-Memory): The schema will be represented in memory using `SchemaNode` objects.  
+  * `SchemaNode` Class (Conceptual):  
+    * `Name` (string): Name of the property or "\*" for array items.  
+    * `ClrType` (`System.Type`): The actual C\# type for the schema node. Used for registering custom renderers/editors.  
+    * `IsRequired` (bool): Derived from C\# non-nullable reference types and value types not explicitly marked as nullable.  
+    * `IsReadOnly` (bool): Derived from `[System.ComponentModel.ReadOnly(true)]` attribute on a C\# property.  
+    * `DefaultValue` (object?): Derived from C\# property initializers (e.g., `int x = 7`). For complex types, this would be their C\# type default (e.g., empty object, empty array) unless initialized.  
+    * `Min` (double?): From `[System.ComponentModel.DataAnnotations.RangeAttribute(double min, double max)]`.  
+    * `Max` (double?): From `[System.ComponentModel.DataAnnotations.RangeAttribute(double min, double max)]`.  
+    * `RegexPattern` (string?): From a custom `[SchemaRegexPatternAttribute(string pattern)]` on a C\# property.  
+    * `AllowedValues` (List\&lt;string\>?): For string types, derived from a custom `[SchemaAllowedValues("a", "b")]` attribute. For C\# enum types, this list will be populated with the enum member names. Comparisons are case-insensitive.  
+    * `EnumValues` (List\&lt;string\>?): (Covered by `AllowedValues`).  
+    * `IsEnumFlags` (bool): If the `ClrType` is a C\# enum marked with `[System.FlagsAttribute]`.  
+    * `Properties` (Dictionary\&lt;string, SchemaNode\>?): For object types, key is property name.  
+    * `AdditionalPropertiesSchema` (`SchemaNode`?): For dictionary types (e.g., `Dictionary<string, T>`), this holds the schema for `T`, generated recursively.  
+    * `AllowAdditionalProperties` (bool): True if `Properties` is null or if backed by a dictionary type allowing arbitrary keys.  
+    * `ItemSchema` (`SchemaNode`?): For array types, schema for array items.  
+    * `MountPath` (string?): Only for top-level `SchemaNode` instances derived from `[ConfigSchemaAttribute]`.  
+    * `NodeType` (`SchemaNodeType` enum: `Value`, `Object`, `Array`): A getter property to easily determine the kind of schema node.  
+* `DomNode` to `SchemaNode` Mapping: A `Dictionary<DomNode, SchemaNode>` (or a similar data structure) shall maintain a direct mapping between each `DomNode` instance in the loaded DOM tree and its corresponding `SchemaNode` instance (if one exists).  
+  * This dictionary is populated during or immediately after DOM tree construction.  
+  * When a new `DomNode` is added, the editor shall automatically try to map a `SchemaNode` to it.  
+  * If a `DomNode` is removed, its corresponding mapping entry is also removed.  
+* `FindSchemaNode(DomNode domNode)` Implementation:  
+  * Primarily performs a direct lookup in the `Dictionary<DomNode, SchemaNode>`.  
+  * To populate this, the editor finds the most specific (longest matching) `MountPath` from a loaded root `SchemaNode` that is an ancestor of or equal to the `DomNode`'s path. Then, it navigates within that resolved root `SchemaNode` using property names to find the specific `SchemaNode` for the `DomNode`.  
+* Schema Fallback Behavior:  
+  * If a `DomNode` has a corresponding `SchemaNode`: Editing and validation proceed according to rules in `SchemaNode`.  
+  * If a `DomNode` does not have a corresponding `SchemaNode` (un-schematized):  
+    * Editable if it's a `ValueNode`.  
+    * Editing based on `JsonElement.ValueKind`.  
+    * Numbers: Type deduced from textual representation; if no fractional part, saved as integer. Otherwise, edited as `double`.  
+    * Booleans: Default to `CheckBox` editor.  
+    * `null` values are allowed.  
+    * No advanced validation (Min/Max, Regex, AllowedValues) or specific `ClrType` support beyond basic primitive parsing.  
+    * Default editor (e.g., `TextBox`) used, with basic parsing based on `JsonValueKind`.  
+* Null Value Handling:  
+  * `null` values are allowed in the JSON according to the JSON standard, for both schematized and un-schematized nodes.  
+  * Each node (schematized or not) shall provide a context menu option: "Reset to null".  
+  * When a `null`\-valued schematized node gets edited, editing shall start with the default non-null value for its `ClrType` (C\# type default, e.g., 0, false, empty string), unless `SchemaNode.DefaultValue` specifies otherwise. If the edit is cancelled, the value reverts to `null`.  
+  * When a `null`\-valued un-schematized node gets edited, a dialog allowing the user to set the JSON type and value shall be shown (similar to the Insert feature for no-schema nodes).
 
 ### 2.3. DataGrid Display
 
 * The DOM tree shall be displayed in a flat, two-column `DataGrid`.
+
 * Each row in the `DataGrid` shall represent a `DomNode`.
 
-    #### 2.3.1. Left Column (Node Name)
+* Display of DOM vs. DOM \+ Schema Tree:
 
-    * Displays the `Name` of the `DomNode`.
-    * **Indentation:** Indentation shall be implemented using padding. Each depth level shall add a fixed padding equivalent to the approximate width of three 'x' letters to the left of the node name.
-    * For `ArrayNode` elements, the index shall be included in the name (e.g., "[0]").
+  * A user-selectable option (e.g., a toggle button on a toolbar) shall allow displaying either:  
+    * Only the `DomNode` tree (nodes present in the loaded JSON).  
+    * The `DomNode` tree combined with schema-only nodes (nodes defined in the schema but not present in the current DOM).  
+  * When showing the combined view, schema-only nodes (that can be added by editing them) are visually differentiated (e.g., grayed out) from nodes present in the DOM.  
+  * If a node is present in the DOM, it uses its usual color, regardless of whether its value is the same as a schema default.  
+* 2.3.1. Left Column (Node Name)
 
-    #### 2.3.2. Right Column (Value)
+  * Displays the `Name` of the `DomNode`.  
+  * Indentation: Implemented using padding. Each depth level adds a fixed padding equivalent to the approximate width of three 'x' letters of the same font used for showing node names.  
+  * For `ArrayNode` elements, the index shall be included in the name (e.g., "\[0\]").  
+* 2.3.2. Right Column (Value)
 
-    * Displays the value of `ValueNode`s.
-    * **Value Alignment:** All value cells in the "Value" column shall be left-aligned. The values across all rows must be vertically aligned to the same visual line on the screen, creating a clean tabular appearance.
-    * **Value Rendering:** The way a value is rendered shall be defined by a customizable value renderer.
-        * Renderers shall be registered for the CLR type of the value.
-        * The `DomNode`'s `Value` property shall serve as the data source for the renderer.
-        * Default renderers for common primitive data types (numbers, strings, enum value labels, checkbox for booleans) shall use left alignment for the content itself.
-        * If no specific renderer is registered for a given `ClrType`, the JSON `ValueKind` of the `JsonElement` shall be used to select a default renderer (e.g., a generic text representation for unknown types).
-        * **Two types of rendering modes:**
-            * **In-place renderer** in the right 'value' column cell of the flat grid:
-                * Displays the value itself for primitive value nodes.
-                * Displays empty or specialized content for object nodes (e.g., "[Object]").
-                * Displays the number of items for array nodes (e.g., "[3 items]").
-            * **Side panel renderer:** Typically for object nodes, showing the object node content in a custom way (e.g., a custom form next to the grid).
+  * Displays the value of `ValueNode`s.  
+  * Value Alignment: All value cells in the "Value" column shall be left-aligned. Values across all rows must be vertically aligned.  
+  * Value Rendering: Defined by a customizable value renderer.  
+    * Renderers registered for the `System.Type` of the value (from `SchemaNode.ClrType`).  
+    * The `DomNode`'s `Value` property is the data source.  
+    * Default renderers for common primitive data types (numbers, strings, enum value labels, checkbox for booleans) use left alignment.  
+    * If no specific renderer for `ClrType`, `JsonElement.ValueKind` selects a default renderer.  
+    * Two types of rendering modes:  
+      * In-place renderer (right 'value' column cell):  
+        * Displays value for primitive value nodes.  
+        * Displays fixed text for object nodes (e.g., "\[Object\]") and array nodes (e.g., "\[3 items\]"), unless a custom renderer overrides this.  
+      * Side panel renderer: Typically for object nodes, showing content in a custom way (e.g., a custom form).  
+* 2.3.3. Expand/Collapse Functionality
 
-    #### 2.3.3. Expand/Collapse Functionality
-
-    * Rows representing `ObjectNode`s and `ArrayNode`s shall be expandable/collapsible.
-    * **Dynamic Row Addition:** On expansion, child nodes (properties for `ObjectNode`s, items for `ArrayNode`s) shall be dynamically added as sub-rows directly into the `DataGrid`'s `ItemsSource`, maintaining the correct hierarchical order.
-    * **View Model Property:** The view model class for each `DataGrid` row (`DataGridRowItem`) shall include an `IsExpanded` boolean property to track the expanded/collapsed state of the node it represents. This property will control the visibility of its children in the flat `ItemsSource`.
-    * The view model class for the entire flat table (`DataGridItems` collection, likely an `ObservableCollection<DataGridRowItem>`) shall define the data source for the `DataGrid` rows.
+  * Rows representing `ObjectNode`s and `ArrayNode`s shall be expandable/collapsible.  
+  * Dynamic Row Addition: On expansion, child nodes are dynamically added as sub-rows into the `DataGrid`'s `ItemsSource`.  
+  * View Model Property: The view model for each `DataGrid` row (`DataGridRowItem`) shall include an `IsExpanded` boolean property.  
+  * The view model for the entire flat table (`ObservableCollection<DataGridRowItem>`) is the `DataGrid`'s `ItemsSource`.
 
 ### 2.4. In-Place Editing
 
-* `ValueNode`s shall be editable in-place within the `DataGrid`. When a `ValueNode.Value` (`JsonElement`) is updated, the `DomNode` instance itself shall remain the same, but its `Value` property will reference a newly created `JsonElement` to reflect the change.
-* **Edit Mode Activation:**
-    * Double-clicking on a `ValueNode`'s value or pressing the Enter key when the row is selected shall activate edit mode.
-* **Editor Selection:**
-    * The editor control shall be dynamically selected based on the CLR type defined in the `SchemaNode`.
-    * Default editors shall be provided for primitive types (string, int, double, bool, enum).
-    * Custom editors can be registered for specific CLR types.
-    * Custom editors can specify if they require a modal window for editing.
-    * **Two types of editing modes:**
-        * **In-place** (within the `DataGrid` cell).
-        * **Side-panel (modal)** (in a separate dialog or panel).
-    * The `DomNode` shall be the data source for the editor.
-* **Edit Confirmation:**
-    * Pressing the Enter key within the editor shall confirm the edit.
-    * The edited value shall be validated against the schema.
-    * If validation is successful, the `ValueNode`'s `Value` shall be updated.
-* **Edit Cancellation:**
-    * Pressing the Esc key or losing focus from the editor shall cancel the edit.
-    * The `ValueNode`'s `Value` shall not be modified.
+* `ValueNode`s shall be editable in-place. When `ValueNode.Value` is updated, a new `JsonElement` is created.
 
-    #### 2.4.1. Validation Feedback
+* Edit Mode Activation: Double-clicking a `ValueNode`'s value or pressing Enter on the row.
 
-    * **Failure Notification (In-Place Editor):** If validation fails, the failing value cell in the `DataGrid` shall be visually marked (e.g., with a red border around the cell) to indicate the error.
-    * **Failure Notification (Modal Editor):** In the case of a modal editor, a red error status line (or similar prominent visual indicator) shall be shown within the modal window to display validation feedback.
-    * **Partial Validation Success (JSON Compatibility):**
-        * If the value entered is compatible with the `JsonValueKind` of the `DomNode` (i.e., it can be parsed into a valid JSON primitive of that kind, e.g., "123" for a `Number`, "true" for a `Boolean`), it shall be saved to the `ValueNode`'s `JsonElement`.
-        * However, if schema-level validation (e.g., Min/Max constraints, Regex pattern, AllowedValues) still fails, a **failed validation flag** shall be set in the `DataGridRowItem` (or the `DomNode`'s viewmodel) representing that node. This flag will control the visual marking of the cell.
-    * **Incompatible Value (JSON Parsing Failure):**
-        * If the value entered is **not** convertible to the `JsonValueKind` of the node (e.g., typing "abc" into a `JsonValueKind.Number` field), the editing process shall continue.
-        * Focus shall be returned back to the in-place edit field to allow the user to correct the input immediately.
-        * In the case of a modal editor, it shall **not** be possible to confirm the edit (e.g., the "OK" button will be disabled or show a blocking error) until all values within the modal are at least saveable as valid JSON primitives (i.e., compatible with their respective `JsonValueKind`).
-    * **Schema-defined Nullability:** For nodes covered by the schema, `null` is never a valid value.
+* Editor Selection:
 
-    #### 2.4.2. Editing Object and Array Nodes
+  * Dynamically selected based on the `System.Type` in `SchemaNode.ClrType`.  
+  * Default editors for primitive types. Custom editors can be registered.  
+  * Custom editors can specify if they require a modal window via a property of the editor class.  
+  * Two types of editing modes: In-place or Side-panel (modal).  
+  * `DomNode` is the data source.  
 
-    * `ObjectNode`s and `ArrayNode`s shall **not** be directly editable in their "Value" column by default. Their content is edited by expanding them and modifying their child nodes.
-    * **Specialized Editors for Complex Types:** An `ObjectNode` or `ArrayNode` can have a special editor registered for its specific `ClrType`. If such a custom editor is registered and `RequiresModal` is true, a button or similar control will be displayed in the "Value" column. Clicking this control will launch the modal editor for the entire `ObjectNode` or `ArrayNode` instance.
-    * **`ArrayNode` `ClrType` Definition:** For the purpose of custom editor registration and type inference, the `ClrType` for an `ArrayNode` shall always be represented as a generic `List<T>` (e.g., `List<string>`, `List<MyCustomObject>`), where `T` is the `ClrType` of the array's `ItemSchema`. This allows for unambiguous assignment of array-specific custom editors.
-    * The DOM validation of the node (and potential sub-nodes) edited by the modal editor is handled on a per-node level based on schema-defined validation, in the same way as used for in-place editing.
-    * Modal editors shall handle the highlighting of their internal edit fields bound to the DOM nodes that failed validation, using the "validation failed" flag on the DOM node.
+* Edit Confirmation: Pressing Enter or losing focus confirms. Validated against schema. If successful, `ValueNode.Value` updated.
 
-    #### 2.4.3. Array Item Editing
+* Edit Cancellation: Pressing Esc cancels. `ValueNode.Value` not modified. If editing started from a `null` schematized value (which began with a C\# type default), it reverts to `null`.
 
-    * The editor shall show a **placeholder node** (displaying "Add item" in gray color) at the end of every array item list.
-    * Entering edit mode (pressing Enter or double-clicking) on this placeholder node shall:
-        * Add a new array item to the DOM tree with its default value (as defined by `ItemSchema`).
-        * Start in-place editing the newly added item (if in-place editing is supported for its type).
-    * If the tab navigation moves to this placeholder node, it shall automatically add a new item and enter edit mode on it.
+  2.4.1. Validation Feedback
+
+  * Failure Notification (In-Place Editor): Failing value cell visually marked (e.g., red border).  
+  * Failure Notification (Modal Editor): Red error status line or similar in the modal.  
+  * Partial Validation Success (JSON Compatibility):  
+    * If value is compatible with `JsonValueKind` (e.g., "123" for Number), it's saved to `ValueNode.Value`.  
+    * If schema-level validation (Min/Max, Regex, AllowedValues) still fails, a "failed validation flag" is set in `DataGridRowItem` (or `DomNode`'s viewmodel), controlling visual marking.  
+  * Incompatible Value (JSON Parsing Failure):  
+    * If value isn't convertible to `JsonValueKind` (e.g., "abc" for Number), editing continues.  
+    * Focus returned to in-place edit field.  
+    * Modal editor: Cannot confirm edit until all values are at least valid JSON primitives for their `JsonValueKind`.  
+
+* 2.4.2. Editing Object and Array Nodes
+
+  * Not directly editable in their "Value" column by default.  
+  * Specialized Editors for Complex Types: An `ObjectNode` or `ArrayNode` can have a special editor registered for its `System.Type`. If it `RequiresModal`, a button launches the modal editor.  
+  * The `ClrType` for an `ArrayNode` for custom editor registration is `List<T>` (e.g., `List<string>`), where `T` is `System.Type` from `ItemSchema.ClrType`.  
+  * Modal editors handle highlighting internal fields based on the "validation failed" flag on `DomNode`s.  
+
+* 2.4.3. Array Item Editing
+
+  * A placeholder node ("Add item" in gray) shown at the end of every array item list.  
+    * If a filter is active and an array is displayed, its "Add item" placeholder is always visible if the array itself is visible.  
+  * Entering edit mode (Enter/double-click) on placeholder:  
+    * Adds new array item to DOM with its default value.  
+      * For schematized arrays, default value comes from C\# type defaults. For complex types (objects/arrays) not explicitly set in schema, defaults are empty object/array. If an object has mandatory properties (as per schema), these are included with their default values.  
+    * Starts in-place editing the new item.  
+  * If tab navigation moves to placeholder, automatically adds new item and enters edit mode.
 
 ### 2.5. Filtering
 
-* The editor shall provide a filtering mechanism to show a subset of the DOM tree in the `DataGrid`.
-* The filtering shall be based on node names.
-* When a filter is applied:
-    * Nodes whose names contain the filter text shall be displayed.
-    * All ancestor nodes (up to the root) of matching nodes shall also be displayed to maintain context.
-    * The node currently being edited shall always be displayed, regardless of the filter.
-* **"Show Just Invalid Nodes" Option:** There shall be an option (e.g., a checkbox or button) to filter the DOM tree to display only:
-    * Nodes that have failed validation (indicated by the "failed validation flag").
-    * All parent nodes up to the root, to allow the user to orient where the failed node belongs in the structure. This filter shall replace any other active filter. When this filter is active, search results shall only be highlighted within the set of visible invalid nodes (and their ancestors).
+* Filtering based on node names.  
+* When filter applied:  
+  * Nodes whose names contain the filter text (case-insensitive) are displayed.  
+  * All ancestor nodes of matching nodes are displayed.  
+  * Node currently being edited is always displayed.  
+* "Show Just Invalid Nodes" Option: Checkbox/button to filter for nodes with "failed validation flag" set, plus their ancestors. Replaces any other active filter. When deselected, previous filter is not restored (filter is cleared).
 
 ### 2.6. Search
 
-* The editor shall provide a search function to find nodes by name.
-* The search function shall include:
-    * Search Text Input: A `TextBox` for entering the search text.
-    * Find Next: A button to navigate to the next matching node.
-    * Find Previous: A button to navigate to the previous matching node.
-    * Search Results Highlighting: Matching nodes shall be visually highlighted in the `DataGrid`.
-    * If jumping over search matches, the ones filtered out should be skipped. The search highlight flag should be kept independently of the filter. If a node is currently collapsed, but a search matches one of its hidden children, it should be automatically expanded.
+* Search by node name. Includes:  
+  * Search Text Input.  
+  * Find Next/Previous buttons.  
+  * Matching nodes visually highlighted.  
+  * Filtered out matches are skipped. Highlight flag kept independently.  
+  * If a match is in a collapsed node, it (and its ancestors) should be automatically expanded.
 
 ### 2.7. Performance
 
-* The editor shall be optimized for JSON files up to 1MB in size.
-* UI operations (loading, editing, filtering, searching) shall be responsive.
+* Optimized for JSON files up to 1MB. UI operations responsive. Loading larger files may degrade performance.
 
 ### 2.8. Data Persistence and State Management
 
-* **Saving Changes:** The editor shall be able to save the entire DOM tree back to a JSON file.
-* **Pre-Save Validation:** Before saving, a validation step shall be run on the entire DOM tree.
-* **Save Warning:** If there are any validation issues (nodes with the "failed validation flag" set), the editor should warn the user but still allow the saving operation to proceed.
-* **Post-Load Validation:** The same validation mechanism shall be run immediately after loading the DOM tree from a JSON file.
-* **Visual Validation Feedback (Post-Load/Save):** Nodes failing validation (after loading or if saved despite warnings) shall have red borders or similar visual marking.
-* **Unsaved Changes Indicator:** An indicator (e.g., asterisk in title bar, changed button appearance) shall be present to show that there are unsaved changes. The unsaved flag is set after any successful edit. The unsaved flag is reset after saving and also after loading. If an undo operation brings the state back to a previously saved version, the unsaved flag should be cleared. Redoing an operation that re-applies a change will set the unsaved flag.
-* **Exit Prompt:** The editor should ask for saving before closing if there are unsaved changes.
+* Saving Changes: Save entire DOM tree to JSON file. Un-schematized data is part of the DOM and gets serialized.  
+* File Operations:  
+  * New File: Clears current content (prompts to save if unsaved) and starts with a new empty object `{}` as the DOM root. Menu item "File \> New".  
+  * Save As: Should be used on the first save of a new document or via "File \> Save As" menu item.  
+  * External Modification: If an open file is modified externally, a notification is shown with an option to reload.  
+  * Revert to Last Saved State: A "File \> Revert" menu item discards all in-memory changes for the current file, reloads it from its disk path, and clears the undo/redo stack.  
+* Pre-Save Validation: Validation run on entire DOM tree.  
+* Save Warning: If validation issues, warn user but allow saving.  
+* Post-Load Validation: Full validation run after loading.  
+* Visual Validation Feedback (Post-Load/Save): Nodes failing validation have red borders/markers.  
+* Unsaved Changes Indicator: Asterisk in title bar or similar. Set after any successful edit that changes DOM. Reset after save/load. Cleared if undo brings state to saved version. Set if redo re-applies change. Editing a "gray" addable schema node marks document as dirty.  
+* Exit Prompt: Ask to save if unsaved changes before closing.
 
 ### 2.9. Keyboard Navigation and Interaction (Browse Mode)
 
-* **Row Selection:** The full row should be selectable in Browse mode.
-* Up/Down arrow keys shall move the selected row up/down.
-* PageUp/PageDown keys shall move the view one page up/down.
-* Left/Right arrow keys shall collapse/expand the currently selected node (if it's an `ObjectNode` or `ArrayNode`).
-* **Deletion:** The Delete key shall delete the currently selected item(s). If multiple nodes are selected, all get deleted. Deletion happens on the DOM tree. Deleting of a required property should be possible, just the user should be warned and should confirm first.
-* **Insertion:** The Insert key shall insert a new item with its default value above the current row.
-    * **For Arrays:**
-        * Item type according to the schema. If no schema is defined, then the same type as the selected item. If no items are in the array yet, the editor should ask about the item type (natural Json value types).
-        * Default value according to the schema. If not defined, then a natural default for the CLR data type (if schema is defined). If no schema, a natural default for the JSON value type.
-    * **For Schema-covered items (when using Insert key on a "gray" placeholder node):**
-        * The DOM node should be built with all mandatory subnodes set to their default value.
-    * **For no-schema non-array nodes (when using Insert key):**
-        * If standing on a property within an `ObjectNode`, a new property should be created. The editor should show a modal dialog selecting the property name, property JSON data type (int, bool, string, object), and property value (for primitives).
-* **Clipboard Operations (Keyboard):**
-    * `Ctrl+C` or `Ctrl+Insert` shall copy the currently selected item(s) value to the clipboard as a JSON string.
-    * `Ctrl+V` or `Shift+Insert` shall paste the JSON from the clipboard as a new array item(s) ABOVE the currently selected item. (See "Insert from Clipboard" operation below).
-* **Multi-selection:** `Shift+Up/Down arrow` or `Ctrl+Mouse Left Click` shall enable multi-selection of rows.
+* Row Selection: Full row selectable.
 
-    #### 2.9.1. Tab Navigation
+* Up/Down arrow keys: Move selected row.
 
-    * **Browse Mode Tab:** If in Browse mode, `Tab` should jump to the next row just like pressing an arrow down key. It should not enter edit mode.
-    * **Editing Mode Tab:** If in in-place editing mode (the right cell 'value' column is focused), `Tab` shall:
-        * Confirm the edit.
-        * Jump to the next row on the same level (e.g., next property of the object, next item of the array).
-        * Start editing it (only if in-place edit is supported).
-        * If no in-place edit is possible or if at the last property of an object node/last item of an array node, the next row shall be selected in Browse mode.
+* PageUp/PageDown: Move view one page.
+
+* Left/Right arrow keys: Collapse/expand selected `ObjectNode` or `ArrayNode`.
+
+* Deletion: Delete key deletes selected item(s). A general warning dialog is shown before any node deletion. If `ObjectNode` or `ArrayNode` deleted, all children implicitly deleted. Undo is supported.
+
+* Insertion (Insert Key):
+
+  * Inserts new item with default value above current row.  
+  * For Arrays:  
+    * Item type according to schema. If no schema, then same type as selected item. If no items, ask user for JSON value type (String, Number, Boolean, Object, Array).  
+    * Default value from schema or C\# type default. For un-schematized, natural JSON type default.  
+    * If `Insert` on array's placeholder node: DOM node built with all mandatory sub-nodes (if object) set to their default values.  
+  * For ObjectNodes:  
+    * If a property within an `ObjectNode` is selected: shows modal dialog for new property name, JSON data type, and value (for primitives) to be inserted at the same level as the selected property (i.e., as a sibling).  
+    * If an `ObjectNode` itself is selected (not one of its properties):  
+      * If it's the root node (no parent): adds a new property to it (modal dialog for name, type, value).  
+      * If its parent is an `ObjectNode`: inserts a new property into the parent object, at the same level as the selected `ObjectNode` (modal dialog).  
+      * If its parent is an `ArrayNode`: inserts a *new array item* (sibling to selected `ObjectNode`) into the parent `ArrayNode`, above the `SelectedObjectNode`. Type follows array item insertion logic.  
+  * For Root Array: If the selected node is a root array, `Insert` adds a new array item to it.  
+
+* Clipboard Operations (Keyboard):
+
+  * `Ctrl+C` or `Ctrl+Insert`: Copy selected item(s) value to clipboard as JSON string. Entire subtree for Object/ArrayNodes.  
+  * `Ctrl+V` or `Shift+Insert`: Paste JSON from clipboard as new array item(s) ABOVE selected item. (See 2.11).  
+
+* Multi-selection: `Shift+Up/Down` or `Ctrl+Mouse Left Click`.
+
+  2.9.1. Tab Navigation
+
+  * Browse Mode Tab: `Tab` jumps to next row like Arrow Down, no edit mode.  
+  * Editing Mode Tab: If in-place editing, `Tab` confirms edit, jumps to next row on same level, starts editing if supported. If not, or at last item, next row selected in Browse mode.
 
 ### 2.10. Read-Only Nodes
 
-* Some `DomNode`s may be marked as read-only. This read-only flag shall be read from the schema.
-* The editor should simply ignore editing mode for such nodes � never enter the editing, but jump to Browse mode.
+* `DomNode`s can be read-only based on `[System.ComponentModel.ReadOnly(true)]` attribute in schema.  
+* Editor ignores edit mode activation for read-only nodes; jumps to Browse mode. Copy operations allowed; modifications (Delete, Insert via context menu) presumably disallowed.
 
 ### 2.11. Clipboard Operations (Detailed)
 
-* **Copy to Clipboard:**
-    * Currently selected items are copied to the clipboard as a JSON string.
-    * If multiple items selected, a JSON array of items is stored.
-* **Insert from Clipboard Operation:**
-    * Pasting in Browse mode is only defined for array nodes. It should not work elsewhere.
-    * If multiple items were put to the clipboard, there is the JSON array string stored in the clipboard.
-    * Single selected item can result in either a primitive value JSON string or a JSON object JSON string in the clipboard, depending on the selected node type.
-    * Inserting should only work if there is a valid JSON token string in the clipboard that can be converted to the data type of the item as defined in the schema.
-    * When the item nodes are covered by the schema, all the array items must share the same CLR type. The paste operation should check if the clipboard content is convertible to the array item CLR type.
-    * When the array is not covered by the schema, any JSON can be pasted as the array item and the DOM sub-branch should be constructed accordingly.
-    * If a JSON array is found in the clipboard, multiple items are inserted.
-    * `null` values should never be inserted.
-    * Pasting is always above the currently selected array item row. The row order follows the order of items in the DOM tree so the index to insert at is clear.
-    * **For no-schema DOM nodes:**
-        * If a JSON array is in the clipboard, it should only work inside an array node, adding new items there.
-        * If a JSON object is in the clipboard, it should create a new full DOM tree branch.
-    * **Internal Handling:** When JSON is pasted, its string content will be parsed into a new `JsonDocument` (and its `RootElement`). `DomNode` instances for the pasted content will then be created, and their `ValueNode.Value` properties will be assigned new `JsonElement`s reflecting the parsed data. This process will recursively construct the necessary DOM sub-tree for objects and arrays.
+* Copy to Clipboard: Selected items copied as JSON string. If multiple, a JSON array. For `ObjectNode`/`ArrayNode`, entire subtree is copied.  
+* Insert from Clipboard Operation:  
+  * Pasting in Browse mode only defined for array nodes. Does not work elsewhere (silent ignore or visual cue).  
+  * If JSON array in clipboard, multiple items inserted.  
+  * `null` values from clipboard are pasted if part of the JSON structure (e.g. `{"key": null}` or `[1, null, 2]`).  
+  * Pasting is above currently selected array item row.  
+  * Schematized Arrays: All pasted items must be convertible to array item `System.Type` from schema.  
+  * Un-schematized Arrays: Any valid JSON can be pasted; DOM sub-branch constructed.  
+  * For no-schema DOM nodes (if pasting into an un-schematized array):  
+    * JSON array in clipboard: adds new items.  
+    * JSON object/primitive in clipboard: adds as a new item.  
+  * Internal Handling: Pasted JSON string parsed into new `JsonDocument`; `DomNode`s created recursively.
 
 ### 2.12. Handling Missing DOM Tree Nodes (Schema-Defined, but Not Present)
 
-* If the DOM tree is missing some branches or properties that are defined in the schema tree (i.e., mandatory or defaultable schema nodes not present in the loaded JSON), the editor shall support adding them.
-* These "addable" nodes (defined in the schema tree but missing in the DOM tree) shall be displayed in the flat table together with existing DOM tree nodes but in a distinct color (e.g., gray) and with **DEFAULT values** (either schema defined or deduced from CLR type or JSON type if no CLR type available).
-* If the user attempts to edit the value of such a "gray" placeholder node, the DOM tree shall be populated with the missing intermediate nodes (using their default values from the schema) as required, and the editing of the selected node shall begin as usual.
+* If DOM tree misses branches/properties defined in schema (mandatory or defaultable), editor supports adding them.  
+* These "addable" nodes are displayed in the flat table (when "DOM \+ Schema" view is active) in a distinct color (e.g., gray) with DEFAULT values (from C\# property initializers, C\# type defaults, or schema attributes).  
+* Editing a "gray" placeholder node: DOM tree populated with missing intermediate nodes (using defaults), then editing begins. This marks the document as dirty.
 
 ### 2.13. Visual Cues for Un-Schematized Nodes
 
-* `DomNode`s that are not covered by the schema (un-schematized nodes) shall be rendered in a different color (e.g., dark blue) to visually distinguish them.
+* `DomNode`s not covered by schema (no corresponding `SchemaNode`) rendered in a different color (e.g., dark blue).
 
 ### 2.14. Undo/Redo Functionality
 
-* All operations like changing node value, deleting a node, or inserting a new node should be recorded to an undo stack.
-* Any change in the DOM tree triggers an undoable operation.
-* There is a separate redo stack.
-* `Ctrl+Z` and `Ctrl+Y` shortcuts shall be supported for Undo and Redo respectively.
-* If an undo operation brings the state back to a previously saved version, the unsaved flag should be cleared. Redoing an operation that re-applies a change will set the unsaved flag.
+* All operations changing DOM (value change, delete, insert) recorded to undo stack. Separate redo stack.  
+* `Ctrl+Z` (Undo), `Ctrl+Y` (Redo).  
+* If undo returns to saved state, unsaved flag cleared. Redo sets unsaved flag.  
+* Edit commits (Enter/focus loss) are the granularity for undo.
 
 ### 2.15. Context Menu
 
-* A context menu shall be available on cells in the `DataGrid`.
-* The context menu items will be dynamic based on the node type and schema rules. All selected items must support the operation in order for the context menu item to be offered for multi-selected rows.
-* **Specific Context Menu Items:**
-    * **Copy:** Copies the selected node(s) value to clipboard as JSON string.
-    * **Paste:** Pastes JSON from clipboard. (Behavior as defined in 2.11).
-    * **Insert:**
-        * **"Insert new item ABOVE"**: Inserts a new array item above the selected one (behavior as for Insert key).
-        * **"Insert new item BELOW"**: Inserts a new array item below the selected one. When an array's placeholder node is selected, a new item is created at its place. In-place edit mode starts immediately (if available).
-        * **"Insert new sub-node"**: Available for `ObjectNode`s. Adds a new property to the selected object node. The editor shall show a modal dialog for selecting the property name, property JSON data type (int, bool, string, object), and property value (for primitives).
-    * **Delete:** Deletes the selected node(s). (Behavior as for Delete key).
+* Available on `DataGrid` cells. Dynamic items; all selected items must support the operation.  
+* Specific Context Menu Items:  
+  * Copy: Copies selected node(s) value to clipboard as JSON string (entire subtree for objects/arrays).  
+  * Paste: Pastes JSON from clipboard (behavior as in 2.11, only for arrays).  
+  * Reset to null: Sets the node's value to `null`. Available for all nodes.  
+  * Insert:  
+    * "Insert new item ABOVE": (Arrays) Inserts new array item above selected one (like Insert key).  
+    * "Insert new item BELOW": (Arrays) Inserts new array item below selected one. On placeholder, creates item at its place. In-place edit starts.  
+    * "Insert new sub-node": (ObjectNodes) Adds new property. Modal dialog for property name, JSON data type, value.  
+      * If parent `ObjectNode` is schematized but "closed" (no additional properties allowed by schema): this option is still available. Adding the property makes the parent `ObjectNode` invalid (validation error: unexpected property) and the new sub-node is un-schematized (dark blue).  
+      * If parent `ObjectNode` schema allows additional properties via `Dictionary<string, T>` where `T` is a concrete C\# class: the new sub-node will be validated against the schema for `T` (derived from `SchemaNode.AdditionalPropertiesSchema`).  
+  * Delete: Deletes selected node(s) (like Delete key, with general warning).
 
-## 3. UI Design
+## 3\. UI Design
 
-* A WPF `DataGrid` shall be the primary UI element for displaying and editing the JSON data.
-* Standard WPF controls (TextBox, Button, CheckBox, ComboBox) shall be used for editing primitive values.
-* Custom editor controls may be used for complex CLR types.
-* Visual cues (indentation, highlighting, error markers, distinct colors for un-schematized nodes) shall be used to enhance usability.
+* WPF `DataGrid` as primary UI.  
+* Standard WPF controls for editing. Custom editors for complex types.  
+* Visual cues (indentation, highlighting, error markers, distinct colors).  
+* Focus Management:  
+  1. After In-Place Edit Confirmation (Enter/Tab): Enter: focus row in browse. Tab: next editable cell/row, start edit or select in browse.  
+  2. After In-Place Edit Cancellation (Esc/Focus Loss): Focus row in browse.  
+  3. After Node Deletion: Select node after deleted; if last, select new last; if empty, focus DataGrid/filter.  
+  4. After Node Insertion (Key/Context Menu): Focus new row, value cell in edit mode if `ValueNode`.  
+  5. After Adding Array Item (placeholder): Focus new item's value cell, edit mode.  
+  6. After Expand/Collapse: Keep focus on same row.  
+  7. After Search: Focus found node's row, scrolled into view, selected.  
+  8. After Filter Apply/Clear: Focus filter box or first visible row in DataGrid.  
+  9. Modal Dialogs: Open: focus first interactive. OK/Confirm/Cancel: focus launching cell/row or select relevant node.
 
-## 4. Technology Stack
+## 4\. Technology Stack & Configuration
 
-* C#
-* WPF (.NET)
-* `System.Text.Json` (for JSON parsing)
+* C\#  
+* WPF (.NET)  
+* `System.Text.Json` (for JSON parsing/serialization)  
+* `System.ComponentModel` attributes (e.g., `ReadOnlyAttribute`, `RangeAttribute`) for schema definition.  
+* Custom attributes (e.g., `ConfigSchemaAttribute`, `SchemaRegexPatternAttribute`) for schema definition.
 
-## 5. Future Considerations
+### 4.1. Editor Configuration (`editor_config.json`)
 
-* Schema validation against standard schema formats (e.g., JSON Schema).
+* Stored in `editor_config.json` in editor’s ‘config’ folder. No UI for editing this file.
+
+Example structure:  
+ JSON  
+    {  
+      "windowSettings": {  
+        "width": 1024,  
+        "height": 768  
+        // Potentially last position  
+      },  
+      "recentFiles": \[  
+        "C:/path/to/recent1.json",  
+        "C:/path/to/recent2.json"  
+      \],  
+      "schemaProcessing": { // For JSON-less schema approach  
+        "assemblyScanFolders": \[ // Paths to folders containing assemblies with C\# schema classes  
+          "./custom\_schemas",     // Relative to editor binary  
+          "D:/shared/company\_schemas" // Absolute path  
+        \]  
+      },  
+      "displaySettings": {  
+        "showSchemaNodes": true // The toggle for DOM vs DOM+Schema view  
+      }  
+    }
+
