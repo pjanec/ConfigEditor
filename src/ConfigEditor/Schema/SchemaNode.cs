@@ -31,4 +31,9 @@ public abstract class SchemaNode
 	/// Used for enum validation or fixed string sets.
 	/// </summary>
 	public List<string>? AllowedValues { get; set; }
+
+	/// <summary>
+	/// Can the user change this field in the UI?
+	/// </summary>
+	public bool IsReadOnly { get; set; }
 }

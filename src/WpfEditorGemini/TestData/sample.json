@@ -1,0 +1,32 @@
+{
+  "ApplicationName": "My Test App",
+  "Port": 9090,
+  "EnableLogging": true,
+  "Database": {
+    "Provider": "PostgreSQL",
+    "ConnectionString": "Host=localhost;Database=testdb;Username=user;Password=pass",
+    "TimeoutSeconds": 60,
+    "Version": "1.0"
+  },
+  "AllowedHosts": [
+    "localhost",
+    "127.0.0.1",
+    "*.example.com"
+  ],
+  "features": {
+    "EnableFeatureA": true,
+    "EnableFeatureB": false,
+    "Advanced": {
+      "CountryCode": "CA",
+      "CustomSettings": {
+        "Theme": "Dark",
+        "Language": "en-US"
+      },
+      "LogLevel": "Debug"
+    }
+  },
+  "ExtraProperty": "This is not in schema",
+  "RefExample": {
+    "$ref": "/Database/Provider"
+  }
+} 

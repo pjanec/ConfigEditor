@@ -1,0 +1,249 @@
+<Window x:Class="JsonConfigEditor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:JsonConfigEditor.ViewModels"
+        Title="{Binding WindowTitle}" 
+        Height="600" Width="1000"
+        WindowStartupLocation="CenterScreen">
+    
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+    
+    <Window.InputBindings>
+        <!-- Keyboard shortcuts -->
+        <KeyBinding Key="O" Modifiers="Ctrl" Command="{Binding OpenFileCommand}" />
+        <KeyBinding Key="S" Modifiers="Ctrl" Command="{Binding SaveFileCommand}" />
+        <KeyBinding Key="N" Modifiers="Ctrl" Command="{Binding NewFileCommand}" />
+        <KeyBinding Key="F" Modifiers="Ctrl" Command="{Binding FocusSearchCommand}" />
+        <KeyBinding Key="F3" Command="{Binding FindNextCommand}" />
+        <KeyBinding Key="F3" Modifiers="Shift" Command="{Binding FindPreviousCommand}" />
+    </Window.InputBindings>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Menu Bar -->
+        <Menu Grid.Row="0">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New" Command="{Binding NewFileCommand}" InputGestureText="Ctrl+N" />
+                <MenuItem Header="_Open..." Command="{Binding OpenFileCommand}" InputGestureText="Ctrl+O" />
+                <Separator />
+                <MenuItem Header="_Save" Command="{Binding SaveFileCommand}" InputGestureText="Ctrl+S" />
+                <MenuItem Header="Save _As..." Command="{Binding SaveAsFileCommand}" />
+                <Separator />
+                <MenuItem Header="E_xit" Command="{Binding ExitCommand}" />
+            </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem Header="_Undo" Command="{Binding UndoCommand}" InputGestureText="Ctrl+Z" />
+                <MenuItem Header="_Redo" Command="{Binding RedoCommand}" InputGestureText="Ctrl+Y" />
+                <Separator />
+                <MenuItem Header="_Find" Command="{Binding FocusSearchCommand}" InputGestureText="Ctrl+F" />
+                <MenuItem Header="Find _Next" Command="{Binding FindNextCommand}" InputGestureText="F3" />
+                <MenuItem Header="Find _Previous" Command="{Binding FindPreviousCommand}" InputGestureText="Shift+F3" />
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="Show _Schema Nodes" IsCheckable="True" IsChecked="{Binding ShowSchemaNodes}" />
+                <MenuItem Header="Show Only _Invalid Nodes" IsCheckable="True" IsChecked="{Binding ShowOnlyInvalidNodes}" />
+            </MenuItem>
+            <MenuItem Header="_Schema">
+                <MenuItem Header="_Load Schema Assembly..." Command="{Binding LoadSchemaCommand}" />
+            </MenuItem>
+        </Menu>
+
+        <!-- Toolbar -->
+        <ToolBar Grid.Row="1">
+            <Button Command="{Binding NewFileCommand}" ToolTip="New (Ctrl+N)">
+                <TextBlock Text="📄" FontSize="16" />
+            </Button>
+            <Button Command="{Binding OpenFileCommand}" ToolTip="Open (Ctrl+O)">
+                <TextBlock Text="📂" FontSize="16" />
+            </Button>
+            <Button Command="{Binding SaveFileCommand}" ToolTip="Save (Ctrl+S)">
+                <TextBlock Text="💾" FontSize="16" />
+            </Button>
+            <Separator />
+            <Button Command="{Binding UndoCommand}" ToolTip="Undo (Ctrl+Z)">
+                <TextBlock Text="↶" FontSize="16" />
+            </Button>
+            <Button Command="{Binding RedoCommand}" ToolTip="Redo (Ctrl+Y)">
+                <TextBlock Text="↷" FontSize="16" />
+            </Button>
+            <Separator />
+            
+            <!-- Filter Controls -->
+            <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="5,0" />
+            <TextBox Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" 
+                     Width="150" ToolTip="Filter nodes by name" />
+            
+            <Separator />
+            
+            <!-- Search Controls -->
+            <TextBlock Text="Search:" VerticalAlignment="Center" Margin="5,0" />
+            <TextBox x:Name="SearchTextBox" 
+                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
+                     Width="150" ToolTip="Search nodes (Ctrl+F)" />
+            <Button Command="{Binding FindNextCommand}" ToolTip="Find Next (F3)">
+                <TextBlock Text="⬇" FontSize="12" />
+            </Button>
+            <Button Command="{Binding FindPreviousCommand}" ToolTip="Find Previous (Shift+F3)">
+                <TextBlock Text="⬆" FontSize="12" />
+            </Button>
+            
+            <Separator />
+            
+            <!-- View Options -->
+            <CheckBox IsChecked="{Binding ShowSchemaNodes}" 
+                      Content="Schema Nodes" 
+                      VerticalAlignment="Center" 
+                      ToolTip="Show schema-only nodes that can be added" />
+            <CheckBox IsChecked="{Binding ShowOnlyInvalidNodes}" 
+                      Content="Invalid Only" 
+                      VerticalAlignment="Center" 
+                      ToolTip="Show only nodes with validation errors" />
+        </ToolBar>
+
+        <!-- Main DataGrid -->
+        <DataGrid Grid.Row="2" 
+                  x:Name="MainDataGrid"
+                  ItemsSource="{Binding FlatItemsSource}"
+                  AutoGenerateColumns="False"
+                  CanUserSortColumns="False"
+                  GridLinesVisibility="Horizontal"
+                  HeadersVisibility="Column"
+                  RowHeaderWidth="0"
+                  SelectionMode="Extended"
+                  SelectionUnit="FullRow"
+                  EnableRowVirtualization="True"
+                  EnableColumnVirtualization="True"
+                  VirtualizingPanel.VirtualizationMode="Recycling"
+                  ScrollViewer.CanContentScroll="True"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
+            
+            <!-- Row Style Selector -->
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Style.Triggers>
+                        <!-- Schema-only nodes (grayed out) -->
+                        <DataTrigger Binding="{Binding IsSchemaOnlyNode}" Value="True">
+                            <Setter Property="Foreground" Value="Gray" />
+                            <Setter Property="FontStyle" Value="Italic" />
+                        </DataTrigger>
+                        
+                        <!-- Unschematized nodes (dark blue) -->
+                        <DataTrigger Binding="{Binding IsUnschematized}" Value="True">
+                            <Setter Property="Foreground" Value="DarkBlue" />
+                        </DataTrigger>
+                        
+                        <!-- External/missing ref nodes (dark magenta) -->
+                        <DataTrigger Binding="{Binding IsRefLinkToExternalOrMissing}" Value="True">
+                            <Setter Property="Foreground" Value="DarkMagenta" />
+                        </DataTrigger>
+                        
+                        <!-- Validation error nodes (red border) -->
+                        <DataTrigger Binding="{Binding IsValid}" Value="False">
+                            <Setter Property="BorderBrush" Value="Red" />
+                            <Setter Property="BorderThickness" Value="1" />
+                        </DataTrigger>
+                        
+                        <!-- Search highlighted nodes -->
+                        <DataTrigger Binding="{Binding IsHighlightedInSearch}" Value="True">
+                            <Setter Property="Background" Value="Yellow" />
+                        </DataTrigger>
+                        
+                        <!-- Read-only nodes -->
+                        <DataTrigger Binding="{Binding IsNodeReadOnly}" Value="True">
+                            <Setter Property="Background" Value="LightGray" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+
+            <DataGrid.Columns>
+                <!-- Expandable Node Name Column -->
+                <DataGridTemplateColumn Header="Name" Width="300" CanUserResize="True">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid Margin="{Binding Indentation}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                
+                                <!-- Expand/Collapse Button -->
+                                <ToggleButton Grid.Column="0" 
+                                              IsChecked="{Binding IsExpanded}"
+                                              Visibility="{Binding IsExpandable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                              Width="16" Height="16" 
+                                              Margin="0,0,4,0"
+                                              Style="{StaticResource ExpandCollapseToggleStyle}" />
+                                
+                                <!-- Node Name -->
+                                <TextBlock Grid.Column="1" 
+                                           Text="{Binding NodeName}" 
+                                           VerticalAlignment="Center"
+                                           ToolTip="{Binding ValidationErrorMessage}" />
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- Value Column -->
+                <DataGridTemplateColumn Header="Value" Width="*" CanUserResize="True">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <!-- Display Mode -->
+                            <TextBlock Text="{Binding ValueDisplay}" 
+                                       VerticalAlignment="Center"
+                                       Visibility="{Binding IsInEditMode, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                                       ToolTip="{Binding ValidationErrorMessage}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                    
+                    <DataGridTemplateColumn.CellEditingTemplate>
+                        <DataTemplate>
+                            <!-- Edit Mode -->
+                            <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" 
+                                     VerticalAlignment="Center"
+                                     BorderThickness="0"
+                                     Background="Transparent" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellEditingTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- Type Column -->
+                <DataGridTextColumn Header="Type" 
+                                    Binding="{Binding SchemaContextNode.ClrType.Name}" 
+                                    Width="100" 
+                                    IsReadOnly="True" />
+
+                <!-- Path Column -->
+                <DataGridTextColumn Header="Path" 
+                                    Binding="{Binding DomNode.Path}" 
+                                    Width="200" 
+                                    IsReadOnly="True" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="3">
+            <StatusBarItem>
+                <TextBlock Text="{Binding FlatItemsSource.Count, StringFormat='Items: {0}'}" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock Text="{Binding CurrentFilePath, StringFormat='File: {0}', TargetNullValue='No file loaded'}" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock Text="{Binding IsDirty, StringFormat='Modified: {0}'}" />
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</Window> 

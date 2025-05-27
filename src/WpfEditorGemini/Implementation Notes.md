@@ -7198,3 +7198,591 @@ public partial class MainViewModel : ViewModelBase
 
 This detailed approach provides a more concrete plan for the complex materialization process. The helper methods for path calculation and recursive DOM creation are non-trivial and will require careful implementation and testing.
 
+# Custom renderers and editors
+
+Okay, let's detail how custom renderers, editors, and tooltip providers would be defined, discovered, and registered in your JSON Configuration Editor, following the attribute-based discovery mechanism.
+
+This involves defining clear interfaces, attributes to mark implementations, a registry service to hold them, and a discovery process (likely during assembly scanning).
+
+---
+
+**1\. C\# Interfaces (`JsonConfigEditor.Contracts`)**
+
+These define the contracts that custom UI components must implement. We'll refine them slightly for better WPF integration, perhaps by focusing on returning `DataTemplate`s or `FrameworkElement`s.
+
+**`IValueRenderer`**: For custom display of values in the DataGrid's "Value" column. (From specification document, Section 2.3.2)
+
+ C\#  
+// \--- File: JsonConfigEditor.Contracts/Rendering/IValueRenderer.cs \---  
+using System.Windows; // For FrameworkElement or DataTemplate  
+using JsonConfigEditor.Core.Dom;  
+using JsonConfigEditor.Core.Schema;
+
+namespace JsonConfigEditor.Contracts.Rendering  
+{  
+    /// \<summary\>  
+    /// Defines the contract for a component that provides a custom visual representation (renderer)  
+    /// for a DomNode's value when it's NOT in edit mode in the DataGrid.  
+    /// Implementations of this interface will be discovered via \[ValueRendererAttribute\].  
+    /// (From specification document, Section 2.3.2)  
+    /// \</summary\>  
+    public interface IValueRenderer  
+    {  
+        /// \<summary\>  
+        /// Creates or provides a FrameworkElement to display the value of the DomNode.  
+        /// This control will be hosted within the DataGrid cell.  
+        /// The FrameworkElement should ideally bind to properties of the provided viewModel.  
+        /// \</summary\>  
+        /// \<param name="viewModel"\>The ViewModel of the DataGrid row item, providing access to DomNode, SchemaNode, and other states.\</param\>  
+        /// \<returns\>A FrameworkElement to be used for displaying the value, or null to use default rendering.\</returns\>  
+        FrameworkElement? CreateDisplayControl(object viewModel); // viewModel will be DataGridRowItemViewModel  
+    }  
+}
+
+*  *Note: Passing the `DataGridRowItemViewModel` (as `object` for contract flexibility) to `CreateDisplayControl` gives the renderer access to all necessary context (`DomNode`, `SchemaNode`, `IsValid`, etc.) for data binding.*
+
+**`IValueEditor`**: For custom editing controls. (From specification document, Section 2.4)
+
+ C\#  
+// \--- File: JsonConfigEditor.Contracts/Editors/IValueEditor.cs \---  
+using System.Windows;  
+using JsonConfigEditor.Core.Dom;  
+using JsonConfigEditor.Core.Schema;
+
+namespace JsonConfigEditor.Contracts.Editors  
+{  
+    /// \<summary\>  
+    /// Defines the contract for a component that provides a custom editing control  
+    /// for a DomNode's value when it IS in edit mode in the DataGrid.  
+    /// Implementations of this interface will be discovered via \[ValueEditorAttribute\].  
+    /// (From specification document, Section 2.4)  
+    /// \</summary\>  
+    public interface IValueEditor  
+    {  
+        /// \<summary\>  
+        /// Creates or provides a FrameworkElement to edit the value of the DomNode.  
+        /// This control will be hosted within the DataGrid cell (or a modal if RequiresModal is true).  
+        /// The FrameworkElement should bind to properties like 'EditValue' on the provided viewModel.  
+        /// \</summary\>  
+        /// \<param name="viewModel"\>The ViewModel of the DataGrid row item, providing access to DomNode, SchemaNode, EditValue, etc.\</param\>  
+        /// \<returns\>A FrameworkElement to be used for editing the value, or null to use a default editor.\</returns\>  
+        FrameworkElement? CreateEditControl(object viewModel); // viewModel will be DataGridRowItemViewModel
+
+        /// \<summary\>  
+        /// Gets a value indicating whether this custom editor requires a modal dialog for editing,  
+        /// rather than being hosted in-place in the DataGrid cell.  
+        /// (From specification document, Section 2.4)  
+        /// \</summary\>  
+        bool RequiresModal { get; }
+
+        // Optional: Methods to signal when editing is complete or cancelled from within the custom editor,  
+        // if the editor needs more control than standard focus loss or Enter/Esc keys.  
+        // event EventHandler EditCommitted;  
+        // event EventHandler EditCancelled;  
+    }  
+}
+
+* 
+
+**`ITooltipProvider`**: For custom hover tooltips. (From specification document, Section 2.3.4)
+
+ C\#  
+// \--- File: JsonConfigEditor.Contracts/Tooltips/ITooltipProvider.cs \---  
+using JsonConfigEditor.Core.Dom;  
+using JsonConfigEditor.Core.Schema;
+
+namespace JsonConfigEditor.Contracts.Tooltips  
+{  
+    /// \<summary\>  
+    /// Defines the contract for a component that provides custom tooltip content  
+    /// for a DomNode when hovered over in the DataGrid.  
+    /// Implementations of this interface will be discovered via \[TooltipProviderAttribute\].  
+    /// (From specification document, Section 2.3.4)  
+    /// \</summary\>  
+    public interface ITooltipProvider  
+    {  
+        /// \<summary\>  
+        /// Gets the content to be displayed in a tooltip for the given DomNode.  
+        /// This can be a simple string, or a more complex UIElement.  
+        /// \</summary\>  
+        /// \<param name="viewModel"\>The ViewModel of the DataGrid row item, providing access to DomNode, SchemaNode, etc.\</param\>  
+        /// \<returns\>An object to be used as the tooltip content. Return null or empty if no custom tooltip should be shown by this provider.\</returns\>  
+        object? GetTooltipContent(object viewModel); // viewModel will be DataGridRowItemViewModel  
+    }  
+}
+
+* 
+
+---
+
+**2\. Custom Attributes for Discovery (`JsonConfigEditor.Contracts`)**
+
+These attributes will decorate the concrete implementations of the interfaces above. (From specification document, Clarification 7 \- Attribute based discovery)
+
+C\#  
+// \--- File: JsonConfigEditor.Contracts/Attributes/ValueRendererAttribute.cs \---  
+namespace JsonConfigEditor.Contracts.Attributes  
+{  
+    /// \<summary\>  
+    /// Marks a class as a custom value renderer for a specific CLR Type.  
+    /// The decorated class must implement IValueRenderer.  
+    /// (From specification document, Section 2.3.2 & Clarification 7\)  
+    /// \</summary\>  
+    \[AttributeUsage(AttributeTargets.Class, AllowMultiple \= true, Inherited \= false)\]  
+    public class ValueRendererAttribute : Attribute  
+    {  
+        /// \<summary\>  
+        /// The System.Type for which this renderer should be used.  
+        /// \</summary\>  
+        public Type TargetClrType { get; }
+
+        public ValueRendererAttribute(Type targetClrType)  
+        {  
+            TargetClrType \= targetClrType;  
+        }  
+    }  
+}
+
+// \--- File: JsonConfigEditor.Contracts/Attributes/ValueEditorAttribute.cs \---  
+namespace JsonConfigEditor.Contracts.Attributes  
+{  
+    /// \<summary\>  
+    /// Marks a class as a custom value editor for a specific CLR Type.  
+    /// The decorated class must implement IValueEditor.  
+    /// (From specification document, Section 2.4 & Clarification 7\)  
+    /// \</summary\>  
+    \[AttributeUsage(AttributeTargets.Class, AllowMultiple \= true, Inherited \= false)\]  
+    public class ValueEditorAttribute : Attribute  
+    {  
+        /// \<summary\>  
+        /// The System.Type for which this editor should be used.  
+        /// \</summary\>  
+        public Type TargetClrType { get; }
+
+        /// \<summary\>  
+        /// Specifies if this custom editor requires a modal window for editing.  
+        /// (From specification document, Section 2.4)  
+        /// \</summary\>  
+        public bool RequiresModal { get; }
+
+        public ValueEditorAttribute(Type targetClrType, bool requiresModal \= false)  
+        {  
+            TargetClrType \= targetClrType;  
+            RequiresModal \= requiresModal;  
+        }  
+    }  
+}
+
+// \--- File: JsonConfigEditor.Contracts/Attributes/TooltipProviderAttribute.cs \---  
+namespace JsonConfigEditor.Contracts.Attributes  
+{  
+    /// \<summary\>  
+    /// Marks a class as a custom tooltip provider for a specific CLR Type.  
+    /// The decorated class must implement ITooltipProvider.  
+    /// (From specification document, Section 2.3.4 & Clarification 7\)  
+    /// \</summary\>  
+    \[AttributeUsage(AttributeTargets.Class, AllowMultiple \= true, Inherited \= false)\]  
+    public class TooltipProviderAttribute : Attribute  
+    {  
+        /// \<summary\>  
+        /// The System.Type for which this tooltip provider should be used.  
+        /// \</summary\>  
+        public Type TargetClrType { get; }
+
+        public TooltipProviderAttribute(Type targetClrType)  
+        {  
+            TargetClrType \= targetClrType;  
+        }  
+    }  
+}
+
+---
+
+**3\. `CustomUIRegistryService` (`JsonConfigEditor.Wpf.Services` or `.Core`)**
+
+This service will act as a central registry for all discovered custom UI components.
+
+C\#  
+// \--- File: JsonConfigEditor.Wpf.Services.CustomUIRegistryService.cs \---  
+using JsonConfigEditor.Contracts.Editors;  
+using JsonConfigEditor.Contracts.Rendering;  
+using JsonConfigEditor.Contracts.Tooltips;  
+using System.Collections.Concurrent; // For thread-safe dictionaries if needed
+
+namespace JsonConfigEditor.Wpf.Services  
+{  
+    /// \<summary\>  
+    /// Central registry for custom UI components (renderers, editors, tooltip providers)  
+    /// discovered via attributes from scanned assemblies.  
+    /// \</summary\>  
+    public class CustomUIRegistryService  
+    {  
+        // Dictionaries to store registered components. Key is the TargetClrType.  
+        // Value could be the Type of the component or an instance. Storing Type is often more flexible.  
+        private readonly Dictionary\<Type, Type\> \_renderers \= new Dictionary\<Type, Type\>();  
+        private readonly Dictionary\<Type, (Type EditorType, bool RequiresModal)\> \_editors \= new Dictionary\<Type, (Type, bool)\>();  
+        private readonly Dictionary\<Type, Type\> \_tooltipProviders \= new Dictionary\<Type, Type\>();
+
+        // Consider thread-safety if registration can happen from multiple threads,  
+        // though typically it's done at startup. ConcurrentDictionary might be overkill if single-threaded init.
+
+        /// \<summary\>  
+        /// Registers a custom value renderer type for a specific CLR data type.  
+        /// \</summary\>  
+        public void RegisterRenderer(Type targetClrType, Type rendererType)  
+        {  
+            if (\!typeof(IValueRenderer).IsAssignableFrom(rendererType))  
+                throw new ArgumentException($"{rendererType.FullName} must implement IValueRenderer.", nameof(rendererType));  
+            \_renderers\[targetClrType\] \= rendererType;  
+            // Log registration  
+        }
+
+        /// \<summary\>  
+        /// Registers a custom value editor type for a specific CLR data type.  
+        /// \</summary\>  
+        public void RegisterEditor(Type targetClrType, Type editorType, bool requiresModal)  
+        {  
+            if (\!typeof(IValueEditor).IsAssignableFrom(editorType))  
+                throw new ArgumentException($"{editorType.FullName} must implement IValueEditor.", nameof(editorType));  
+            \_editors\[targetClrType\] \= (editorType, requiresModal);  
+            // Log registration  
+        }
+
+        /// \<summary\>  
+        /// Registers a custom tooltip provider type for a specific CLR data type.  
+        /// \</summary\>  
+        public void RegisterTooltipProvider(Type targetClrType, Type tooltipProviderType)  
+        {  
+            if (\!typeof(ITooltipProvider).IsAssignableFrom(tooltipProviderType))  
+                throw new ArgumentException($"{tooltipProviderType.FullName} must implement ITooltipProvider.", nameof(tooltipProviderType));  
+            \_tooltipProviders\[targetClrType\] \= tooltipProviderType;  
+            // Log registration  
+        }
+
+        /// \<summary\>  
+        /// Retrieves a custom value renderer instance for the given CLR data type.  
+        /// \</summary\>  
+        /// \<returns\>An instance of IValueRenderer, or null if no custom renderer is registered for the type.\</returns\>  
+        public IValueRenderer? GetValueRenderer(Type targetClrType)  
+        {  
+            if (\_renderers.TryGetValue(targetClrType, out Type? rendererType))  
+            {  
+                try { return Activator.CreateInstance(rendererType) as IValueRenderer; }  
+                catch (Exception ex) { /\* Log error instantiating renderer \*/ return null; }  
+            }  
+            return null;  
+        }
+
+        /// \<summary\>  
+        /// Retrieves a custom value editor instance and its modal requirement for the given CLR data type.  
+        /// \</summary\>  
+        /// \<returns\>An instance of IValueEditor and its modal requirement, or null if no custom editor is registered.\</returns\>  
+        public (IValueEditor? Editor, bool RequiresModal)? GetValueEditor(Type targetClrType)  
+        {  
+            if (\_editors.TryGetValue(targetClrType, out var editorInfo))  
+            {  
+                try  
+                {  
+                    var editorInstance \= Activator.CreateInstance(editorInfo.EditorType) as IValueEditor;  
+                    return (editorInstance, editorInfo.RequiresModal);  
+                }  
+                catch (Exception ex) { /\* Log error instantiating editor \*/ return null; }  
+            }  
+            return null;  
+        }
+
+        /// \<summary\>  
+        /// Retrieves a custom tooltip provider instance for the given CLR data type.  
+        /// \</summary\>  
+        /// \<returns\>An instance of ITooltipProvider, or null if no custom provider is registered for the type.\</returns\>  
+        public ITooltipProvider? GetTooltipProvider(Type targetClrType)  
+        {  
+            if (\_tooltipProviders.TryGetValue(targetClrType, out Type? providerType))  
+            {  
+                try { return Activator.CreateInstance(providerType) as ITooltipProvider; }  
+                catch (Exception ex) { /\* Log error instantiating provider \*/ return null; }  
+            }  
+            return null;  
+        }
+
+        /// \<summary\>  
+        /// Clears all registered custom UI components.  
+        /// \</summary\>  
+        public void ClearRegistry()  
+        {  
+            \_renderers.Clear();  
+            \_editors.Clear();  
+            \_tooltipProviders.Clear();  
+        }  
+    }  
+}
+
+---
+
+**4\. Discovery Logic (Within `SchemaLoaderService` or a New `CustomUIDiscoveryService`)**
+
+The assembly scanning process (currently in `SchemaLoaderService`) can be augmented to also look for these UI component attributes.
+
+C\#  
+// \--- File: JsonConfigEditor.Core.SchemaLoading.SchemaLoaderService.cs \---  
+// (or a new CustomUIDiscoveryService that works in tandem or is called by SchemaLoaderService)  
+using JsonConfigEditor.Contracts.Attributes;  
+using JsonConfigEditor.Contracts.Rendering;  
+using JsonConfigEditor.Contracts.Editors;  
+using JsonConfigEditor.Contracts.Tooltips;  
+using JsonConfigEditor.Wpf.Services; // Assuming CustomUIRegistryService is here or accessible
+
+public partial class SchemaLoaderService // Or your new discovery service  
+{  
+    // Assume CustomUIRegistryService is injected or accessible  
+    private readonly CustomUIRegistryService \_uiRegistry;
+
+    public SchemaLoaderService(CustomUIRegistryService uiRegistry /\*, other dependencies \*/)  
+    {  
+        \_uiRegistry \= uiRegistry;  
+        // ...  
+    }
+
+    // Modify ProcessAssembly or add a new method for UI discovery  
+    private void ProcessAssemblyForCustomUI(Assembly assembly)  
+    {  
+        try  
+        {  
+            foreach (Type typeInAssembly in assembly.GetTypes())  
+            {  
+                if (\!typeInAssembly.IsClass || typeInAssembly.IsAbstract) continue;
+
+                // Discover Renderers  
+                var rendererAttrs \= typeInAssembly.GetCustomAttributes\<ValueRendererAttribute\>(false);  
+                foreach (var attr in rendererAttrs)  
+                {  
+                    if (typeof(IValueRenderer).IsAssignableFrom(typeInAssembly))  
+                    {  
+                        \_uiRegistry.RegisterRenderer(attr.TargetClrType, typeInAssembly);  
+                    }  
+                    else  
+                    {  
+                        \_errorMessages.Add($"UI Discovery Error: Type '{typeInAssembly.FullName}' has ValueRendererAttribute but does not implement IValueRenderer.");  
+                    }  
+                }
+
+                // Discover Editors  
+                var editorAttrs \= typeInAssembly.GetCustomAttributes\<ValueEditorAttribute\>(false);  
+                foreach (var attr in editorAttrs)  
+                {  
+                    if (typeof(IValueEditor).IsAssignableFrom(typeInAssembly))  
+                    {  
+                        \_uiRegistry.RegisterEditor(attr.TargetClrType, typeInAssembly, attr.RequiresModal);  
+                    }  
+                    else  
+                    {  
+                        \_errorMessages.Add($"UI Discovery Error: Type '{typeInAssembly.FullName}' has ValueEditorAttribute but does not implement IValueEditor.");  
+                    }  
+                }
+
+                // Discover Tooltip Providers  
+                var tooltipAttrs \= typeInAssembly.GetCustomAttributes\<TooltipProviderAttribute\>(false);  
+                foreach (var attr in tooltipAttrs)  
+                {  
+                    if (typeof(ITooltipProvider).IsAssignableFrom(typeInAssembly))  
+                    {  
+                        \_uiRegistry.RegisterTooltipProvider(attr.TargetClrType, typeInAssembly);  
+                    }  
+                    else  
+                    {  
+                        \_errorMessages.Add($"UI Discovery Error: Type '{typeInAssembly.FullName}' has TooltipProviderAttribute but does not implement ITooltipProvider.");  
+                    }  
+                }  
+            }  
+        }  
+        catch (Exception ex)  
+        {  
+            \_errorMessages.Add($"Error discovering custom UI components in assembly '{assembly.GetName().Name}': {ex.Message}");  
+            // Log error  
+        }  
+    }
+
+    // In LoadSchemasFromAssembliesAsync, after processing an assembly for schemas, also process it for UI:  
+    // public async Task LoadSchemasFromAssembliesAsync(IEnumerable\<string\> assemblyPaths)  
+    // {  
+    //     ...  
+    //     await Task.Run(() \=\>  
+    //     {  
+    //         Assembly assembly \= Assembly.LoadFrom(path);  
+    //         ProcessAssemblyForSchemas(assembly); // Renamed original ProcessAssembly  
+    //         ProcessAssemblyForCustomUI(assembly); // New call  
+    //     });  
+    //     ...  
+    // }  
+}
+
+---
+
+**5\. Usage in UI (WPF `DataTemplateSelector` and Tooltip Handling):**
+
+**`ValueColumnTemplateSelector` (WPF):** This selector, used for the "Value" column of the `DataGrid`, will now query the `CustomUIRegistryService`.
+
+ C\#  
+// \--- In JsonConfigEditor.Wpf.Selectors.ValueColumnTemplateSelector.cs \---  
+public class ValueColumnTemplateSelector : DataTemplateSelector  
+{  
+    // ... (existing DataTemplate properties for defaults) ...  
+    public CustomUIRegistryService? UiRegistry { get; set; } // Injected or set from App resources
+
+    public override DataTemplate? SelectTemplate(object item, DependencyObject container)  
+    {  
+        if (item is not DataGridRowItemViewModel vm || UiRegistry \== null)  
+            return base.SelectTemplate(item, container);
+
+        Type? targetType \= vm.AssociatedSchemaNode?.ClrType ??  
+                           (vm.DomNode as ValueNode)?.Value.ValueKind.ToType(); // Helper needed for ValueKind to Type
+
+        if (targetType \== null) return GetDefaultTemplate(vm.IsInEditMode);
+
+        if (\!vm.IsInEditMode || \!vm.IsEditable) // DISPLAY MODE  
+        {  
+            var customRenderer \= UiRegistry.GetValueRenderer(targetType);  
+            if (customRenderer \!= null)  
+            {  
+                var control \= customRenderer.CreateDisplayControl(vm);  
+                if (control \!= null) return CreateDataTemplateForControl(control);  
+            }  
+            // Fallback to default display templates (DisplayStringRendererTemplate, DisplayBooleanRendererTemplate)  
+            // ...  
+        }  
+        else // EDIT MODE  
+        {  
+            var editorInfo \= UiRegistry.GetValueEditor(targetType);  
+            if (editorInfo?.Editor \!= null)  
+            {  
+                if (editorInfo.Value.RequiresModal)  
+                {  
+                    // Return a template that shows a button to launch the modal editor  
+                    // The button's command would call MainViewModel to open the modal,  
+                    // passing the IValueEditor instance and the ViewModel.  
+                    return GetModalEditorButtonTemplate(vm, editorInfo.Value.Editor);  
+                }  
+                else  
+                {  
+                    var control \= editorInfo.Value.Editor.CreateEditControl(vm);  
+                    if (control \!= null) return CreateDataTemplateForControl(control);  
+                }  
+            }  
+            // Fallback to default editor templates (StringEditorTemplate, BooleanEditorTemplate, etc.)  
+            // ...  
+        }  
+        return GetDefaultTemplate(vm.IsInEditMode); // Ultimate fallback  
+    }
+
+    private DataTemplate CreateDataTemplateForControl(FrameworkElement control)  
+    {  
+        // Dynamically create a DataTemplate wrapper for the provided control.  
+        // This is a common WPF pattern.  
+        var xaml \= $"\<DataTemplate xmlns=\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\"\>\<local:DynamicControlPresenter ContentProxy=\\"{{Binding}}\\"/\>\</DataTemplate\>";  
+        var context \= new System.Windows.Markup.ParserContext();  
+        context.XmlnsDictionary.Add("", "http://schemas.microsoft.com/winfx/2006/xaml/presentation");  
+        context.XmlnsDictionary.Add("local", $"clr-namespace:{control.GetType().Namespace};assembly={control.GetType().Assembly.GetName().Name}");
+
+        var template \= (DataTemplate)System.Windows.Markup.XamlReader.Parse(xaml, context);
+
+        // This dynamic presenter isn't quite right. The control itself is the content.  
+        // A simpler way if control is already configured:  
+        var dt \= new DataTemplate { VisualTree \= new FrameworkElementFactory(control.GetType()) };  
+        // Problem: How to pass the already created \`control\` instance?  
+        // Solution: The IValueEditor/Renderer should return a Type or a factory Func\<FrameworkElement\>  
+        // OR the DataTemplate can bind to a property on VM that holds the created control.  
+        // For now, assume CreateDisplayControl/CreateEditControl return configured elements,  
+        // and the DataTemplate uses a ContentPresenter bound to a property on VM that will hold this element.  
+        // OR, simpler if IValueRenderer/Editor directly return DataTemplates. Let's reconsider this.  
+        //  
+        // If IValueRenderer/Editor return FrameworkElement directly:  
+        // The DataTemplate in XAML would bind a ContentPresenter's Content to a property on the VM  
+        // that gets set to \`customRenderer.CreateDisplayControl(vm)\`.  
+        // The DataTemplateSelector would then select THIS template. This is getting complex.
+
+        // \*\*REVISED APPROACH FOR IValueRenderer/Editor:\*\*  
+        // It might be better if IValueRenderer/IValueEditor provide DataTemplates themselves,  
+        // or if the selector returns a \*key\* to a predefined DataTemplate in resources.  
+        // For now, assuming \`CreateDataTemplateForControl\` is a placeholder for how you'd host the returned \`FrameworkElement\`.  
+        // Often, custom editors are UserControls, and you'd have a DataTemplate like:  
+        // \<DataTemplate\>\<my:CustomEditorControl DataContext="{Binding}"/\>\</DataTemplate\>  
+        // The selector would then return \*this\* specific DataTemplate.  
+        // This implies the registry stores DataTemplate \*keys\* or \*actual DataTemplates\* rather than creating controls on the fly here.  
+        //  
+        // Let's assume UiRegistry stores Types, and the Selector picks a key.  
+        // Then in XAML resources, you define DataTemplates keyed by CLR Type string or a custom enum.  
+        // This is more idiomatic WPF.  
+        //  
+        // For this outline, let's stick to the idea that the custom interface method \*returns the control instance\*,  
+        // and the TemplateSelector is responsible for wrapping it if needed or the template is just a ContentPresenter.
+
+        return null; // Placeholder \- this part needs careful WPF design.  
+    }  
+     private DataTemplate? GetDefaultTemplate(bool isInEditMode) { /\* ... \*/ return null; }  
+     private DataTemplate? GetModalEditorButtonTemplate(DataGridRowItemViewModel vm, IValueEditor editor) { /\* ... \*/ return null; }  
+}
+
+* 
+
+}
+
+\* \*\*Tooltip Handling (WPF):\*\*  
+    You can use an attached property or a style trigger for \`ToolTipService.ToolTip\`.
+
+    \`\`\`xml  
+    \<Setter Property="ToolTipService.ToolTip"\>  
+        \<Setter.Value\>  
+            \<MultiBinding Converter="{StaticResource CustomTooltipConverter}"\>  
+                \<Binding Path="."/\> \<Binding Path="ParentViewModel.CustomUiRegistry" RelativeSource="{RelativeSource AncestorType={x:Type DataGrid}}"/\>  
+            \</MultiBinding\>  
+        \</Setter.Value\>  
+    \</Setter\>  
+    \`\`\`  
+    \`CustomTooltipConverter\` would be an \`IMultiValueConverter\` that takes the \`DataGridRowItemViewModel\` and the \`CustomUIRegistryService\`. It calls \`registry.GetTooltipProvider(vm.AssociatedSchemaNode.ClrType)?.GetTooltipContent(vm)\`.
+
+\*\*Revised approach for \`IValueRenderer\` and \`IValueEditor\` returning \`DataTemplate\` (More WPF-Friendly):\*\*
+
+If \`IValueRenderer.GetDisplayTemplate(object viewModel)\` and \`IValueEditor.GetEditTemplate(object viewModel)\` returned \`DataTemplate\` instances, the \`ValueColumnTemplateSelector\` becomes simpler:
+
+\`\`\`csharp  
+// Revised IValueEditor example  
+public interface IValueEditor  
+{  
+    DataTemplate? GetEditTemplate(object viewModel); // ViewModel is DataGridRowItemViewModel  
+    bool RequiresModal { get; }  
+}
+
+// Revised ValueColumnTemplateSelector  
+public override DataTemplate? SelectTemplate(object item, DependencyObject container)  
+{  
+    // ...  
+    if (\!vm.IsInEditMode) {  
+        var customRenderer \= UiRegistry.GetRegisteredRendererForType(targetType); // Registry now stores IValueRenderer instances  
+        DataTemplate? dt \= customRenderer?.GetDisplayTemplate(vm);  
+        return dt ?? DefaultDisplayTemplate;  
+    } else {  
+        var editorInfo \= UiRegistry.GetRegisteredEditorForType(targetType); // Registry stores IValueEditor instances  
+        if (editorInfo?.Editor \!= null) {  
+            if (editorInfo.Value.RequiresModal) return ModalEditorButtonTemplate;  
+            DataTemplate? dt \= editorInfo.Value.Editor.GetEditTemplate(vm);  
+            return dt ?? DefaultEditorTemplateForType(targetType);  
+        }  
+        return DefaultEditorTemplateForType(targetType);  
+    }  
+    // ...  
+}
+
+This means the custom components themselves are responsible for defining their XAML `DataTemplate`. This is often cleaner. The registry would store instances of `IValueRenderer`, `IValueEditor`.
+
+**Summary of Registration and Usage:**
+
+1. Developers create classes implementing `IValueRenderer`, `IValueEditor`, or `ITooltipProvider`.  
+2. These classes are decorated with `[ValueRendererAttribute(typeof(TargetType))]`, etc.  
+3. These classes are placed in assemblies within the `assemblyScanFolders`.  
+4. At startup, `SchemaLoaderService` (or a dedicated `CustomUIDiscoveryService`) scans these assemblies.  
+5. It finds the attributed classes, instantiates them (assuming parameterless constructors), and registers them with the `CustomUIRegistryService` against their `TargetClrType`.  
+6. The WPF UI (e.g., `ValueColumnTemplateSelector`, tooltip logic) queries the `CustomUIRegistryService` using the `SchemaNode.ClrType` of the `DataGridRowItemViewModel` to get the appropriate custom component.  
+7. If a custom component is found, it's used to render/edit the value or provide a tooltip. Otherwise, default WPF controls and templates are used.
+
+This provides a flexible and extensible system for custom UI within your editor.
+

@@ -1,0 +1,50 @@
+{
+  "ApplicationName": "JSON Config Editor Demo",
+  "Port": 8080,
+  "EnableLogging": true,
+  "Database": {
+    "Provider": "SqlServer",
+    "ConnectionString": "Server=localhost;Database=ConfigEditor;Trusted_Connection=true;",
+    "TimeoutSeconds": 30,
+    "Version": "1.0"
+  },
+  "AllowedHosts": [
+    "localhost",
+    "127.0.0.1",
+    "*.example.com"
+  ],
+  "features": {
+    "EnableFeatureA": false,
+    "EnableFeatureB": true,
+    "Advanced": {
+      "CountryCode": "US",
+      "CustomSettings": {
+        "Theme": "Dark",
+        "Language": "en-US",
+        "MaxRetries": 3
+      },
+      "LogLevel": "Information"
+    }
+  },
+  "ExtraProperty": "This property is not in the schema",
+  "RefExample": {
+    "$ref": "/Database/Provider"
+  },
+  "Numbers": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "NestedArray": [
+    {
+      "Name": "Item 1",
+      "Value": 100
+    },
+    {
+      "Name": "Item 2", 
+      "Value": 200
+    }
+  ]
+} 
