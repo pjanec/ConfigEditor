@@ -1,0 +1,64 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:vm="clr-namespace:JsonConfigEditor.ViewModels"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!-- Display Templates -->
+    <DataTemplate x:Key="DisplayStringTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBlock Text="{Binding ValueString}" ToolTip="{Binding Tooltip}" />
+    </DataTemplate>
+
+    <DataTemplate x:Key="DisplayNumberTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBlock Text="{Binding ValueString}" Foreground="DarkCyan" ToolTip="{Binding Tooltip}" />
+    </DataTemplate>
+
+    <DataTemplate x:Key="DisplayBooleanTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <CheckBox IsChecked="{Binding ValueBool}" IsEnabled="False" ToolTip="{Binding Tooltip}" HorizontalAlignment="Center"/>
+    </DataTemplate>
+
+    <DataTemplate x:Key="DisplayEnumTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBlock Text="{Binding ValueString}" FontWeight="Bold" ToolTip="{Binding Tooltip}" />
+    </DataTemplate>
+
+    <DataTemplate x:Key="DisplayRefTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBlock Text="{Binding RefDisplay}" Foreground="SlateBlue" ToolTip="{Binding Tooltip}" />
+    </DataTemplate>
+
+    <DataTemplate x:Key="DisplayAddItemTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBlock Text="+ Add Item" Foreground="Gray" FontStyle="Italic" />
+    </DataTemplate>
+
+    <DataTemplate x:Key="DisplaySchemaOnlyTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBlock Text="{Binding NodeName}" Foreground="Gray" FontStyle="Italic" ToolTip="{Binding Tooltip}" />
+    </DataTemplate>
+
+    <!-- Edit Templates -->
+    <DataTemplate x:Key="EditStringTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" ToolTip="{Binding Tooltip}"/>
+    </DataTemplate>
+
+    <DataTemplate x:Key="EditNumberTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" ToolTip="{Binding Tooltip}"/>
+    </DataTemplate>
+
+    <DataTemplate x:Key="EditBooleanTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <CheckBox IsChecked="{Binding EditValueBool, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding Tooltip}" HorizontalAlignment="Center"/>
+    </DataTemplate>
+
+    <DataTemplate x:Key="EditEnumTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <ComboBox ItemsSource="{Binding AllowedValues}" SelectedItem="{Binding EditValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding Tooltip}"/>
+    </DataTemplate>
+
+    <DataTemplate x:Key="EditRefTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" ToolTip="{Binding Tooltip}"/>
+    </DataTemplate>
+
+    <DataTemplate x:Key="EditAddItemTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" ToolTip="Add a new item"/>
+    </DataTemplate>
+
+    <DataTemplate x:Key="EditSchemaOnlyTemplate" DataType="{x:Type vm:DataGridRowItemViewModel}">
+        <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" ToolTip="{Binding Tooltip}"/>
+    </DataTemplate>
+
+</ResourceDictionary> 
