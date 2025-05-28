@@ -32,7 +32,7 @@ namespace JsonConfigEditor.ViewModels
         private readonly SchemaNode? _itemSchemaForPlaceholder; // Item schema if _isAddItemPlaceholder
         private readonly string? _nameOverrideForSchemaOnly; // Name for schema-only property placeholders
         private readonly int _depthForSchemaOnly; // Depth for schema-only/placeholder nodes
-        private string _schemaNodePathKey = string.Empty; // Unique key for schema-only nodes
+        private readonly string _pathKeyForSchemaOnlyNode = string.Empty; // Unique key for schema-only nodes
 
         // Added private fields for new properties
         private IValueEditor? _modalEditorInstance;
@@ -45,10 +45,10 @@ namespace JsonConfigEditor.ViewModels
             _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
             _isAddItemPlaceholder = false;
             _isExpandedInternal = (_domNode is ObjectNode || _domNode is ArrayNode) && (_domNode.Depth < 2); // Default expand first few levels
-            // Initialize IsValid based on current validation status if available from MainViewModel
-            // Initialize _editValue based on DomNode
+
             if (_domNode is ValueNode vn) { _editValue = vn.Value.ToString(); }
             else if (_domNode is RefNode rn) { _editValue = rn.ReferencePath ?? string.Empty; }
+            System.Diagnostics.Debug.WriteLine($"DGRIVM Constructor (DOM): NodeName: {NodeName}, Path: {_domNode?.Path}, Schema: {_schemaContextNode?.Name}, IsEditable: {IsEditable}, IsSchemaOnly: {IsSchemaOnlyNode}");
         }
 
         // --- Constructor for Schema-Only Property Placeholders ---
@@ -59,13 +59,17 @@ namespace JsonConfigEditor.ViewModels
             _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
             _nameOverrideForSchemaOnly = propertyName ?? throw new ArgumentNullException(nameof(propertyName));
             _depthForSchemaOnly = depth;
-            _schemaNodePathKey = pathKey;
+            _pathKeyForSchemaOnlyNode = pathKey;
             _isAddItemPlaceholder = false;
             // Initialize IsExpanded based on persisted state or default
             _isExpandedInternal = parentViewModel.GetSchemaNodeExpansionState(pathKey) ?? 
                                 ((schemaPropertyNode.NodeType == SchemaNodeType.Object || schemaPropertyNode.NodeType == SchemaNodeType.Array) && (depth < 2));
             
             _editValue = _schemaContextNode.DefaultValue?.ToString() ?? string.Empty;
+            
+            // Set ModalEditorInstance for schema-only nodes as well
+            // ModalEditorInstance = _parentViewModel.UiRegistry.GetEditor(_schemaContextNode); // Linter error: GetEditor not found
+            System.Diagnostics.Debug.WriteLine($"DGRIVM Constructor (Schema-Only): NodeName: {NodeName}, PathKey: {_pathKeyForSchemaOnlyNode}, Schema: {_schemaContextNode?.Name}, IsEditable: {IsEditable}, IsSchemaOnly: {IsSchemaOnlyNode}");
         }
 
         // --- Constructor for "Add Item" Array Placeholders ---
@@ -81,6 +85,7 @@ namespace JsonConfigEditor.ViewModels
             _isAddItemPlaceholder = true;
             _isExpandedInternal = false; // Placeholders are not expandable
             _editValue = string.Empty; // No edit value for add item placeholder initially
+            // _pathKeyForSchemaOnlyNode remains empty for AddItem placeholders
         }
 
         // --- Public Properties for DataBinding and Logic ---
@@ -160,10 +165,8 @@ namespace JsonConfigEditor.ViewModels
                 if (_isAddItemPlaceholder) return ""; // Placeholder text handled by NodeName or specific template
                 if (IsSchemaOnlyNode)
                 {
-                    // Display default value or type hint for schema-only nodes
-                    if (_schemaContextNode.DefaultValue != null)
-                        return _schemaContextNode.DefaultValue.ToString() ?? "(null default)";
-                    return $"(Add {_schemaContextNode.ClrType.Name})";
+                    // For schema-only nodes, EditValue holds the current input or default for editing
+                    return _editValue; 
                 }
                 if (_domNode is ValueNode vn)
                 {
@@ -220,15 +223,15 @@ namespace JsonConfigEditor.ViewModels
                 {
                     bool oldValue = _isExpandedInternal;
                     _isExpandedInternal = value;
-                    System.Diagnostics.Debug.WriteLine($"VM '{NodeName}' (PathKey: {_schemaNodePathKey}, Hash: {GetHashCode()}): IsExpanded changed from {oldValue} to {_isExpandedInternal}. Firing OnPropertyChanged.");
+                    System.Diagnostics.Debug.WriteLine($"VM '{NodeName}' (PathKey: {_pathKeyForSchemaOnlyNode}, Hash: {GetHashCode()}): IsExpanded changed from {oldValue} to {_isExpandedInternal}. Firing OnPropertyChanged.");
                     OnPropertyChanged(); 
 
-                    if (IsSchemaOnlyNode && !string.IsNullOrEmpty(_schemaNodePathKey))
+                    if (IsSchemaOnlyNode && !string.IsNullOrEmpty(_pathKeyForSchemaOnlyNode))
                     {
-                        ParentViewModel.SetSchemaNodeExpansionState(_schemaNodePathKey, _isExpandedInternal);
+                        ParentViewModel.SetSchemaNodeExpansionState(_pathKeyForSchemaOnlyNode, _isExpandedInternal);
                     }
 
-                    System.Diagnostics.Debug.WriteLine($"VM '{NodeName}' (PathKey: {_schemaNodePathKey}, Hash: {GetHashCode()}): Calling ParentViewModel.OnExpansionChanged.");
+                    System.Diagnostics.Debug.WriteLine($"VM '{NodeName}' (PathKey: {_pathKeyForSchemaOnlyNode}, Hash: {GetHashCode()}): Calling ParentViewModel.OnExpansionChanged.");
                     ParentViewModel.OnExpansionChanged(this); 
                 }
             }
@@ -242,9 +245,9 @@ namespace JsonConfigEditor.ViewModels
             if (_isExpandedInternal != expanded && IsExpandable)
             {
                 _isExpandedInternal = expanded;
-                if (IsSchemaOnlyNode && !string.IsNullOrEmpty(_schemaNodePathKey)) // Also update persisted state if set internally
+                if (IsSchemaOnlyNode && !string.IsNullOrEmpty(_pathKeyForSchemaOnlyNode)) // Also update persisted state if set internally
                 {
-                    ParentViewModel.SetSchemaNodeExpansionState(_schemaNodePathKey, _isExpandedInternal);
+                    ParentViewModel.SetSchemaNodeExpansionState(_pathKeyForSchemaOnlyNode, _isExpandedInternal);
                 }
                 OnPropertyChanged(nameof(IsExpanded));
             }
@@ -259,22 +262,22 @@ namespace JsonConfigEditor.ViewModels
         {
             get
             {
-                // Placeholders can be "edited" to trigger materialization
+                bool isCurrentlyEditable;
                 if (_isAddItemPlaceholder || IsSchemaOnlyNode)
-                    return true;
-
-                // Check if DOM node is present and not read-only
-                if (IsDomNodePresent)
+                    isCurrentlyEditable = true;
+                else if (IsDomNodePresent)
                 {
-                    // Check schema read-only flag
                     if (_schemaContextNode?.IsReadOnly == true)
-                        return false;
-
-                    // Only value nodes and ref nodes are directly editable
-                    return _domNode is ValueNode || _domNode is RefNode;
+                        isCurrentlyEditable = false;
+                    else
+                        isCurrentlyEditable = _domNode is ValueNode || _domNode is RefNode;
                 }
-
-                return false;
+                else
+                {
+                    isCurrentlyEditable = false;
+                }
+                System.Diagnostics.Debug.WriteLine($"DGRIVM IsEditable: NodeName: {NodeName}, Path: {_domNode?.Path ?? _pathKeyForSchemaOnlyNode}, IsDomNodePresent: {IsDomNodePresent}, IsSchemaOnlyNode: {IsSchemaOnlyNode}, SchemaContext: {_schemaContextNode?.Name}, SchemaIsReadOnly: {_schemaContextNode?.IsReadOnly}, DomNodeType: {_domNode?.GetType().Name}, Result: {isCurrentlyEditable}");
+                return isCurrentlyEditable;
             }
         }
 
@@ -410,45 +413,54 @@ namespace JsonConfigEditor.ViewModels
                 if (_isAddItemPlaceholder)
                 {
                     // TODO: Implement Undo/Redo for AddArrayItem
-                    return ParentViewModel.AddArrayItem(_parentArrayNodeForPlaceholder!, EditValue, _itemSchemaForPlaceholder);
+                    bool success = ParentViewModel.AddArrayItem(_parentArrayNodeForPlaceholder!, EditValue, _itemSchemaForPlaceholder);
+                    if (success) IsInEditMode = false; // Exit edit mode on success
+                    return success;
                 }
                 else if (IsSchemaOnlyNode)
                 {
-                    // TODO: Implement Undo/Redo for MaterializeSchemaOnlyNode
-                    return ParentViewModel.MaterializeSchemaOnlyNode(this, EditValue);
+                    bool success = _parentViewModel.MaterializeSchemaNodeAndBeginEdit(this, EditValue);
+                    // IsInEditMode is set to false by the caller (MaterializeSchemaNodeAndBeginEdit) or by this VM if materialization starts from CommitEdit
+                    // The line below was in DataGridRowItemViewModel already.
+                    IsInEditMode = false; 
+                    return success; 
                 }
                 else if (_domNode is ValueNode valueNode)
                 {
-                    JsonElement oldValue = valueNode.Value; // Clone if necessary, ValueNode.Value should return a clone or be safe
+                    JsonElement oldValue = valueNode.Value.Clone(); // Clone to ensure it's a snapshot
                     
                     if (valueNode.TryUpdateFromString(EditValue))
                     {
-                        JsonElement newValue = valueNode.Value; // Get the new value
-                        ParentViewModel.RecordValueEdit(valueNode, oldValue, newValue); // For Undo/Redo
-                        // OnNodeValueChanged is now implicitly handled by RecordValueEdit's effect on IsDirty & validation
+                        JsonElement newValue = valueNode.Value; // Get the new value (already a new element from TryUpdateFromString)
+                        ParentViewModel.RecordValueEdit(valueNode, oldValue, newValue); 
                         SetValidationState(true, "");
+                        IsInEditMode = false; // Exit edit mode on successful commit
                         return true;
                     }
                     else
                     {
                         SetValidationState(false, "Invalid value format");
+                        // Do not exit edit mode if update failed due to invalid format
                         return false;
                     }
                 }
                 else if (_domNode is RefNode refNode)
                 {
                     string oldPath = refNode.ReferencePath;
-                    if (oldPath != EditValue) // Check if value actually changed
+                    if (oldPath != EditValue) 
                     {
-                        refNode.ReferencePath = EditValue;
-                        // TODO: Implement Undo/Redo for RefNode path changes
-                        // ParentViewModel.RecordRefPathEdit(refNode, oldPath, EditValue); 
-                        ParentViewModel.OnNodeValueChanged(this); // General notification
+                        // TODO: Refactor RefNode to have a TryUpdatePath that returns bool and sets new path internally
+                        // For now, assume direct assignment and record an operation.
+                        refNode.ReferencePath = EditValue; 
+                        // ParentViewModel.RecordRefPathEdit(refNode, oldPath, EditValue); // Needs RefPathEditOperation
+                        ParentViewModel.OnNodeValueChanged(this); // General notification for now
                     }
-                    SetValidationState(true, ""); // Assume ref path string is always valid for now
+                    SetValidationState(true, ""); 
+                    IsInEditMode = false; // Exit edit mode on successful commit
                     return true;
                 }
 
+                IsInEditMode = false; // Default to exit edit mode if no specific path handled it
                 return false;
             }
             catch (Exception ex)
@@ -513,6 +525,6 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
-        public string SchemaNodePathKey => _schemaNodePathKey; // Public getter
+        public string SchemaNodePathKey => _pathKeyForSchemaOnlyNode; // Public getter
     }
 } 

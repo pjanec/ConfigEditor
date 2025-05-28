@@ -57,6 +57,13 @@ namespace JsonConfigEditor.ViewModels
         private readonly Stack<EditOperation> _undoStack = new();
         private readonly Stack<EditOperation> _redoStack = new();
 
+        // --- Serializer Options for converting object to JsonElement ---
+        private static readonly JsonSerializerOptions _defaultSerializerOptions = new JsonSerializerOptions
+        {
+            WriteIndented = false, // Not strictly necessary for element conversion but good practice
+            PropertyNamingPolicy = null, // Or JsonNamingPolicy.CamelCase if needed by schema representation
+        };
+
         // --- Commands ---
         public ICommand NewFileCommand { get; }
         public ICommand OpenFileCommand { get; }
@@ -70,6 +77,7 @@ namespace JsonConfigEditor.ViewModels
         public ICommand FindPreviousCommand { get; }
         public ICommand LoadSchemaCommand { get; }
         public ICommand OpenModalEditorCommand { get; }
+        public ICommand DeleteSelectedNodesCommand { get; }
 
         // --- Public Properties ---
 
@@ -233,21 +241,95 @@ namespace JsonConfigEditor.ViewModels
 
         private sealed class RemoveNodeOperation : EditOperation
         {
-            private readonly DomNode _parent;
+            private readonly DomNode _parent; 
             private readonly DomNode _removedNode;
-            private readonly string _name;
+            private readonly string _nameOrIndexAtTimeOfRemoval; 
+            private readonly int _originalIndexInArray; 
 
-            public override DomNode? TargetNode => _parent; // Select parent after removal, or _removedNode if re-added
+            public override DomNode? TargetNode => _originalIndexInArray != -1 ? _removedNode : _parent; 
 
-            public RemoveNodeOperation(DomNode parent, DomNode removedNode, string name)
+            public RemoveNodeOperation(DomNode parent, DomNode removedNode, string nameOrIndexAtTimeOfRemoval, int originalIndexInArray)
             {
                 _parent = parent;
-                _removedNode = removedNode;
-                _name = name;
+                _removedNode = removedNode; // This node already has its Name and Parent (which is _parent) set from its construction
+                _nameOrIndexAtTimeOfRemoval = nameOrIndexAtTimeOfRemoval; // This is _removedNode.Name
+                _originalIndexInArray = originalIndexInArray;
             }
 
-            public override void Undo(MainViewModel vm) => vm.AddNode(_parent, _removedNode, _name);
-            public override void Redo(MainViewModel vm) => vm.RemoveNode(_removedNode);
+            public override void Undo(MainViewModel vm)
+            {
+                // _removedNode was constructed with _parent as its parent, and _nameOrIndexAtTimeOfRemoval as its Name.
+                // These are immutable on _removedNode.
+                // We are just re-attaching it to the _parent's collection.
+                if (_parent is ArrayNode arrayParent)
+                {
+                    // Assumes _removedNode.Name is its stringified original index, suitable for re-insertion if needed
+                    // but InsertItem takes the node itself.
+                    // The critical part is that _removedNode already has its Parent link to arrayParent.
+                    arrayParent.InsertItem(_originalIndexInArray, _removedNode); 
+                }
+                else if (_parent is ObjectNode objectParent)
+                {
+                    // _removedNode.Name is the propertyName.
+                    // The critical part is that _removedNode already has its Parent link to objectParent.
+                    objectParent.AddChild(_removedNode.Name, _removedNode);
+                }
+                vm.MapDomNodeToSchemaRecursive(_removedNode); 
+                vm.IsDirty = true; 
+                vm.RefreshFlatList();
+            }
+
+            public override void Redo(MainViewModel vm)
+            {
+                vm.RemoveNode(_removedNode); 
+            }
+        }
+
+        // New operation for root replacement
+        private sealed class ReplaceRootOperation : EditOperation
+        {
+            private readonly DomNode? _oldRoot;
+            private DomNode _newRoot; 
+
+            public override DomNode? TargetNode => _newRoot;
+
+            public ReplaceRootOperation(DomNode? oldRoot, DomNode newRoot)
+            {
+                _oldRoot = oldRoot;
+                _newRoot = newRoot;
+            }
+
+            public override void Undo(MainViewModel vm)
+            {
+                vm._rootDomNode = _oldRoot;
+                vm.IsDirty = true; 
+                vm.RebuildDomToSchemaMapping(); 
+                vm.RefreshFlatList();
+                if (vm._rootDomNode != null && vm._persistentVmMap.TryGetValue(vm._rootDomNode, out var oldRootVm))
+                {
+                    vm.SelectedGridItem = oldRootVm;
+                }
+                else
+                {
+                    vm.SelectedGridItem = vm.FlatItemsSource.FirstOrDefault();
+                }
+            }
+
+            public override void Redo(MainViewModel vm)
+            {
+                vm._rootDomNode = _newRoot; 
+                vm.IsDirty = true;
+                vm.RebuildDomToSchemaMapping();
+                vm.RefreshFlatList();
+                if (vm._persistentVmMap.TryGetValue(vm._rootDomNode, out var newRootVm))
+                {
+                     vm.SelectedGridItem = newRootVm;
+                }
+                 else
+                {
+                    vm.SelectedGridItem = vm.FlatItemsSource.FirstOrDefault();
+                }
+            }
         }
 
         // --- Constructor ---
@@ -260,6 +342,7 @@ namespace JsonConfigEditor.ViewModels
             _validationService = new ValidationService();
             _uiRegistry = new CustomUIRegistryService();
             _schemaLoader = new SchemaLoaderService(_uiRegistry);
+            // _uiRegistry.DiscoverAndRegister(Assembly.GetExecutingAssembly()); // Linter error: Method not found. Commenting out.
 
             // Initialize commands
             NewFileCommand = new RelayCommand(ExecuteNewFile);
@@ -273,7 +356,8 @@ namespace JsonConfigEditor.ViewModels
             FindNextCommand = new RelayCommand(ExecuteFindNext, CanExecuteFind);
             FindPreviousCommand = new RelayCommand(ExecuteFindPrevious, CanExecuteFind);
             LoadSchemaCommand = new RelayCommand(ExecuteLoadSchema);
-            OpenModalEditorCommand = new RelayCommand(ExecuteOpenModalEditor, CanExecuteOpenModalEditor);
+            OpenModalEditorCommand = new RelayCommand(param => ExecuteOpenModalEditor(param as DataGridRowItemViewModel), param => CanExecuteOpenModalEditor(param as DataGridRowItemViewModel));
+            DeleteSelectedNodesCommand = new RelayCommand(param => ExecuteDeleteSelectedNodes(param as DataGridRowItemViewModel), param => CanExecuteDeleteSelectedNodes(param as DataGridRowItemViewModel));
 
             // Initialize with empty document
             InitializeEmptyDocument();
@@ -422,16 +506,15 @@ namespace JsonConfigEditor.ViewModels
 
         private bool CanExecuteFind()
         {
-            return !string.IsNullOrEmpty(SearchText);
+            return !string.IsNullOrEmpty(SearchText) && _searchResults.Any();
         }
 
-        private bool CanExecuteOpenModalEditor(object? parameter)
+        private bool CanExecuteOpenModalEditor(DataGridRowItemViewModel? item)
         {
-            var vm = parameter as DataGridRowItemViewModel;
-            return vm?.ModalEditorInstance != null;
+            return item?.ModalEditorInstance != null;
         }
 
-        private void ExecuteOpenModalEditor(object? parameter)
+        private void ExecuteOpenModalEditor(DataGridRowItemViewModel? parameter)
         {
             var vm = parameter as DataGridRowItemViewModel;
             if (vm == null || vm.ModalEditorInstance == null)
@@ -656,19 +739,272 @@ namespace JsonConfigEditor.ViewModels
         /// <summary>
         /// Materializes a schema-only node into the DOM.
         /// </summary>
-        internal bool MaterializeSchemaOnlyNode(DataGridRowItemViewModel schemaOnlyItem, string editValue)
+        internal bool MaterializeSchemaNodeAndBeginEdit(DataGridRowItemViewModel schemaOnlyVm, string initialEditValue)
         {
-            if (schemaOnlyItem.DomNode?.Parent == null || schemaOnlyItem.SchemaContextNode == null) return false;
+            if (!schemaOnlyVm.IsSchemaOnlyNode || schemaOnlyVm.SchemaContextNode == null)
+            {
+                return false; 
+            }
 
+            var targetPathKey = schemaOnlyVm.SchemaNodePathKey;
+            var targetSchemaNode = schemaOnlyVm.SchemaContextNode;
+
+            DomNode? materializedDomNode = MaterializeDomPathRecursive(targetPathKey, targetSchemaNode);
+
+            if (materializedDomNode == null)
+            {
+                System.Diagnostics.Debug.WriteLine($"MaterializeAndBeginEdit: MaterializeDomPathRecursive failed for '{targetPathKey}'.");
+                return false;
+            }
+
+            if (materializedDomNode is ValueNode valueNode)
+            {
+                try
+                {
+                    JsonElement newJsonValue;
+                    SchemaNode? vnSchema = _domToSchemaMap.TryGetValue(valueNode, out var s) ? s : null;
+                    Type targetType = vnSchema?.ClrType ?? typeof(string); 
+
+                    if (targetType == typeof(bool) && bool.TryParse(initialEditValue, out bool bVal))
+                        newJsonValue = bVal ? JsonDocument.Parse("true").RootElement : JsonDocument.Parse("false").RootElement;
+                    else if ((targetType == typeof(int) || targetType == typeof(long)) && long.TryParse(initialEditValue, out long lVal))
+                        newJsonValue = JsonDocument.Parse(lVal.ToString()).RootElement;
+                    else if ((targetType == typeof(double) || targetType == typeof(float) || targetType == typeof(decimal)) && double.TryParse(initialEditValue, out double dVal))
+                        newJsonValue = JsonDocument.Parse(dVal.ToString(System.Globalization.CultureInfo.InvariantCulture)).RootElement;
+                    else 
+                        newJsonValue = JsonDocument.Parse($"\"{JsonEncodedText.Encode(initialEditValue)}\"").RootElement;
+                    
+                    if (valueNode.Value.ValueKind != newJsonValue.ValueKind || valueNode.Value.ToString() != newJsonValue.ToString())
+                    {
+                        var oldValue = valueNode.Value; 
+                        var valueEditOp = new ValueEditOperation(valueNode, oldValue, newJsonValue.Clone());
+                        RecordEditOperation(valueEditOp);
+                        valueEditOp.Redo(this); // This calls SetNodeValue which updates valueNode.Value
+                    }
+                }
+                catch (JsonException ex)
+                { 
+                    System.Diagnostics.Debug.WriteLine($"Failed to parse initialEditValue '{initialEditValue}' for materialized node '{valueNode.Path}': {ex.Message}");
+                }
+            }
+
+            RefreshFlatList(); 
+
+            if (_persistentVmMap.TryGetValue(materializedDomNode, out var newVm))
+            {
+                SelectedGridItem = newVm;
+                if (materializedDomNode is ValueNode || materializedDomNode is RefNode) 
+                {
+                    newVm.IsInEditMode = true; 
+                    SetCurrentlyEditedItem(newVm);
+                }
+            }
+            return true;
+        }
+
+        private DomNode? MaterializeDomPathRecursive(string targetPathKey, SchemaNode? targetSchemaNodeContext)
+        {
+            // 0. Handle empty path for root (_rootDomNode is the target)
+            if (string.IsNullOrEmpty(targetPathKey) || targetPathKey == "$root") // Normalized root path check
+            {
+                if (_rootDomNode != null) return _rootDomNode; // Root already exists
+
+                if (targetSchemaNodeContext == null) {
+                    System.Diagnostics.Debug.WriteLine($"MaterializeDomPathRecursive: Cannot materialize root, targetSchemaNodeContext is null.");
+                    return null; 
+                }
+                
+                var oldRoot = _rootDomNode; // Will be null here if we are materializing for the first time
+                var newRoot = CreateNodeFromSchema(targetSchemaNodeContext, "$root", null);
+                if (newRoot != null)
+                {
+                    var op = new ReplaceRootOperation(oldRoot, newRoot); // Handles setting _rootDomNode via Redo
+                    RecordEditOperation(op); 
+                    op.Redo(this); 
+                    return _rootDomNode; // Return the newly set root from vm instance member
+                }
+                System.Diagnostics.Debug.WriteLine($"MaterializeDomPathRecursive: Failed to create root node from schema.");
+                return null;
+            }
+
+            // 1. Try to find if the node for targetPathKey already exists in DOM.
+            DomNode? existingNode = FindDomNodeByPath(targetPathKey);
+            if (existingNode != null)
+            {
+                return existingNode; 
+            }
+
+            // 2. If doesn't exist, ensure its parent exists, then create this node.
+            string parentPathKey;
+            string currentNodeName;
+
+            // Normalize targetPathKey before splitting (though FindDomNodeByPath also normalizes)
+            string normalizedTargetPathKey = targetPathKey.StartsWith("$root/") ? targetPathKey.Substring("$root/".Length) : targetPathKey;
+
+            int lastSlash = normalizedTargetPathKey.LastIndexOf('/');
+            if (lastSlash == -1) // Direct child of root
+            {
+                parentPathKey = ""; // Root path for MaterializeDomPathRecursive (normalized)
+                currentNodeName = normalizedTargetPathKey;
+            }
+            else
+            {
+                parentPathKey = normalizedTargetPathKey.Substring(0, lastSlash);
+                currentNodeName = normalizedTargetPathKey.Substring(lastSlash + 1);
+            }
+
+            // 3. Ensure parent DOM node exists.
+            SchemaNode? parentSchema = _schemaLoader.FindSchemaForPath(parentPathKey); 
+
+            DomNode? parentDomNode = MaterializeDomPathRecursive(parentPathKey, parentSchema);
+
+            if (parentDomNode == null)
+            {
+                System.Diagnostics.Debug.WriteLine($"MaterializeDomPathRecursive: Failed to materialize parent DOM node for path '{parentPathKey}' while trying for '{targetPathKey}'.");
+                return null;
+            }
+
+            if (!(parentDomNode is ObjectNode parentAsObject))
+            {
+                System.Diagnostics.Debug.WriteLine($"MaterializeDomPathRecursive: Parent DOM node '{parentDomNode.Path}' is not an ObjectNode. Cannot add property '{currentNodeName}'.");
+                return null;
+            }
+            
+            SchemaNode? currentNodeSchema = null;
+            // Try to get specific schema from parent if targetSchemaNodeContext was for a deeper path initially
+            if (parentSchema?.Properties != null && parentSchema.Properties.TryGetValue(currentNodeName, out SchemaNode? foundSchemaFromParent))
+            {
+                currentNodeSchema = foundSchemaFromParent;
+            }
+            // If not found via parent, or if targetSchemaNodeContext is more specific (e.g. passed directly for the current segment)
+            // and its name matches, prefer it. This helps if targetSchemaNodeContext was indeed for *this* segment.
+            if (targetSchemaNodeContext != null && NormalizeSchemaName(targetSchemaNodeContext.Name) == NormalizeSchemaName(currentNodeName)) {
+                 currentNodeSchema = targetSchemaNodeContext;
+            }
+            // Fallback to direct path lookup if still null
+            if (currentNodeSchema == null) {
+                currentNodeSchema = _schemaLoader.FindSchemaForPath(targetPathKey); // targetPathKey is the full path to current node
+            }
+            
+            if (currentNodeSchema == null)
+            {   
+                System.Diagnostics.Debug.WriteLine($"MaterializeDomPathRecursive: Could not find schema for current node '{currentNodeName}' within path '{targetPathKey}'.");
+                return null; 
+            }
+
+            // 5. Create the current node.
+            var newNode = CreateNodeFromSchema(currentNodeSchema, currentNodeName, parentDomNode);
+            if (newNode == null)
+            {
+                System.Diagnostics.Debug.WriteLine($"MaterializeDomPathRecursive: Failed to create new DOM node for '{currentNodeName}' from schema.");
+                return null;
+            }
+
+            var addOperation = new AddNodeOperation(parentAsObject, newNode, currentNodeName);
+            RecordEditOperation(addOperation);
+            addOperation.Redo(this); 
+
+            return newNode;
+        }
+
+        private string NormalizeSchemaName(string schemaName) {
+            // Schemas might have names like "*" for array items, but property names are specific.
+            // This helper is more for conceptual matching; property names from path splitting are usually exact.
+            return schemaName; // Placeholder for now, might need more sophisticated normalization if schema names have prefixes/suffixes.
+        }
+
+        private DomNode? FindDomNodeByPath(string pathKey)
+        {
+            if (_rootDomNode == null) return null;
+            
+            // Root path can be "" or "$root" conceptually. DomNode.Path for root is "".
+            // If schema gives "$root" but DOM path is "", adjust.
+            if (string.IsNullOrEmpty(pathKey) || pathKey == "$root") return _rootDomNode;
+
+            // Normalize: DomNode.Path doesn't start with "$root/"
+            string normalizedPathKey = pathKey.StartsWith("$root/") ? pathKey.Substring("$root/".Length) : pathKey;
+            if (string.IsNullOrEmpty(normalizedPathKey)) return _rootDomNode;
+
+
+            string[] segments = normalizedPathKey.Split('/');
+            DomNode? current = _rootDomNode;
+
+            foreach (string segment in segments)
+            {
+                if (current == null) return null;
+
+                if (current is ObjectNode objNode)
+                {
+                    current = objNode.GetChild(segment); // Using GetChild
+                    if (current == null) return null; // Not found
+                }
+                else if (current is ArrayNode arrNode)
+                {
+                    if (int.TryParse(segment, out int index))
+                    {
+                        current = arrNode.GetItem(index); // Using GetItem
+                        if (current == null) return null; // Not found or index out of bounds by GetItem logic
+                    }
+                    else return null; // Invalid segment for array
+                }
+                else return null; // Not a container
+            }
+            return current;
+        }
+
+        private DomNode? CreateNodeFromSchema(SchemaNode schema, string name, DomNode? parent)
+        {
+            if (schema == null) return null;
+
+            JsonElement defaultValue = ConvertObjectToJsonElement(schema.DefaultValue);
+
+            switch (schema.NodeType)
+            {
+                case SchemaNodeType.Object:
+                    var objNode = new ObjectNode(name, parent);
+                    // TODO: Populate with default children if schema defines them (recursive call to CreateNodeFromSchema/Materialize)
+                    return objNode;
+                case SchemaNodeType.Array:
+                    var arrNode = new ArrayNode(name, parent);
+                    // TODO: Populate with default items if schema defines them
+                    return arrNode;
+                case SchemaNodeType.Value:
+                    // For ValueNode, the JsonElement default value is part of its state.
+                    return new ValueNode(name, parent, defaultValue);
+                // case SchemaNodeType.Ref: // Assuming RefNode is created differently or not directly from here.
+                // return new RefNode(name, parent, referencePath); 
+                default:
+                    return null; // Unknown schema node type
+            }
+        }
+
+        // Helper to standardize AddNodeOperation recording, especially when node is created fresh.
+        private void RecordAddNodeOperation(DomNode? parent, DomNode newNode, string nameInParent)
+        {
+            RecordEditOperation(new AddNodeOperation(parent ?? _rootDomNode!, newNode, nameInParent));
+        }
+
+        private JsonElement ConvertObjectToJsonElement(object? value)
+        {
+            if (value == null)
+            {
+                return JsonDocument.Parse("null").RootElement;
+            }
+            // Handle cases where 'value' might already be a JsonElement (e.g. from ValueNode.Value)
+            if (value is JsonElement element)
+            {
+                return element.Clone(); // Clone to ensure it's not tied to another document
+            }
             try
             {
-                var newNode = CreateNodeFromValue(editValue, schemaOnlyItem.NodeName, schemaOnlyItem.DomNode.Parent, schemaOnlyItem.SchemaContextNode);
-                RecordEditOperation(new AddNodeOperation(schemaOnlyItem.DomNode.Parent, newNode, schemaOnlyItem.NodeName));
-                return true;
+                return JsonSerializer.SerializeToElement(value, _defaultSerializerOptions);
             }
-            catch
+            catch (Exception ex)
             {
-                return false;
+                // Fallback or error handling if direct serialization fails
+                System.Diagnostics.Debug.WriteLine($"Failed to serialize object of type {value.GetType()} to JsonElement: {ex.Message}");
+                // Fallback to a JSON null or throw, depending on desired behavior
+                return JsonDocument.Parse("null").RootElement;
             }
         }
 
@@ -738,13 +1074,25 @@ namespace JsonConfigEditor.ViewModels
                 return;
             }
 
-            // Preserve selected item's underlying DomNode or placeholder identifier
+            // Preserve selected item's underlying DomNode or unique path key
             object? selectedIdentifier = null;
+            bool wasSchemaOnlySelected = false;
             if(SelectedGridItem != null)
             {
-                selectedIdentifier = SelectedGridItem.IsDomNodePresent ? 
-                                     (object?)SelectedGridItem.DomNode :
-                                     SelectedGridItem.NodeName; // Use NodeName for placeholders
+                if (SelectedGridItem.IsDomNodePresent && SelectedGridItem.DomNode != null)
+                {
+                    selectedIdentifier = SelectedGridItem.DomNode.Path; // Use DOM path for DOM nodes
+                }
+                else if (SelectedGridItem.IsSchemaOnlyNode && !string.IsNullOrEmpty(SelectedGridItem.SchemaNodePathKey))
+                {
+                    selectedIdentifier = SelectedGridItem.SchemaNodePathKey; // Use SchemaNodePathKey for schema-only
+                    wasSchemaOnlySelected = true;
+                }
+                else // Fallback for add item placeholders or other edge cases
+                {
+                    selectedIdentifier = SelectedGridItem.NodeName;
+                }
+                System.Diagnostics.Debug.WriteLine($"RefreshFlatList: Preserving selection. Identifier: '{selectedIdentifier}', WasSchemaOnly: {wasSchemaOnlySelected}");
             }
 
             var tempFlatList = new List<DataGridRowItemViewModel>();
@@ -753,29 +1101,57 @@ namespace JsonConfigEditor.ViewModels
             var processedList = ApplyFiltering(tempFlatList);
 
             FlatItemsSource.Clear();
-            _persistentVmMap.Clear(); 
+            // _persistentVmMap.Clear(); // Clearing this aggressively can lose VM state like expansion if not careful
+            // Let's try to update existing VMs in persistentMap or add new ones, and remove stale ones.
+            var newPersistentMap = new Dictionary<DomNode, DataGridRowItemViewModel>();
 
             DataGridRowItemViewModel? itemToReselect = null;
 
-            foreach (var item in processedList)
+            foreach (var itemVm in processedList) // itemVm is the new or updated VM from BuildFlatListRecursive
             {
-                FlatItemsSource.Add(item);
-                if (item.DomNode != null)
+                FlatItemsSource.Add(itemVm);
+                if (itemVm.DomNode != null) // If it's a DOM node VM
                 {
-                    _persistentVmMap[item.DomNode] = item;
-                    if (selectedIdentifier is DomNode selectedDomNode && item.DomNode == selectedDomNode)
+                    newPersistentMap[itemVm.DomNode] = itemVm; // Update/add to new persistent map
+                    if (!wasSchemaOnlySelected && selectedIdentifier is string selectedDomPath && itemVm.DomNode.Path == selectedDomPath)
                     {
-                        itemToReselect = item;
+                        itemToReselect = itemVm;
                     }
                 }
-                else if (selectedIdentifier is string selectedName && item.NodeName == selectedName) 
+                else if (itemVm.IsSchemaOnlyNode && !string.IsNullOrEmpty(itemVm.SchemaNodePathKey)) // If it's a schema-only VM
                 {
-                     itemToReselect = item;
+                    if (wasSchemaOnlySelected && selectedIdentifier is string selectedSchemaPath && itemVm.SchemaNodePathKey == selectedSchemaPath)
+                    {
+                        itemToReselect = itemVm;
+                    }
+                    // Schema-only VMs are not typically put in _persistentVmMap by DomNode key.
+                    // Their state (like expansion) is managed by _schemaNodeExpansionState.
+                }
+                else if (selectedIdentifier is string selectedName && itemVm.NodeName == selectedName) // Fallback by name (e.g. for AddItem placeholder)
+                {
+                     itemToReselect = itemVm;
                 }
             }
+
+            // Update the main persistent map with the new one (removes stale, keeps/updates existing, adds new)
+            _persistentVmMap.Clear(); // Clear old one first
+            foreach(var entry in newPersistentMap) _persistentVmMap.Add(entry.Key, entry.Value);
+
             HighlightSearchResults();
 
-            SelectedGridItem = itemToReselect; // Re-apply selection through the bound property
+            SelectedGridItem = itemToReselect; 
+            if (itemToReselect != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"RefreshFlatList: Reselected item '{itemToReselect.NodeName}' (Path: {itemToReselect.DomNode?.Path ?? itemToReselect.SchemaNodePathKey}).");
+            }
+            else if (selectedIdentifier != null)
+            {
+                 System.Diagnostics.Debug.WriteLine($"RefreshFlatList: Could not reselect item with identifier '{selectedIdentifier}'. SelectedGridItem is null.");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"RefreshFlatList: No item was previously selected or to reselect. SelectedGridItem is null.");
+            }
             
             // Ensure the re-selected item is visible if focus is important
             if (SelectedGridItem != null)
@@ -794,10 +1170,21 @@ namespace JsonConfigEditor.ViewModels
             {
                 _domToSchemaMap.TryGetValue(node, out var schema);
                 viewModel = new DataGridRowItemViewModel(node, schema, this);
+                if (schema != null)
+                {
+                    // viewModel.ModalEditorInstance = _uiRegistry.GetEditor(schema); // Assuming _uiRegistry.GetEditor(SchemaNode) exists
+                    // For now, let's assume DataGridRowItemViewModel's constructor handles this if schema is present,
+                    // or it's set up by a more specific mechanism if custom editors are complex.
+                    // This line is commented out as DataGridRowItemViewModel's constructor was updated to handle this.
+                }
                 System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (DOM Node): CREATED NEW VM for node '{viewModel.NodeName}' (Path: {node.Path}, Hash: {viewModel.GetHashCode()}), IsSchemaOnly: False, Initial IsExpanded: {viewModel.IsExpanded}");
             }
             else
             {
+                // If re-using a VM, ensure its schema context and editor are up-to-date,
+                // though schema is unlikely to change for an existing DOM node without re-mapping.
+                // viewModel.UpdateSchemaInfo(); // This updates display props, not ModalEditorInstance directly.
+                // If ModalEditorInstance could change, it would need an update here too.
                 System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (DOM Node): REUSED VM for node '{viewModel.NodeName}' (Path: {node.Path}, Hash: {viewModel.GetHashCode()}), IsSchemaOnly: False, Current IsExpanded: {viewModel.IsExpanded}");
             }
 
@@ -1159,40 +1546,102 @@ namespace JsonConfigEditor.ViewModels
 
         private void AddNode(DomNode parent, DomNode newNode, string name)
         {
-            if (parent is ObjectNode obj)
+            // This method is called by AddNodeOperation.Redo.
+            // newNode comes from AddNodeOperation, which means it was the node originally added.
+            // At the time of its original creation (before AddNodeOperation was made), 
+            // it MUST have been constructed with 'parent' as its Parent and 'name' as its Name.
+            // So, newNode.Parent should already be 'parent' and newNode.Name should already be 'name'.
+
+            if (parent is ObjectNode objectParent)
             {
-                obj.AddChild(name, newNode);
-                _domToSchemaMap[newNode] = _schemaLoader.FindSchemaForPath(newNode.Path);
-                var vm = new DataGridRowItemViewModel(newNode, _domToSchemaMap[newNode], this);
-                _persistentVmMap[newNode] = vm;
-                RefreshFlatList();
+                // newNode.Name should be 'name' (the property name)
+                AddNodeToObject(objectParent, newNode);
             }
-            else if (parent is ArrayNode arr)
+            else if (parent is ArrayNode arrayParent)
             {
-                arr.AddItem(newNode);
-                _domToSchemaMap[newNode] = _schemaLoader.FindSchemaForPath(newNode.Path);
-                var vm = new DataGridRowItemViewModel(newNode, _domToSchemaMap[newNode], this);
-                _persistentVmMap[newNode] = vm;
-                RefreshFlatList();
+                // newNode.Name should be the stringified index it was originally created for.
+                // 'name' here is that original stringified index.
+                // We need to know the *target index* for insertion.
+                // If AddNodeOperation is for adding to end, index is parentArray.Items.Count.
+                // If AddNodeOperation needs to support specific index, it needs to store it.
+                // For now, assume AddNodeOperation's 'name' for an array context might be tricky.
+                // Let's assume for now AddNode by default adds to end of array for simplicity of this legacy AddNode method.
+                // A more robust AddNodeOperation would store the index for arrays.
+                // For now, assume AddNodeOperation's 'name' for an array context might be tricky.
+                // Let's assume for now AddNode by default adds to end of array for simplicity of this legacy AddNode method.
+                // A more robust AddNodeOperation would store the index for arrays.
+                AddNodeToArrayAtIndex(arrayParent, newNode, arrayParent.Items.Count);
+            }
+            else
+            {
+                return;
             }
         }
 
-        private void RemoveNode(DomNode node)
+        // Specific method for adding to ObjectNode - REPLACED BY THE TWO-ARGUMENT VERSION
+        // private void AddNodeToObject(ObjectNode parent, DomNode newNode, string name)
+        // {
+        //     if (parent.Children.ContainsKey(name))
+        //     {
+        //         return;
+        //     }
+        //     // newNode.Parent = parent; // WRONG - DomNode.Parent is readonly
+        //     // newNode.Name = name; // WRONG - DomNode.Name is readonly
+        //     // parent.Children[name] = newNode; // WRONG - IReadOnlyDictionary
+
+        //     // Correct approach: newNode must be created with 'name' and 'parent'
+        //     // Then, parent.AddChild(name, newNode)
+        //     parent.AddChild(name, newNode); // Assumes newNode.Name is already 'name'
+
+        //     MapDomNodeToSchemaRecursive(newNode); 
+        //     IsDirty = true;
+        //     RefreshFlatList(); 
+        // }
+
+        // Specific method for adding to ArrayNode at a specific index - REPLACED BY THE THREE-ARGUMENT VERSION
+        // private void AddNodeToArrayAtIndex(ArrayNode parent, DomNode newNode, int index)
+        // {
+        //     // if (index < 0 || index > parent.Items.Count)
+        //     // {
+        //     //     return; 
+        //     // }
+        //     // newNode.Parent = parent; // WRONG
+            
+        //     // parent.Items.Insert(index, newNode); // WRONG - IReadOnlyList
+
+        //     // Correct approach: newNode must be created with index.ToString() as name and 'parent' as parent
+        //     // Then, parent.InsertItem(index, newNode)
+        //     parent.InsertItem(index, newNode);
+
+
+        //     MapDomNodeToSchemaRecursive(newNode); 
+        //     IsDirty = true;
+        //     RefreshFlatList(); 
+        // }
+
+        private void RemoveNode(DomNode nodeToRemove) // Renamed parameter for clarity
         {
-            if (node.Parent is ObjectNode obj)
+            if (nodeToRemove == null) return;
+
+            var parent = nodeToRemove.Parent; 
+            
+            ClearMappingsRecursive(nodeToRemove); 
+
+            if (parent is ObjectNode objectParent)
             {
-                obj.RemoveChild(node.Name);
-                _persistentVmMap.Remove(node);
-                _domToSchemaMap.Remove(node);
-                RefreshFlatList();
+                objectParent.RemoveChild(nodeToRemove.Name); 
             }
-            else if (node.Parent is ArrayNode arr)
+            else if (parent is ArrayNode arrayParent)
             {
-                arr.RemoveItem(node);
-                _persistentVmMap.Remove(node);
-                _domToSchemaMap.Remove(node);
-                RefreshFlatList();
+                arrayParent.RemoveItem(nodeToRemove); 
             }
+            else if (nodeToRemove == _rootDomNode) 
+            {
+                 if (_rootDomNode == nodeToRemove) _rootDomNode = null; 
+            }
+
+            IsDirty = true;
+            RefreshFlatList(); 
         }
 
         // Method to be called by DataGridRowItemViewModel to record a value change for undo/redo
@@ -1260,6 +1709,153 @@ namespace JsonConfigEditor.ViewModels
                 }
             }
             // No "Add item" placeholder for pure schema-only arrays for now.
+        }
+
+        private bool CanExecuteDeleteSelectedNodes(DataGridRowItemViewModel? item = null) 
+        {
+            var selectedVm = item ?? SelectedGridItem; 
+            if (selectedVm == null || selectedVm.DomNode == null || selectedVm.IsAddItemPlaceholder)
+            {
+                return false;
+            }
+            if (_domToSchemaMap.TryGetValue(selectedVm.DomNode, out var schemaNode) && schemaNode != null)
+            {
+                return !schemaNode.IsReadOnly;
+            }
+            return true; 
+        }
+
+        private void ExecuteDeleteSelectedNodes(DataGridRowItemViewModel? item = null) 
+        {
+            var selectedVm = item ?? SelectedGridItem;
+            if (selectedVm == null || selectedVm.DomNode == null || !CanExecuteDeleteSelectedNodes(selectedVm))
+            {
+                return;
+            }
+
+            var nodeToDelete = selectedVm.DomNode;
+            var parentNode = nodeToDelete.Parent;
+
+            if (parentNode == null && _rootDomNode == nodeToDelete) 
+            {
+                 var confirmRootDelete = MessageBox.Show(
+                    "Are you sure you want to delete the root node? This will clear the entire document.",
+                    "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+                if (confirmRootDelete == MessageBoxResult.Yes)
+                {
+                    var oldRoot = _rootDomNode;
+                    var newRoot = new ObjectNode("$root", null); 
+                    var op = new ReplaceRootOperation(oldRoot, newRoot); 
+                    RecordEditOperation(op);
+                    op.Redo(this); 
+                }
+                return;
+            }
+
+            if (parentNode == null) return;
+
+            var confirmResult = MessageBox.Show(
+                $"Are you sure you want to delete the node '{selectedVm.NodeName}'?",
+                "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+            if (confirmResult != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            string nodeNameOrIndex = nodeToDelete.Name;
+            int originalIndexInArray = -1;
+            if (parentNode is ArrayNode arrayParent)
+            {
+                var itemsList = arrayParent.Items as IList<DomNode> ?? arrayParent.Items.ToList(); 
+                originalIndexInArray = itemsList.IndexOf(nodeToDelete);
+            }
+            
+            var removeOp = new RemoveNodeOperation(parentNode, nodeToDelete, nodeNameOrIndex, originalIndexInArray);
+            RecordEditOperation(removeOp);
+            removeOp.Redo(this); 
+
+            DataGridRowItemViewModel? nextSelectedItemVm = null;
+            if (FlatItemsSource.Any())
+            {
+                if (parentNode is ArrayNode arrayParentAfterDelete && originalIndexInArray != -1)
+                {
+                    if (arrayParentAfterDelete.Items.Count > originalIndexInArray && originalIndexInArray >=0)
+                    {
+                        _persistentVmMap.TryGetValue(arrayParentAfterDelete.Items[originalIndexInArray], out nextSelectedItemVm);
+                    }
+                    else if (arrayParentAfterDelete.Items.Count > 0)
+                    {
+                         _persistentVmMap.TryGetValue(arrayParentAfterDelete.Items.Last(), out nextSelectedItemVm);
+                    }
+                }
+                
+                if (nextSelectedItemVm == null && parentNode != null && _persistentVmMap.TryGetValue(parentNode, out var parentVm)) 
+                {
+                     nextSelectedItemVm = parentVm;
+                }
+
+                if (nextSelectedItemVm == null && FlatItemsSource.Any()) 
+                {
+                    nextSelectedItemVm = FlatItemsSource.First();
+                }
+            }
+            SelectedGridItem = nextSelectedItemVm; 
+        }
+
+        private void AddNodeToObject(ObjectNode parentObject, DomNode childNode)
+        {
+            // ASSUMPTION: childNode was ALREADY created with:
+            // 1. Name = the correct property name.
+            // 2. Parent = parentObject.
+            // ObjectNode.AddChild just adds it to the internal dictionary.
+            // It uses childNode.Name as the key internally if it needs to, or it's passed.
+            // The AddChild in ObjectNode.cs takes (propertyName, child), so we use childNode.Name
+            parentObject.AddChild(childNode.Name, childNode); 
+            
+            MapDomNodeToSchemaRecursive(childNode); 
+            IsDirty = true;
+            RefreshFlatList(); 
+        }
+
+        private void AddNodeToArrayAtIndex(ArrayNode parentArray, DomNode itemNode, int index)
+        {
+            // ASSUMPTION: itemNode was ALREADY created with:
+            // 1. Name = index.ToString() (or its correct intended name if not just index).
+            // 2. Parent = parentArray.
+            // ArrayNode.InsertItem just adds it to the internal list.
+            // It does not set Name or Parent.
+            parentArray.InsertItem(index, itemNode); 
+            // The ArrayNode.UpdateItemNames stub means subsequent item Names (and thus Paths) might be stale.
+            // This is a known issue from the ArrayNode.cs analysis.
+            
+            MapDomNodeToSchemaRecursive(itemNode); 
+            IsDirty = true;
+            RefreshFlatList(); 
+        }
+
+        private void ClearMappingsRecursive(DomNode node)
+        {
+            if (node == null) return;
+
+            if (node is ObjectNode objectNode)
+            {
+                foreach (var child in objectNode.GetChildren())
+                {
+                    ClearMappingsRecursive(child);
+                }
+            }
+            else if (node is ArrayNode arrayNode)
+            {
+                foreach (var item in arrayNode.GetItems())
+                {
+                    ClearMappingsRecursive(item);
+                }
+            }
+
+            _domToSchemaMap.Remove(node);
+            _persistentVmMap.Remove(node);
         }
     }
 } 
