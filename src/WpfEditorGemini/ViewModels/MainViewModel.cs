@@ -187,6 +187,7 @@ namespace JsonConfigEditor.ViewModels
         // --- Private class EditOperation ---
         private abstract class EditOperation
         {
+            public abstract DomNode? TargetNode { get; } // Node primarily affected by the operation
             public abstract void Undo(MainViewModel vm);
             public abstract void Redo(MainViewModel vm);
         }
@@ -196,6 +197,8 @@ namespace JsonConfigEditor.ViewModels
             private readonly DomNode _node;
             private readonly System.Text.Json.JsonElement _oldValue;
             private readonly System.Text.Json.JsonElement _newValue;
+
+            public override DomNode? TargetNode => _node;
 
             public ValueEditOperation(DomNode node, System.Text.Json.JsonElement oldValue, System.Text.Json.JsonElement newValue)
             {
@@ -214,6 +217,8 @@ namespace JsonConfigEditor.ViewModels
             private readonly DomNode _newNode;
             private readonly string _name;
 
+            public override DomNode? TargetNode => _newNode; // The node that was added
+
             public AddNodeOperation(DomNode parent, DomNode newNode, string name)
             {
                 _parent = parent;
@@ -230,6 +235,8 @@ namespace JsonConfigEditor.ViewModels
             private readonly DomNode _parent;
             private readonly DomNode _removedNode;
             private readonly string _name;
+
+            public override DomNode? TargetNode => _parent; // Select parent after removal, or _removedNode if re-added
 
             public RemoveNodeOperation(DomNode parent, DomNode removedNode, string name)
             {
@@ -362,9 +369,15 @@ namespace JsonConfigEditor.ViewModels
         {
             if (_undoStack.Count == 0) return;
             var op = _undoStack.Pop();
+            DomNode? targetNodeForSelection = op.TargetNode;
             op.Undo(this);
             _redoStack.Push(op);
-            RefreshFlatList();
+            RefreshFlatList(); // This will try to preserve current SelectedGridItem or use its logic.
+            // Explicitly try to reselect the item related to the operation if possible
+            if (targetNodeForSelection != null && _persistentVmMap.TryGetValue(targetNodeForSelection, out var vmToSelect))
+            {
+                 SelectedGridItem = vmToSelect;
+            }
             OnPropertyChanged(nameof(WindowTitle));
         }
 
@@ -374,9 +387,15 @@ namespace JsonConfigEditor.ViewModels
         {
             if (_redoStack.Count == 0) return;
             var op = _redoStack.Pop();
+            DomNode? targetNodeForSelection = op.TargetNode;
             op.Redo(this);
             _undoStack.Push(op);
             RefreshFlatList();
+            // Explicitly try to reselect the item related to the operation if possible
+            if (targetNodeForSelection != null && _persistentVmMap.TryGetValue(targetNodeForSelection, out var vmToSelect))
+            {
+                 SelectedGridItem = vmToSelect;
+            }
             OnPropertyChanged(nameof(WindowTitle));
         }
 
@@ -1035,10 +1054,23 @@ namespace JsonConfigEditor.ViewModels
         {
             if (node is ValueNode valueNode)
             {
-                var oldValue = valueNode.Value;
-                valueNode.Value = value;
-                RecordEditOperation(new ValueEditOperation(node, oldValue, value));
-                OnNodeValueChanged(_persistentVmMap[node]);
+                // The 'value' parameter is the one to apply (either old or new value from the operation)
+                valueNode.Value = value; 
+                // RecordEditOperation(new ValueEditOperation(node, oldValue, value)); // This was the bug
+                
+                // Notify that the node changed, which handles IsDirty, validation, and VM refresh via persistent map.
+                if (_persistentVmMap.TryGetValue(node, out var vm))
+                {
+                    OnNodeValueChanged(vm); 
+                }
+                else
+                {
+                    // If VM not found (should not happen for existing nodes), still mark dirty and re-validate globally.
+                    IsDirty = true;
+                    OnPropertyChanged(nameof(WindowTitle));
+                    _ = ValidateDocumentAsync();
+                    // RefreshFlatList might be needed if a VM wasn't found, though this is an edge case.
+                }
             }
         }
 

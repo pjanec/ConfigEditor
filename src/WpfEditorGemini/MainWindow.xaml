@@ -72,7 +72,8 @@
             </DataTemplate>
 
             <DataTemplate x:Key="EditBooleanTemplate">
-                <CheckBox IsChecked="{Binding EditValue, Converter={StaticResource BooleanToStringConverter}, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                <CheckBox IsChecked="{Binding EditValue, Converter={StaticResource BooleanToStringConverter}, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" HorizontalAlignment="Left"
+                          ap:FocusAndSelect.IsEnabled="True"/>
             </DataTemplate>
             
             <DataTemplate x:Key="EditEnumTemplate">

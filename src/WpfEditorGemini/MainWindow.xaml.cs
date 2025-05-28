@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 // Added for NodeValueTemplateSelector
 using JsonConfigEditor.Views;
+using System.Linq;
 
 namespace JsonConfigEditor
 {
@@ -108,6 +109,26 @@ namespace JsonConfigEditor
                         selectedItem.IsInEditMode = true;
                         System.Diagnostics.Debug.WriteLine("IsInEditMode (after): " + selectedItem.IsInEditMode);
                         dataGrid.BeginEdit(e); 
+                        // Attempt to focus the editor after BeginEdit has been called
+                        // This needs to happen after the visual tree is updated with the editing element.
+                        // We dispatch it to a lower priority to allow the DataGrid to set up the editor.
+                        dataGrid.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            var cellContent = dataGrid.CurrentCell.Column.GetCellContent(dataGrid.CurrentCell.Item);
+                            if (cellContent is ContentPresenter presenter) // Editing templates often use ContentPresenter
+                            {
+                                var editingElement = FindVisualChild<UIElement>(presenter);
+                                editingElement?.Focus();
+                                if (editingElement is CheckBox cb) // Special handling for checkbox spacebar toggle
+                                {
+                                     // Focus might be enough, spacebar should toggle if focused.
+                                }
+                            }
+                            else if (cellContent is UIElement uiElement) // Direct UIElement in cell
+                            {
+                                uiElement.Focus();
+                            }
+                        }), System.Windows.Threading.DispatcherPriority.Background);
                         e.Handled = true;
                     }
                     break;
@@ -248,26 +269,51 @@ namespace JsonConfigEditor
         // Handler for double-click on a value cell to start editing
         private void ValueCell_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
+            System.Diagnostics.Debug.WriteLine("ValueCell_MouseDoubleClick called.");
             if (sender is DataGridCell cell && cell.DataContext is DataGridRowItemViewModel vm)
             {
+                System.Diagnostics.Debug.WriteLine($"ValueCell: Item '{vm.NodeName}', IsEditable: {vm.IsEditable}, IsInEditMode: {vm.IsInEditMode}");
                 // Ensure we are on the actual DataGrid, not a header or other element.
                 var dataGrid = FindVisualParent<DataGrid>(cell);
-                if (dataGrid == null) return;
+                if (dataGrid == null) 
+                {
+                    System.Diagnostics.Debug.WriteLine("ValueCell: DataGrid parent not found.");
+                    return;
+                }
 
                 if (vm.IsEditable && !vm.IsInEditMode)
                 {
                     vm.IsInEditMode = true; 
+                    System.Diagnostics.Debug.WriteLine($"ValueCell: Set IsInEditMode to true for '{vm.NodeName}'.");
 
                     // Ensure the cell/row is selected and focused before calling BeginEdit
                     dataGrid.SelectedItem = vm;
-                    dataGrid.CurrentCell = new DataGridCellInfo(cell); // Use the clicked cell directly
+                    // It's important that the CurrentCell is set to the cell that was double-clicked.
+                    // This column is the 'Value' column.
+                    DataGridColumn valueColumn = dataGrid.Columns.FirstOrDefault(c => c.Header?.ToString() == "Value");
+                    if (valueColumn != null) 
+                    {
+                         dataGrid.CurrentCell = new DataGridCellInfo(vm, valueColumn);
+                    }
+                    else
+                    {
+                        // Fallback if column not found by header, use the clicked cell's column.
+                        // This might be more robust if header names change.
+                        dataGrid.CurrentCell = new DataGridCellInfo(cell); 
+                    }
                     
-                    // It's often better to let the DataGrid handle bringing the cell into edit mode if possible
-                    // after its properties are set. BeginEdit() might be called implicitly by focusing a cell in edit mode.
-                    // Or call it explicitly.
                     dataGrid.BeginEdit(); 
+                    System.Diagnostics.Debug.WriteLine($"ValueCell: Called BeginEdit() for '{vm.NodeName}'.");
                     e.Handled = true;
                 }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"ValueCell: Edit condition not met for '{vm.NodeName}'. IsEditable: {vm.IsEditable}, IsInEditMode: {vm.IsInEditMode}");
+                }
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("ValueCell_MouseDoubleClick: Sender is not DataGridCell or DataContext is not DataGridRowItemViewModel.");
             }
         }
 
@@ -278,6 +324,23 @@ namespace JsonConfigEditor
             if (parentObject == null) return null;
             if (parentObject is T parent) return parent;
             return FindVisualParent<T>(parentObject);
+        }
+
+        // Helper to find visual child (add this)
+        public static T? FindVisualChild<T>(DependencyObject parent) where T : UIElement
+        {
+            if (parent == null) return null;
+            for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                DependencyObject child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+                if (child != null && child is T tChild)
+                    return tChild;
+                
+                T? childOfChild = FindVisualChild<T>(child);
+                if (childOfChild != null)
+                    return childOfChild;
+            }
+            return null;
         }
 
         // Handler for double-click on a name cell to toggle expansion
@@ -370,23 +433,45 @@ namespace JsonConfigEditor
         {
             if (e.PropertyName == nameof(MainViewModel.SelectedGridItem))
             {
-                if (ViewModel.SelectedGridItem != null)
+                var selectedVm = ViewModel.SelectedGridItem;
+                if (selectedVm != null)
                 {
-                    MainDataGrid.ScrollIntoView(ViewModel.SelectedGridItem);
-                    // Attempt to focus the row. Finding the DataGridRow container can be tricky.
-                    var row = MainDataGrid.ItemContainerGenerator.ContainerFromItem(ViewModel.SelectedGridItem) as DataGridRow;
-                    if (row != null)
+                    MainDataGrid.ScrollIntoView(selectedVm);
+                    
+                    // Enhanced focus logic
+                    Action focusAction = () => 
                     {
-                        row.Focus();
+                        var row = MainDataGrid.ItemContainerGenerator.ContainerFromItem(selectedVm) as DataGridRow;
+                        if (row == null)
+                        {
+                            // If row is not found directly, it might be because the item is not yet materialized or is virtualized.
+                            // Try updating layout and finding again.
+                            MainDataGrid.UpdateLayout();
+                            row = MainDataGrid.ItemContainerGenerator.ContainerFromItem(selectedVm) as DataGridRow;
+                        }
+
+                        if (row != null)
+                        {
+                            if (!row.IsKeyboardFocusWithin)
+                            {
+                                row.Focus();
+                            }
+                            // Optional: If you want to focus a specific cell (e.g., the first one)
+                            // var cell = GetCell(MainDataGrid, row, 0); // Assuming GetCell helper
+                            // cell?.Focus();
+                        }
+                    };
+
+                    // If the DataGrid itself doesn't have focus, focus it first, then dispatch the row focus.
+                    if (!MainDataGrid.IsKeyboardFocusWithin)
+                    {
+                        MainDataGrid.Focus();
+                        MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.Loaded);
                     }
                     else
                     {
-                        // If container is not generated yet, try focusing after layout update
-                        MainDataGrid.Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            var rowAfterLayout = MainDataGrid.ItemContainerGenerator.ContainerFromItem(ViewModel.SelectedGridItem) as DataGridRow;
-                            rowAfterLayout?.Focus();
-                        }), System.Windows.Threading.DispatcherPriority.Loaded);
+                        // If DataGrid already has focus, dispatch at Background to allow UI to settle from selection change.
+                        MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.Background);
                     }
                 }
             }
