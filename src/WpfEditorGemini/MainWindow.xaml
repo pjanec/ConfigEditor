@@ -223,9 +223,25 @@
                   ScrollViewer.VerticalScrollBarVisibility="Auto"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             
+            <DataGrid.InputBindings>
+                <KeyBinding Key="Delete" 
+                            Command="{Binding Path=DataContext.DeleteSelectedNodesCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                            CommandParameter="{Binding SelectedItem, ElementName=MainDataGrid}" />
+            </DataGrid.InputBindings>
+            
             <!-- Row Style Selector -->
             <DataGrid.RowStyle>
                 <Style TargetType="DataGridRow">
+                    <Setter Property="ContextMenu">
+                        <Setter.Value>
+                            <ContextMenu DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="Delete"
+                                          Command="{Binding Path=ParentViewModel.DeleteSelectedNodesCommand}" 
+                                          CommandParameter="{Binding}"/>
+                                <!-- Add other items like Copy, Paste later -->
+                            </ContextMenu>
+                        </Setter.Value>
+                    </Setter>
                     <Style.Triggers>
                         <!-- Schema-only nodes (grayed out) -->
                         <DataTrigger Binding="{Binding IsSchemaOnlyNode}" Value="True">
@@ -304,11 +320,11 @@
                             <EventSetter Event="MouseDoubleClick" Handler="ValueCell_MouseDoubleClick" />
                             <Setter Property="ToolTip">
                                 <Setter.Value>
-                                    <ToolTip>
+                                    <ToolTip DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                         <ToolTip.Content>
                                             <MultiBinding Converter="{StaticResource CustomTooltipConverter}">
                                                 <Binding Path="." />
-                                                <Binding Path="DataContext.UiRegistry" RelativeSource="{RelativeSource AncestorType={x:Type local:MainWindow}}" />
+                                                <Binding Path="ParentViewModel.UiRegistry" />
                                             </MultiBinding>
                                         </ToolTip.Content>
                                     </ToolTip>

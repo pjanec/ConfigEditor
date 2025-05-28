@@ -1564,11 +1564,9 @@ namespace JsonConfigEditor.ViewModels
                 // We need to know the *target index* for insertion.
                 // If AddNodeOperation is for adding to end, index is parentArray.Items.Count.
                 // If AddNodeOperation needs to support specific index, it needs to store it.
-                // For now, assume AddNodeOperation's 'name' for an array context might be tricky.
-                // Let's assume for now AddNode by default adds to end of array for simplicity of this legacy AddNode method.
+                // For now, assume AddNode by default adds to end of array for simplicity of this legacy AddNode method.
                 // A more robust AddNodeOperation would store the index for arrays.
-                // For now, assume AddNodeOperation's 'name' for an array context might be tricky.
-                // Let's assume for now AddNode by default adds to end of array for simplicity of this legacy AddNode method.
+                // For now, assume AddNode by default adds to end of array for simplicity of this legacy AddNode method.
                 // A more robust AddNodeOperation would store the index for arrays.
                 AddNodeToArrayAtIndex(arrayParent, newNode, arrayParent.Items.Count);
             }
@@ -1714,19 +1712,38 @@ namespace JsonConfigEditor.ViewModels
         private bool CanExecuteDeleteSelectedNodes(DataGridRowItemViewModel? item = null) 
         {
             var selectedVm = item ?? SelectedGridItem; 
-            if (selectedVm == null || selectedVm.DomNode == null || selectedVm.IsAddItemPlaceholder)
+            System.Diagnostics.Debug.WriteLine($"CanExecuteDeleteSelectedNodes called. Item param: {item?.NodeName}, SelectedGridItem: {SelectedGridItem?.NodeName}, Effective VM for check: {selectedVm?.NodeName}");
+
+            if (selectedVm == null)
             {
+                System.Diagnostics.Debug.WriteLine("CanExecuteDeleteSelectedNodes: Returning False because selectedVm is null.");
                 return false;
             }
+            if (selectedVm.DomNode == null)
+            {
+                System.Diagnostics.Debug.WriteLine($"CanExecuteDeleteSelectedNodes: Returning False because selectedVm '{selectedVm.NodeName}' has null DomNode.");
+                return false;
+            }
+            if (selectedVm.IsAddItemPlaceholder)
+            {
+                System.Diagnostics.Debug.WriteLine($"CanExecuteDeleteSelectedNodes: Returning False because selectedVm '{selectedVm.NodeName}' is IsAddItemPlaceholder.");
+                return false;
+            }
+            
             if (_domToSchemaMap.TryGetValue(selectedVm.DomNode, out var schemaNode) && schemaNode != null)
             {
-                return !schemaNode.IsReadOnly;
+                bool canDelete = !schemaNode.IsReadOnly;
+                System.Diagnostics.Debug.WriteLine($"CanExecuteDeleteSelectedNodes: Node '{selectedVm.NodeName}' has schema '{schemaNode.Name}'. IsReadOnly: {schemaNode.IsReadOnly}. CanDelete: {canDelete}");
+                return canDelete;
             }
+            
+            System.Diagnostics.Debug.WriteLine($"CanExecuteDeleteSelectedNodes: Node '{selectedVm.NodeName}' has no schema or schema doesn't specify IsReadOnly. Returning True (allow delete).");
             return true; 
         }
 
         private void ExecuteDeleteSelectedNodes(DataGridRowItemViewModel? item = null) 
         {
+            System.Diagnostics.Debug.WriteLine($"ExecuteDeleteSelectedNodes called. Item param: {item?.NodeName}, SelectedGridItem: {SelectedGridItem?.NodeName}");
             var selectedVm = item ?? SelectedGridItem;
             if (selectedVm == null || selectedVm.DomNode == null || !CanExecuteDeleteSelectedNodes(selectedVm))
             {
@@ -1776,32 +1793,73 @@ namespace JsonConfigEditor.ViewModels
             RecordEditOperation(removeOp);
             removeOp.Redo(this); 
 
-            DataGridRowItemViewModel? nextSelectedItemVm = null;
-            if (FlatItemsSource.Any())
-            {
-                if (parentNode is ArrayNode arrayParentAfterDelete && originalIndexInArray != -1)
-                {
-                    if (arrayParentAfterDelete.Items.Count > originalIndexInArray && originalIndexInArray >=0)
-                    {
-                        _persistentVmMap.TryGetValue(arrayParentAfterDelete.Items[originalIndexInArray], out nextSelectedItemVm);
-                    }
-                    else if (arrayParentAfterDelete.Items.Count > 0)
-                    {
-                         _persistentVmMap.TryGetValue(arrayParentAfterDelete.Items.Last(), out nextSelectedItemVm);
-                    }
-                }
-                
-                if (nextSelectedItemVm == null && parentNode != null && _persistentVmMap.TryGetValue(parentNode, out var parentVm)) 
-                {
-                     nextSelectedItemVm = parentVm;
-                }
+            DataGridRowItemViewModel? vmToSelect = null;
 
-                if (nextSelectedItemVm == null && FlatItemsSource.Any()) 
+            if (parentNode is ArrayNode castedArrayParent) // Parent was an array, use a new name for the cast variable
+            {
+                if (originalIndexInArray < castedArrayParent.Items.Count && originalIndexInArray >= 0) // Item shifted into place
                 {
-                    nextSelectedItemVm = FlatItemsSource.First();
+                    _persistentVmMap.TryGetValue(castedArrayParent.Items[originalIndexInArray], out vmToSelect);
+                    System.Diagnostics.Debug.WriteLine($"DeleteFocus: Array item deleted. Attempting to select item at same index {originalIndexInArray}. VM found: {vmToSelect != null}");
+                }
+                else if (castedArrayParent.Items.Count > 0) // Deleted last or out of bounds, select new last
+                {
+                    _persistentVmMap.TryGetValue(castedArrayParent.Items[castedArrayParent.Items.Count - 1], out vmToSelect);
+                    System.Diagnostics.Debug.WriteLine($"DeleteFocus: Array item deleted. Attempting to select new last item. VM found: {vmToSelect != null}");
+                }
+                // If array becomes empty, vmToSelect remains null, will try to select parentArray itself (castedArrayParent) below via Fallback 1.
+            }
+            else if (parentNode is ObjectNode objectParent) // Parent was an object
+            {
+                var remainingChildren = objectParent.GetChildren().ToList();
+                if (remainingChildren.Any()) // Try to select any remaining sibling
+                {
+                    foreach(var child in remainingChildren) {
+                        if (_persistentVmMap.TryGetValue(child, out vmToSelect)) {
+                            System.Diagnostics.Debug.WriteLine($"DeleteFocus: Object property deleted. Attempting to select sibling '{child.Name}'. VM found: {vmToSelect != null}");
+                            break;
+                        }
+                    }
+                    if (vmToSelect == null) System.Diagnostics.Debug.WriteLine($"DeleteFocus: Object property deleted. Siblings exist but no VM found for them.");
+                }
+                // If no siblings remain, vmToSelect remains null, will try to select objectParent below.
+            }
+
+            // Fallback 1: Try to select the parent node itself if no specific child/sibling was selected
+            if (vmToSelect == null && parentNode != null)
+            {
+                if (_persistentVmMap.TryGetValue(parentNode, out vmToSelect))
+                {
+                    System.Diagnostics.Debug.WriteLine($"DeleteFocus: Fallback 1 - Selected parent node '{parentNode.Name}'. VM found: {vmToSelect != null}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"DeleteFocus: Fallback 1 - Parent node '{parentNode.Name}' exists but no VM found for it.");
                 }
             }
-            SelectedGridItem = nextSelectedItemVm; 
+
+            // Fallback 2: If still no selection, and the root DOM node itself exists and has a VM
+            // (This is more relevant if parentNode was null or its VM wasn't found, and it wasn't the root that got replaced)
+            if (vmToSelect == null && _rootDomNode != null && _persistentVmMap.TryGetValue(_rootDomNode, out var rootVm))
+            {
+                // Avoid re-selecting parent if parent *was* the root and already considered by Fallback 1
+                if (parentNode != _rootDomNode) 
+                {
+                    vmToSelect = rootVm;
+                    System.Diagnostics.Debug.WriteLine($"DeleteFocus: Fallback 2 - Selected root node '{_rootDomNode.Name}'.");
+                }
+            }
+
+            // Fallback 3: Final fallback - select the first item in the entire list if list is not empty
+            if (vmToSelect == null && FlatItemsSource.Any())
+            {
+                vmToSelect = FlatItemsSource.First();
+                System.Diagnostics.Debug.WriteLine($"DeleteFocus: Fallback 3 - Selected first item in FlatItemsSource: {vmToSelect?.NodeName}");
+            }
+            
+            if (vmToSelect == null) System.Diagnostics.Debug.WriteLine("DeleteFocus: All fallbacks failed, no item selected.");
+
+            SelectedGridItem = vmToSelect; 
         }
 
         private void AddNodeToObject(ObjectNode parentObject, DomNode childNode)
