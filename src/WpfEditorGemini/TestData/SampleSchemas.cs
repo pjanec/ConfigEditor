@@ -20,7 +20,9 @@ namespace JsonConfigEditor.TestData
         public DatabaseSettings Database { get; set; } = new();
         
         public List<string> AllowedHosts { get; set; } = new() { "localhost" };
-    }
+
+        public FeatureConfiguration features  { get; set; }     = new();
+	}
 
     /// <summary>
     /// Sample schema class for database configuration.
@@ -42,7 +44,7 @@ namespace JsonConfigEditor.TestData
     /// <summary>
     /// Sample schema for a nested configuration section.
     /// </summary>
-    [ConfigSchema("features", typeof(FeatureConfiguration))]
+    //[ConfigSchema("features", typeof(FeatureConfiguration))]
     public class FeatureConfiguration
     {
         public bool EnableFeatureA { get; set; } = false;

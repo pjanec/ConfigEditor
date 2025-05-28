@@ -507,24 +507,162 @@ namespace JsonConfigEditor.ViewModels
 
         private void ExecuteFindNext()
         {
-            if (!_searchResults.Any()) return; // Use _searchResults (navigable items)
-            _currentSearchIndex = (_currentSearchIndex + 1) % _searchResults.Count;
-            
-            var targetVm = _searchResults[_currentSearchIndex].Item;
-            SelectedGridItem = targetVm; 
-            ExpandAncestors(targetVm);   
-            // TODO: Notify View to scroll SelectedGridItem into view.
+            if (string.IsNullOrEmpty(SearchText)) return; // Don't navigate if no search text
+            if (!_searchResults.Any() && !_globallyMatchedSchemaNodePaths.Any() && !_globallyMatchedDomNodes.Any())
+            {
+                // No current results and no global matches means nothing to navigate to.
+                return;
+            }
+
+            // Determine the path of the next item to navigate to.
+            string? pathOfItemToNavigateTo = null;
+            if (_searchResults.Any()) // If there are current navigable results, cycle through them
+            {
+                _currentSearchIndex = (_currentSearchIndex + 1) % _searchResults.Count;
+                pathOfItemToNavigateTo = _searchResults[_currentSearchIndex].Path;
+                System.Diagnostics.Debug.WriteLine($"ExecuteFindNext: Advancing in current _searchResults. Index: {_currentSearchIndex}, Path: {pathOfItemToNavigateTo}");
+            }
+            else // No current navigable results, but there might be global matches not yet visible
+            {
+                var allGlobalPaths = _globallyMatchedDomNodes.Select(n => n.Path)
+                                       .Concat(_globallyMatchedSchemaNodePaths)
+                                       .Distinct()
+                                       .OrderBy(p => p)
+                                       .ToList();
+                if (allGlobalPaths.Any())
+                {
+                    pathOfItemToNavigateTo = allGlobalPaths.First(); // Start from the first global match
+                    _currentSearchIndex = -1; // Will be updated by UpdateNavigableSearchResults
+                    System.Diagnostics.Debug.WriteLine($"ExecuteFindNext: No current _searchResults. Targeting first global match: {pathOfItemToNavigateTo}");
+                }
+                else
+                {
+                    return; // No global matches either
+                }
+            }
+
+            if (pathOfItemToNavigateTo != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"ExecuteFindNext: Ensuring path '{pathOfItemToNavigateTo}' is expanded.");
+                EnsurePathIsExpandedInFlatItemsSource(pathOfItemToNavigateTo);
+            }
+
+            // After ensuring the path is expanded (which refreshes FlatItemsSource), 
+            // update navigable results to reflect any newly visible items.
+            UpdateNavigableSearchResults(); 
+
+            if (!_searchResults.Any()) 
+            {
+                System.Diagnostics.Debug.WriteLine("ExecuteFindNext: No search results after UpdateNavigableSearchResults. Clearing selection.");
+                SelectedGridItem = null;
+                return; 
+            }
+
+            // Try to find the target path in the new _searchResults and set selection
+            int newFoundIndex = -1;
+            for (int i = 0; i < _searchResults.Count; i++)
+            {
+                if (_searchResults[i].Path == pathOfItemToNavigateTo)
+                {
+                    newFoundIndex = i;
+                    break;
+                }
+            }
+
+            if (newFoundIndex != -1)
+            {
+                _currentSearchIndex = newFoundIndex;
+                SelectedGridItem = _searchResults[_currentSearchIndex].Item;
+                System.Diagnostics.Debug.WriteLine($"ExecuteFindNext: Selected VM '{SelectedGridItem?.NodeName}' at new index {_currentSearchIndex} for path '{pathOfItemToNavigateTo}'.");
+            }
+            else // Fallback if the specific path wasn't found (should be rare now)
+            {
+                _currentSearchIndex = 0; // Default to first item in the new list
+                SelectedGridItem = _searchResults[_currentSearchIndex].Item;
+                System.Diagnostics.Debug.WriteLine($"ExecuteFindNext: Path '{pathOfItemToNavigateTo}' not found in new results. Selecting first item '{SelectedGridItem?.NodeName}'.");
+            }
+            // Ensure the final selected item itself is expanded if it's a container (ExpandAncestors was for the path)
+            if (SelectedGridItem != null && SelectedGridItem.IsExpandable && !SelectedGridItem.IsExpanded)
+            {
+                SelectedGridItem.IsExpanded = true;
+            }
         }
 
         private void ExecuteFindPrevious()
         {
-            if (!_searchResults.Any()) return;  // Use _searchResults (navigable items)
-            _currentSearchIndex = (_currentSearchIndex - 1 + _searchResults.Count) % _searchResults.Count;
+            if (string.IsNullOrEmpty(SearchText)) return;
+            if (!_searchResults.Any() && !_globallyMatchedSchemaNodePaths.Any() && !_globallyMatchedDomNodes.Any())
+            {
+                return;
+            }
+
+            string? pathOfItemToNavigateTo = null;
+            if (_searchResults.Any())
+            {
+                _currentSearchIndex = (_currentSearchIndex - 1 + _searchResults.Count) % _searchResults.Count;
+                pathOfItemToNavigateTo = _searchResults[_currentSearchIndex].Path;
+                System.Diagnostics.Debug.WriteLine($"ExecuteFindPrevious: Advancing in current _searchResults. Index: {_currentSearchIndex}, Path: {pathOfItemToNavigateTo}");
+            }
+            else
+            {
+                var allGlobalPaths = _globallyMatchedDomNodes.Select(n => n.Path)
+                                       .Concat(_globallyMatchedSchemaNodePaths)
+                                       .Distinct()
+                                       .OrderByDescending(p => p) // For previous, start from last
+                                       .ToList();
+                if (allGlobalPaths.Any())
+                {
+                    pathOfItemToNavigateTo = allGlobalPaths.First();
+                    _currentSearchIndex = -1; 
+                    System.Diagnostics.Debug.WriteLine($"ExecuteFindPrevious: No current _searchResults. Targeting last global match: {pathOfItemToNavigateTo}");
+                }
+                else
+                {
+                    return; 
+                }
+            }
+
+            if (pathOfItemToNavigateTo != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"ExecuteFindPrevious: Ensuring path '{pathOfItemToNavigateTo}' is expanded.");
+                EnsurePathIsExpandedInFlatItemsSource(pathOfItemToNavigateTo);
+            }
             
-            var targetVm = _searchResults[_currentSearchIndex].Item;
-            SelectedGridItem = targetVm; 
-            ExpandAncestors(targetVm);  
-            // TODO: Notify View to scroll SelectedGridItem into view.
+            UpdateNavigableSearchResults();
+
+            if (!_searchResults.Any()) 
+            {
+                System.Diagnostics.Debug.WriteLine("ExecuteFindPrevious: No search results after UpdateNavigableSearchResults. Clearing selection.");
+                SelectedGridItem = null;
+                return; 
+            }
+
+            int newFoundIndex = -1;
+            for (int i = 0; i < _searchResults.Count; i++)
+            {
+                if (_searchResults[i].Path == pathOfItemToNavigateTo)
+                {
+                    newFoundIndex = i;
+                    break;
+                }
+            }
+
+            if (newFoundIndex != -1)
+            {
+                _currentSearchIndex = newFoundIndex;
+                SelectedGridItem = _searchResults[_currentSearchIndex].Item;
+                System.Diagnostics.Debug.WriteLine($"ExecuteFindPrevious: Selected VM '{SelectedGridItem?.NodeName}' at new index {_currentSearchIndex} for path '{pathOfItemToNavigateTo}'.");
+            }
+            else
+            {
+                _currentSearchIndex = _searchResults.Count - 1; // Default to last item
+                SelectedGridItem = _searchResults[_currentSearchIndex].Item;
+                System.Diagnostics.Debug.WriteLine($"ExecuteFindPrevious: Path '{pathOfItemToNavigateTo}' not found. Selecting last item '{SelectedGridItem?.NodeName}'.");
+            }
+            if (SelectedGridItem != null && SelectedGridItem.IsExpandable && !SelectedGridItem.IsExpanded)
+            {
+                SelectedGridItem.IsExpanded = true;
+            }
         }
 
         private bool CanExecuteFind()
@@ -1464,9 +1602,38 @@ namespace JsonConfigEditor.ViewModels
         private void ExecuteSearchLogicAndRefreshUI()
         {
             System.Diagnostics.Debug.WriteLine($"Executing search for: '{SearchText}'");
-            BuildAndApplyGlobalSearchMatches(SearchText);
-            UpdateNavigableSearchResults(); // Rebuild _searchResults based on FlatItemsSource and global matches
-            RefreshFlatList(); // This will cause VMs to re-evaluate IsHighlightedInSearch
+            
+            // Clear old highlights from VMs before global sets are rebuilt.
+            // Iterate a copy if FlatItemsSource could be modified by OnPropertyChanged handlers indirectly.
+            var vmsToNotify = FlatItemsSource.ToList(); 
+
+            BuildAndApplyGlobalSearchMatches(SearchText); // Populates _globallyMatched...
+
+            // Notify existing VMs that their highlight status might have changed due to new global matches
+            foreach (var vm in vmsToNotify)
+            {
+                vm.ReEvaluateHighlightStatus();
+            }
+            System.Diagnostics.Debug.WriteLine($"Notified {vmsToNotify.Count} existing VMs to re-evaluate highlight status.");
+
+            // If there are global matches, try to expand the path to the first one.
+            var allGlobalPaths = _globallyMatchedDomNodes.Select(n => n.Path)
+                                   .Concat(_globallyMatchedSchemaNodePaths)
+                                   .Distinct()
+                                   .OrderBy(p => p) // Consistent ordering for selecting the "first"
+                                   .ToList();
+
+            if (allGlobalPaths.Any())
+            {
+                string firstPotentialPath = allGlobalPaths.First();
+                System.Diagnostics.Debug.WriteLine($"ExecuteSearchLogicAndRefreshUI: Attempting to pre-expand path to first global match: {firstPotentialPath}");
+                EnsurePathIsExpandedInFlatItemsSource(firstPotentialPath); 
+            }
+            
+            // After potential pre-expansion and its RefreshFlatList, rebuild navigable results.
+            UpdateNavigableSearchResults(); 
+
+            // RefreshFlatList(); // Re-evaluating if this is needed. UpdateNavigableSearchResults calls ExpandAncestors, which calls RefreshFlatList.
         }
 
         private void BuildAndApplyGlobalSearchMatches(string searchText)
@@ -1560,7 +1727,7 @@ namespace JsonConfigEditor.ViewModels
         private void UpdateNavigableSearchResults()
         {
             _searchResults.Clear();
-            _currentSearchIndex = -1;
+            // _currentSearchIndex = -1; // Don't reset here, F3 navigation relies on it between steps
 
             foreach (var vm in FlatItemsSource)
             {
@@ -1583,22 +1750,48 @@ namespace JsonConfigEditor.ViewModels
             }
             System.Diagnostics.Debug.WriteLine($"Updated navigable search results: {_searchResults.Count} items.");
 
-            if (_searchResults.Any())
+            if (!string.IsNullOrEmpty(SearchText))
             {
-                _currentSearchIndex = 0;
-                SelectedGridItem = _searchResults[_currentSearchIndex].Item;
-                ExpandAncestors(SelectedGridItem);
+                if (_searchResults.Any())
+                {
+                    SearchStatusText = $"{_searchResults.Count} matches found";
+                    // If _currentSearchIndex was -1 (e.g. new search) or invalid, and we have results, select the first one by default.
+                    if ((_currentSearchIndex == -1 || _currentSearchIndex >= _searchResults.Count) && _searchResults.Any())
+                    {
+                        _currentSearchIndex = 0;
+                        // SelectedGridItem = _searchResults[_currentSearchIndex].Item; // Selection is handled by F3 or initial search logic.
+                        // ExpandAncestors(SelectedGridItem); // Expansion is handled by F3 or initial search logic (EnsurePathIsExpanded...)
+                    }
+                }
+                else
+                {
+                    SearchStatusText = "No matches found";
+                }
             }
             else
             {
-                // If no navigable results, what should selection be? Current behavior: stays as is or becomes null.
-                // SelectedGridItem = null; // Optionally clear selection if no search results in current view
+                SearchStatusText = string.Empty;
             }
+            
+            // If current selection is no longer in the new search results, clear it.
+            // (This part is tricky because F3 sets selection *after* this method in its new flow)
+            // For now, let F3/initial search handle selection explicitly.
+            // if (SelectedGridItem != null && !_searchResults.Any(sr => sr.Item == SelectedGridItem))
+            // {
+            // SelectedGridItem = null;
+            // }
         }
 
         // Public accessors for DataGridRowItemViewModel to check highlight status
         public bool IsDomNodeGloballyMatched(DomNode node) => _globallyMatchedDomNodes.Contains(node);
         public bool IsSchemaPathGloballyMatched(string schemaPathKey) => !string.IsNullOrEmpty(schemaPathKey) && _globallyMatchedSchemaNodePaths.Contains(schemaPathKey);
+
+        private string _searchStatusText = string.Empty;
+        public string SearchStatusText
+        {
+            get => _searchStatusText;
+            private set => SetProperty(ref _searchStatusText, value);
+        }
 
         // --- Old Search Methods (to be removed or ensured they are no longer called) ---
         private void BuildSearchIndex(string searchText, List<SearchResult> results)
@@ -1865,6 +2058,62 @@ namespace JsonConfigEditor.ViewModels
             System.Diagnostics.Debug.WriteLine($"MainViewModel: Setting SchemaNodeExpansionState for '{pathKey}' to {isExpanded}");
             _schemaNodeExpansionState[pathKey] = isExpanded;
             // No RefreshFlatList here, as this is called from IsExpanded setter which then calls OnExpansionChanged.
+        }
+
+        private void EnsurePathIsExpandedInFlatItemsSource(string pathKeyToEnsure)
+        {
+            if (string.IsNullOrEmpty(pathKeyToEnsure)) return;
+
+            // Handle expanding the root node itself if it's collapsed and the path isn't empty.
+            if (_rootDomNode != null && _persistentVmMap.TryGetValue(_rootDomNode, out var rootVm))
+            {
+                if (rootVm.IsExpandable && !rootVm.IsExpanded)
+                {
+                    // Check if the pathKeyToEnsure is actually a child of the root or the root itself.
+                    // If pathKeyToEnsure is just "$root" or empty, this logic isn't needed here as we only care about children.
+                    // If the path is deeper, expanding the root is the first step.
+                    if (pathKeyToEnsure != _rootDomNode.Path && pathKeyToEnsure != "$root") // Avoid self-recursion if pathKeyToEnsure *is* the root
+                    {
+                        System.Diagnostics.Debug.WriteLine($"EnsurePathIsExpanded: Root VM '{rootVm.NodeName}' is collapsed. Expanding it first for path '{pathKeyToEnsure}'.");
+                        rootVm.IsExpanded = true; // This triggers RefreshFlatList and a recursive call to this method.
+                        EnsurePathIsExpandedInFlatItemsSource(pathKeyToEnsure);
+                        return; // Root expansion triggered a refresh, so current iteration is stale.
+                    }
+                }
+            }
+            // If root was already expanded or not relevant, proceed with segments:
+            System.Diagnostics.Debug.WriteLine($"EnsurePathIsExpanded: Attempting to expand path '{pathKeyToEnsure}' (root should be expanded if relevant).");
+
+            string[] segments = pathKeyToEnsure.Split('/');
+            string currentCumulativePath = string.Empty;
+
+            for (int i = 0; i < segments.Length; i++)
+            {
+                currentCumulativePath = i == 0 ? segments[i] : $"{currentCumulativePath}/{segments[i]}";
+                
+                DataGridRowItemViewModel? vmForPath = FlatItemsSource.FirstOrDefault(vm => 
+                    (vm.DomNode?.Path == currentCumulativePath) || 
+                    (vm.IsSchemaOnlyNode && vm.SchemaNodePathKey == currentCumulativePath)
+                );
+
+                if (vmForPath != null)
+                {
+                    if (vmForPath.IsExpandable && !vmForPath.IsExpanded)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"EnsurePathIsExpanded: Expanding VM '{vmForPath.NodeName}' at path '{currentCumulativePath}'. This will trigger RefreshFlatList.");
+                        vmForPath.IsExpanded = true; 
+                        EnsurePathIsExpandedInFlatItemsSource(pathKeyToEnsure); 
+                        return; 
+                    }
+                    System.Diagnostics.Debug.WriteLine($"EnsurePathIsExpanded: VM '{vmForPath.NodeName}' at path '{currentCumulativePath}' found. IsExpandable: {vmForPath.IsExpandable}, IsExpanded: {vmForPath.IsExpanded}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"EnsurePathIsExpanded: No VM found in FlatItemsSource for path segment '{currentCumulativePath}'. Cannot expand further.");
+                    return; 
+                }
+            }
+            System.Diagnostics.Debug.WriteLine($"EnsurePathIsExpanded: Path '{pathKeyToEnsure}' should now be fully expanded if possible.");
         }
 
         // Helper method to recursively add children of an expanded schema-only VM

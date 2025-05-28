@@ -368,6 +368,10 @@
             <StatusBarItem>
                 <TextBlock Text="{Binding IsDirty, StringFormat='Modified: {0}'}" />
             </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock Text="{Binding SearchStatusText}" />
+            </StatusBarItem>
         </StatusBar>
     </Grid>
 </Window> 

@@ -552,5 +552,10 @@ namespace JsonConfigEditor.ViewModels
         }
 
         public string SchemaNodePathKey => _pathKeyForSchemaOnlyNode; // Public getter
+
+        public void ReEvaluateHighlightStatus()
+        {
+            OnPropertyChanged(nameof(IsHighlightedInSearch));
+        }
     }
 } 
