@@ -1,9 +1,8 @@
 {
   "ApplicationName": "JSON Config Editor Demo",
-  "Port": 8080,
+  "ExtraNode":  "string_type",
   "EnableLogging": true,
   "Database": {
-    "Provider": "SqlServer",
     "ConnectionString": "Server=localhost;Database=ConfigEditor;Trusted_Connection=true;",
     "TimeoutSeconds": 30,
     "Version": "1.0"

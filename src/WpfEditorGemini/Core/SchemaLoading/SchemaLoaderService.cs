@@ -115,6 +115,22 @@ namespace JsonConfigEditor.Core.SchemaLoading
         }
 
         /// <summary>
+        /// Gets the primary or first loaded root schema.
+        /// This implementation returns the schema associated with the "$root" mount path if present,
+        /// otherwise the first schema in the dictionary, or null if empty.
+        /// </summary>
+        public SchemaNode? GetRootSchema()
+        {
+            if (_rootSchemas.TryGetValue("$root", out var rootSchemaFromPath))
+            {
+                return rootSchemaFromPath;
+            }
+            // Fallback to the first loaded schema if "$root" is not explicitly defined.
+            // This assumes the first schema loaded is intended as the primary one if no explicit root is set.
+            return _rootSchemas.Values.FirstOrDefault();
+        }
+
+        /// <summary>
         /// Processes an assembly path (file or directory).
         /// </summary>
         private void ProcessAssemblyPath(string assemblyPath)

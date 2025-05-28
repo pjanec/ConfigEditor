@@ -39,6 +39,7 @@ namespace JsonConfigEditor.ViewModels
         private readonly Dictionary<DomNode, SchemaNode?> _domToSchemaMap = new();
         private readonly Dictionary<DomNode, List<ValidationIssue>> _validationIssuesMap = new();
         private readonly Dictionary<DomNode, DataGridRowItemViewModel> _persistentVmMap = new();
+        private readonly Dictionary<string, bool> _schemaNodeExpansionState = new(); // For schema-only node states
 
         // --- Private Fields: UI State & Filters/Search ---
         private string? _currentFilePath;
@@ -600,6 +601,9 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         internal void OnExpansionChanged(DataGridRowItemViewModel item)
         {
+            // If it's a schema-only node, its IsExpanded setter would have already updated _schemaNodeExpansionState.
+            // For DOM nodes, their expansion is implicitly persisted by being in _persistentVmMap if RefreshFlatList reuses them.
+            // The primary job here is to rebuild the list display based on current expansion states.
             RefreshFlatList();
         }
 
@@ -790,61 +794,140 @@ namespace JsonConfigEditor.ViewModels
             {
                 _domToSchemaMap.TryGetValue(node, out var schema);
                 viewModel = new DataGridRowItemViewModel(node, schema, this);
-                // DO NOT add to _persistentVmMap here; it's cleared and repopulated by RefreshFlatList after this recursion.
-                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: CREATED NEW VM for node '{viewModel.NodeName}' ({viewModel.GetHashCode()}), IsDomNodePresent: {viewModel.IsDomNodePresent}, Initial IsExpanded: {viewModel.IsExpanded}");
+                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (DOM Node): CREATED NEW VM for node '{viewModel.NodeName}' (Path: {node.Path}, Hash: {viewModel.GetHashCode()}), IsSchemaOnly: False, Initial IsExpanded: {viewModel.IsExpanded}");
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: REUSED VM for node '{viewModel.NodeName}' ({viewModel.GetHashCode()}), IsDomNodePresent: {viewModel.IsDomNodePresent}, Current IsExpanded: {viewModel.IsExpanded}");
+                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (DOM Node): REUSED VM for node '{viewModel.NodeName}' (Path: {node.Path}, Hash: {viewModel.GetHashCode()}), IsSchemaOnly: False, Current IsExpanded: {viewModel.IsExpanded}");
             }
 
             flatItems.Add(viewModel);
 
-            System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: Checking expansion for VM '{viewModel.NodeName}' ({viewModel.GetHashCode()}), IsExpanded property value: {viewModel.IsExpanded}");
-            // Add children if expanded
-            if (viewModel.IsExpanded) // Use the IsExpanded property of the retrieved/created VM
+            System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: Checking expansion for VM '{viewModel.NodeName}' (Hash: {viewModel.GetHashCode()}), IsDomNodePresent: {viewModel.IsDomNodePresent}, IsSchemaOnlyNode: {viewModel.IsSchemaOnlyNode}, IsExpanded property value: {viewModel.IsExpanded}");
+            
+            if (viewModel.IsExpanded)
             {
-                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: VM '{viewModel.NodeName}' IS expanded, adding children.");
-                switch (node)
+                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: VM '{viewModel.NodeName}' (Hash: {viewModel.GetHashCode()}) IS expanded. Processing children/properties.");
+                if (viewModel.IsDomNodePresent && node != null) // Children of an existing DOM node
                 {
-                    case ObjectNode objectNode:
-                        foreach (var child in objectNode.GetChildren())
-                        {
-                            BuildFlatListRecursive(child, flatItems);
-                        }
-
-                        // Add schema-only nodes if enabled
-                        if (_showSchemaNodes && _domToSchemaMap.TryGetValue(node, out var objectSchema) && objectSchema?.Properties != null)
-                        {
-                            foreach (var schemaProp in objectSchema.Properties)
+                    switch (node)
+                    {
+                        case ObjectNode objectNode:
+                            // First, add children that exist in the DOM
+                            foreach (var childDomNode in objectNode.GetChildren())
                             {
-                                if (!objectNode.HasProperty(schemaProp.Key))
+                                BuildFlatListRecursive(childDomNode, flatItems);
+                            }
+                            // Second, add schema-only properties not present in DOM for this objectNode
+                            if (_showSchemaNodes && _domToSchemaMap.TryGetValue(objectNode, out var objectSchema) && objectSchema?.Properties != null)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (DOM Node '{objectNode.Path}'): Checking schema-only properties. Schema CLR Type: '{objectSchema.ClrType.FullName}', Name: '{objectSchema.Name}'.");
+                                foreach (var schemaProp in objectSchema.Properties)
                                 {
-                                    var schemaOnlyVm = new DataGridRowItemViewModel(schemaProp.Value, schemaProp.Key, this, node.Depth + 1);
-                                    flatItems.Add(schemaOnlyVm);
+                                    if (!objectNode.HasProperty(schemaProp.Key))
+                                    {
+                                        var childDepth = objectNode.Depth + 1;
+                                        var schemaPathKey = (string.IsNullOrEmpty(objectNode.Path) ? schemaProp.Key : $"{objectNode.Path}/{schemaProp.Key}").TrimStart('$');
+                                        System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (DOM Node '{objectNode.Path}'): Adding schema-only child VM for '{schemaProp.Key}' (PathKey: {schemaPathKey}, Type: {schemaProp.Value.ClrType.Name}). Depth: {childDepth}");
+                                        var schemaOnlyChildVm = new DataGridRowItemViewModel(
+                                            schemaPropertyNode: schemaProp.Value, 
+                                            propertyName: schemaProp.Key, 
+                                            parentViewModel: this, 
+                                            depth: childDepth, 
+                                            pathKey: schemaPathKey
+                                        );
+                                        flatItems.Add(schemaOnlyChildVm); 
+                                        
+                                        if (schemaOnlyChildVm.IsExpanded && schemaOnlyChildVm.IsExpandable)
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (DOM Node '{objectNode.Path}'): Schema-only child '{schemaOnlyChildVm.NodeName}' is expanded. Adding its children.");
+                                            AddSchemaOnlyChildrenRecursive(schemaOnlyChildVm, flatItems, childDepth);
+                                        }
+                                    }
                                 }
                             }
-                        }
-                        break;
+                            break;
 
-                    case ArrayNode arrayNode:
-                        foreach (var item in arrayNode.GetItems())
+                        case ArrayNode arrayNode:
+                            foreach (var itemDomNode in arrayNode.GetItems())
+                            {
+                                BuildFlatListRecursive(itemDomNode, flatItems);
+                            }
+                            if (_domToSchemaMap.TryGetValue(arrayNode, out var arraySchema)) // Add "Add item" placeholder
+                            {
+                                var placeholderVm = new DataGridRowItemViewModel(arrayNode, arraySchema?.ItemSchema, this, arrayNode.Depth + 1);
+                                flatItems.Add(placeholderVm);
+                            }
+                            break;
+                    }
+                }
+                else if (viewModel.IsSchemaOnlyNode && viewModel.SchemaContextNode != null) // Children of an expanded schema-only node
+                {
+                    SchemaNode schemaContext = viewModel.SchemaContextNode;
+                    System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (Schema-Only VM '{viewModel.NodeName}'): Processing expanded schema node. Schema CLR Type: '{schemaContext.ClrType.FullName}', Name: '{schemaContext.Name}'.");
+                    if (schemaContext.Properties != null && schemaContext.NodeType == SchemaNodeType.Object)
+                    {
+                        foreach (var propEntry in schemaContext.Properties)
                         {
-                            BuildFlatListRecursive(item, flatItems);
+                            System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (Schema-Only VM '{viewModel.NodeName}'): Adding child schema-only VM for '{propEntry.Key}' (Type: {propEntry.Value.ClrType.Name}). Depth: {viewModel.Indentation.Left / 20 + 1}");
+                            var childDepth = (int)(viewModel.Indentation.Left / 20) + 1;
+                            var childSchemaPathKey = $"{viewModel.SchemaNodePathKey}/{propEntry.Key}";
+                            var childSchemaVm = new DataGridRowItemViewModel(propEntry.Value, propEntry.Key, this, childDepth, childSchemaPathKey);
+                            flatItems.Add(childSchemaVm);
+                            if (childSchemaVm.IsExpanded && childSchemaVm.IsExpandable)
+                            {
+                                AddSchemaOnlyChildrenRecursive(childSchemaVm, flatItems, childDepth);
+                            }
                         }
-
-                        // Add "Add item" placeholder
-                        if (_domToSchemaMap.TryGetValue(node, out var arraySchema))
-                        {
-                            var placeholderVm = new DataGridRowItemViewModel(arrayNode, arraySchema?.ItemSchema, this, node.Depth + 1);
-                            flatItems.Add(placeholderVm);
-                        }
-                        break;
+                    }
+                    else if (schemaContext.ItemSchema != null && schemaContext.NodeType == SchemaNodeType.Array)
+                    {
+                        // For schema-only arrays, we might show a placeholder like "(Define array items)" or nothing,
+                        // as there's no "Add Item" equivalent without a parent DOM ArrayNode.
+                        // For now, do nothing for children of expanded schema-only arrays.
+                        System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (Schema-Only VM '{viewModel.NodeName}'): Is an expanded schema-only array. Not adding item placeholders currently.");
+                    }
                 }
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: VM '{viewModel.NodeName}' is NOT expanded.");
+                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: VM '{viewModel.NodeName}' (Hash: {viewModel.GetHashCode()}) is NOT expanded.");
+            }
+
+            // Special handling for root node to show schema-only top-level items if root is empty or they are not present
+            // This should run *after* the root DomNode (if any) and its direct children are processed.
+            // We only want to add top-level schema items if the root DomNode itself doesn't provide them.
+            if (node == _rootDomNode && _showSchemaNodes)
+            {
+                var rootSchema = _schemaLoader.GetRootSchema(); 
+                if (rootSchema?.Properties != null && node is ObjectNode rootObjectNode)
+                {
+                    System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: Checking schema-only properties for ROOT node '{rootObjectNode.Path}'. Root Schema CLR Type: {rootSchema.ClrType.FullName}, Name: {rootSchema.Name}");
+                    foreach (var schemaProp in rootSchema.Properties)
+                    {
+                        if (!rootObjectNode.HasProperty(schemaProp.Key))
+                        {
+                             System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: Adding schema-only VM for '{schemaProp.Key}' (Type: {schemaProp.Value.ClrType.Name}) under ROOT.");
+                            var schemaPathKey = schemaProp.Key.TrimStart('$');
+                            var schemaOnlyVm = new DataGridRowItemViewModel(schemaProp.Value, schemaProp.Key, this, 1, schemaPathKey); 
+                            
+                            if (!flatItems.Any(vm => vm.NodeName == schemaProp.Key && vm.SchemaContextNode == schemaProp.Value && vm.Indentation.Left == (1 * 20) && vm.IsSchemaOnlyNode))
+                            {
+                                flatItems.Add(schemaOnlyVm);
+                                // If the added top-level schema-only VM is expanded and expandable, add its children.
+                                if (schemaOnlyVm.IsExpanded && schemaOnlyVm.IsExpandable)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive (Root): Top-level schema-only VM '{schemaOnlyVm.NodeName}' is expanded. Adding its children.");
+                                    AddSchemaOnlyChildrenRecursive(schemaOnlyVm, flatItems, 1); // Depth of children of root-level items is 1 + 1 = 2, but AddSchemaOnlyChildrenRecursive takes parentDepth.
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (rootSchema == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("BuildFlatListRecursive: Root schema is null, cannot add schema-only items for root.");
+                }
             }
         }
 
@@ -1130,6 +1213,53 @@ namespace JsonConfigEditor.ViewModels
             {
                 vmToUpdate.RefreshDisplayProperties(); // To update ValueDisplay etc.
             }
+        }
+
+        // --- Schema Node Expansion State Persistence ---
+        internal bool? GetSchemaNodeExpansionState(string pathKey)
+        {
+            if (_schemaNodeExpansionState.TryGetValue(pathKey, out bool isExpanded))
+            {
+                return isExpanded;
+            }
+            return null; // Not found, use default
+        }
+
+        internal void SetSchemaNodeExpansionState(string pathKey, bool isExpanded)
+        {    
+            System.Diagnostics.Debug.WriteLine($"MainViewModel: Setting SchemaNodeExpansionState for '{pathKey}' to {isExpanded}");
+            _schemaNodeExpansionState[pathKey] = isExpanded;
+            // No RefreshFlatList here, as this is called from IsExpanded setter which then calls OnExpansionChanged.
+        }
+
+        // Helper method to recursively add children of an expanded schema-only VM
+        private void AddSchemaOnlyChildrenRecursive(DataGridRowItemViewModel parentSchemaVm, List<DataGridRowItemViewModel> flatItems, int parentDepth)
+        {
+            if (!parentSchemaVm.IsSchemaOnlyNode || parentSchemaVm.SchemaContextNode == null || !parentSchemaVm.IsExpanded)
+            {
+                return;
+            }
+
+            SchemaNode schemaContext = parentSchemaVm.SchemaContextNode;
+            System.Diagnostics.Debug.WriteLine($"AddSchemaOnlyChildrenRecursive: Processing for '{parentSchemaVm.NodeName}', Schema Type: {schemaContext.ClrType.FullName}");
+
+            if (schemaContext.Properties != null && schemaContext.NodeType == SchemaNodeType.Object)
+            {
+                foreach (var propEntry in schemaContext.Properties)
+                {
+                    int childDepth = parentDepth + 1;
+                    var childSchemaPathKey = $"{parentSchemaVm.SchemaNodePathKey}/{propEntry.Key}";
+                    System.Diagnostics.Debug.WriteLine($"AddSchemaOnlyChildrenRecursive ('{parentSchemaVm.NodeName}'): Adding child schema-only VM for '{propEntry.Key}' (PathKey: {childSchemaPathKey}, Type: {propEntry.Value.ClrType.Name}). Depth: {childDepth}");
+                    var childSchemaVm = new DataGridRowItemViewModel(propEntry.Value, propEntry.Key, this, childDepth, childSchemaPathKey);
+                    flatItems.Add(childSchemaVm);
+                    
+                    if (childSchemaVm.IsExpanded && childSchemaVm.IsExpandable)
+                    {
+                        AddSchemaOnlyChildrenRecursive(childSchemaVm, flatItems, childDepth);
+                    }
+                }
+            }
+            // No "Add item" placeholder for pure schema-only arrays for now.
         }
     }
 } 

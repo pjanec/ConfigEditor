@@ -32,6 +32,7 @@ namespace JsonConfigEditor.ViewModels
         private readonly SchemaNode? _itemSchemaForPlaceholder; // Item schema if _isAddItemPlaceholder
         private readonly string? _nameOverrideForSchemaOnly; // Name for schema-only property placeholders
         private readonly int _depthForSchemaOnly; // Depth for schema-only/placeholder nodes
+        private string _schemaNodePathKey = string.Empty; // Unique key for schema-only nodes
 
         // Added private fields for new properties
         private IValueEditor? _modalEditorInstance;
@@ -51,16 +52,19 @@ namespace JsonConfigEditor.ViewModels
         }
 
         // --- Constructor for Schema-Only Property Placeholders ---
-        public DataGridRowItemViewModel(SchemaNode schemaPropertyNode, string propertyName, MainViewModel parentViewModel, int depth)
+        public DataGridRowItemViewModel(SchemaNode schemaPropertyNode, string propertyName, MainViewModel parentViewModel, int depth, string pathKey)
         {
             _domNode = null; // Marks as schema-only
             _schemaContextNode = schemaPropertyNode ?? throw new ArgumentNullException(nameof(schemaPropertyNode));
             _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
             _nameOverrideForSchemaOnly = propertyName ?? throw new ArgumentNullException(nameof(propertyName));
             _depthForSchemaOnly = depth;
+            _schemaNodePathKey = pathKey;
             _isAddItemPlaceholder = false;
-            _isExpandedInternal = (schemaPropertyNode.NodeType == SchemaNodeType.Object || schemaPropertyNode.NodeType == SchemaNodeType.Array) && (depth < 2);
-            // Initialize _editValue based on DefaultValue for schema-only node
+            // Initialize IsExpanded based on persisted state or default
+            _isExpandedInternal = parentViewModel.GetSchemaNodeExpansionState(pathKey) ?? 
+                                ((schemaPropertyNode.NodeType == SchemaNodeType.Object || schemaPropertyNode.NodeType == SchemaNodeType.Array) && (depth < 2));
+            
             _editValue = _schemaContextNode.DefaultValue?.ToString() ?? string.Empty;
         }
 
@@ -216,9 +220,15 @@ namespace JsonConfigEditor.ViewModels
                 {
                     bool oldValue = _isExpandedInternal;
                     _isExpandedInternal = value;
-                    System.Diagnostics.Debug.WriteLine($"VM '{NodeName}' ({GetHashCode()}): IsExpanded changed from {oldValue} to {_isExpandedInternal}. Firing OnPropertyChanged.");
+                    System.Diagnostics.Debug.WriteLine($"VM '{NodeName}' (PathKey: {_schemaNodePathKey}, Hash: {GetHashCode()}): IsExpanded changed from {oldValue} to {_isExpandedInternal}. Firing OnPropertyChanged.");
                     OnPropertyChanged(); 
-                    System.Diagnostics.Debug.WriteLine($"VM '{NodeName}' ({GetHashCode()}): Calling ParentViewModel.OnExpansionChanged.");
+
+                    if (IsSchemaOnlyNode && !string.IsNullOrEmpty(_schemaNodePathKey))
+                    {
+                        ParentViewModel.SetSchemaNodeExpansionState(_schemaNodePathKey, _isExpandedInternal);
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"VM '{NodeName}' (PathKey: {_schemaNodePathKey}, Hash: {GetHashCode()}): Calling ParentViewModel.OnExpansionChanged.");
                     ParentViewModel.OnExpansionChanged(this); 
                 }
             }
@@ -232,6 +242,10 @@ namespace JsonConfigEditor.ViewModels
             if (_isExpandedInternal != expanded && IsExpandable)
             {
                 _isExpandedInternal = expanded;
+                if (IsSchemaOnlyNode && !string.IsNullOrEmpty(_schemaNodePathKey)) // Also update persisted state if set internally
+                {
+                    ParentViewModel.SetSchemaNodeExpansionState(_schemaNodePathKey, _isExpandedInternal);
+                }
                 OnPropertyChanged(nameof(IsExpanded));
             }
         }
@@ -498,5 +512,7 @@ namespace JsonConfigEditor.ViewModels
                 OnPropertyChanged();
             }
         }
+
+        public string SchemaNodePathKey => _schemaNodePathKey; // Public getter
     }
 } 

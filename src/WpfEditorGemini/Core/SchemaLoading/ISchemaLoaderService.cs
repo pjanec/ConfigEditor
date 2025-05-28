@@ -38,5 +38,12 @@ namespace JsonConfigEditor.Core.SchemaLoading
         /// Clears all loaded schemas and error messages.
         /// </summary>
         void Clear();
+
+        /// <summary>
+        /// Gets the primary or first loaded root schema.
+        /// This is a simplification; a more robust system might identify root schemas by a specific marker or convention.
+        /// </summary>
+        /// <returns>The root schema, or null if none are loaded or identifiable as the primary root.</returns>
+        SchemaNode? GetRootSchema();
     }
 } 

@@ -106,9 +106,38 @@ namespace JsonConfigEditor
                     }
                     else if (selectedItem.IsEditable)
                     {
+                        // Ensure the current cell is the one we intend to edit.
+                        // This usually means the 'Value' column for the selectedItem.
+                        // Find the actual DataGridCell visual element for the target column.
+                        DataGridRow? row = dataGrid.ItemContainerGenerator.ContainerFromItem(selectedItem) as DataGridRow;
+                        DataGridCell? cellToEdit = null;
+                        DataGridColumn? valueColumn = dataGrid.Columns.FirstOrDefault(c => c.Header?.ToString() == "Value");
+
+                        if (row != null && valueColumn != null)
+                        {
+                            // Try to get the cell directly
+                            var cellContent = valueColumn.GetCellContent(row);
+                            if (cellContent != null)
+                            {
+                                cellToEdit = cellContent.Parent as DataGridCell;
+                            }
+                        }
+                        
+                        if (cellToEdit != null)
+                        {
+                            dataGrid.CurrentCell = new DataGridCellInfo(cellToEdit); // Set CurrentCell using DataGridCell
+                            // cellToEdit.Focus(); // Focusing the cell before BeginEdit can sometimes help
+                        }
+                        else if (valueColumn != null) // Fallback if visual cell not found immediately
+                        {
+                            dataGrid.CurrentCell = new DataGridCellInfo(selectedItem, valueColumn); 
+                        }
+
                         selectedItem.IsInEditMode = true;
                         System.Diagnostics.Debug.WriteLine("IsInEditMode (after): " + selectedItem.IsInEditMode);
-                        dataGrid.BeginEdit(e); 
+                        bool editStarted = dataGrid.BeginEdit(e); 
+                        System.Diagnostics.Debug.WriteLine($"dataGrid.BeginEdit() returned: {editStarted}");
+
                         // Attempt to focus the editor after BeginEdit has been called
                         // This needs to happen after the visual tree is updated with the editing element.
                         // We dispatch it to a lower priority to allow the DataGrid to set up the editor.
@@ -436,41 +465,63 @@ namespace JsonConfigEditor
                 var selectedVm = ViewModel.SelectedGridItem;
                 if (selectedVm != null)
                 {
+                    // Ensure the VM is not in edit mode if we are just changing selection
+                    if (selectedVm.IsInEditMode)
+                    {
+                        // This case should ideally not happen if selection change is programmatic
+                        // and not part of an edit commit/cancel.
+                        // For now, we'll assume that if SelectedGridItem changes, we are not in an active edit
+                        // or the edit has just concluded.
+                        // selectedVm.IsInEditMode = false; // Consider if this is safe or needed
+                    }
+
                     MainDataGrid.ScrollIntoView(selectedVm);
                     
-                    // Enhanced focus logic
                     Action focusAction = () => 
                     {
+                        // Verify again that the item is still the selected one, in case of rapid changes.
+                        if (MainDataGrid.SelectedItem != selectedVm) return;
+
                         var row = MainDataGrid.ItemContainerGenerator.ContainerFromItem(selectedVm) as DataGridRow;
                         if (row == null)
                         {
-                            // If row is not found directly, it might be because the item is not yet materialized or is virtualized.
-                            // Try updating layout and finding again.
-                            MainDataGrid.UpdateLayout();
+                            MainDataGrid.UpdateLayout(); // Force layout update
+                            MainDataGrid.ScrollIntoView(selectedVm); // Scroll again after layout
                             row = MainDataGrid.ItemContainerGenerator.ContainerFromItem(selectedVm) as DataGridRow;
                         }
 
                         if (row != null)
                         {
+                            // Try to set CurrentCell to a non-editable part of the row first, like the row header or first cell.
+                            // This might prevent the DataGrid from auto-initiating an edit on the value cell when the row gets focus.
+                            if (MainDataGrid.Columns.Any())
+                            {
+                                var firstColumn = MainDataGrid.Columns[0];
+                                MainDataGrid.CurrentCell = new DataGridCellInfo(selectedVm, firstColumn);
+                            }
+
                             if (!row.IsKeyboardFocusWithin)
                             {
-                                row.Focus();
+                                bool success = row.Focus();
+                                System.Diagnostics.Debug.WriteLine($"Focus attempt on row for VM '{selectedVm.NodeName}': {(success ? "Succeeded" : "Failed")}");
                             }
-                            // Optional: If you want to focus a specific cell (e.g., the first one)
-                            // var cell = GetCell(MainDataGrid, row, 0); // Assuming GetCell helper
-                            // cell?.Focus();
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Could not find DataGridRow container for VM '{selectedVm.NodeName}' after layout.");
                         }
                     };
 
-                    // If the DataGrid itself doesn't have focus, focus it first, then dispatch the row focus.
+                    // If the DataGrid itself doesn't have focus, focus it first.
+                    // Use Loaded priority to ensure DataGrid processes its own focus logic first.
                     if (!MainDataGrid.IsKeyboardFocusWithin)
                     {
-                        MainDataGrid.Focus();
+                        MainDataGrid.Focus(); // Focus the grid
                         MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.Loaded);
                     }
                     else
                     {
-                        // If DataGrid already has focus, dispatch at Background to allow UI to settle from selection change.
+                        // If DataGrid already has focus, use Background to allow other UI updates to settle.
                         MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.Background);
                     }
                 }
