@@ -87,19 +87,27 @@ namespace JsonConfigEditor
                     break;
 
                 case Key.Escape:
-                    // Escape key: Cancel edit
+                    System.Diagnostics.Debug.WriteLine("Escape pressed, IsInEditMode: " + selectedItem.IsInEditMode);
                     if (selectedItem.IsInEditMode)
                     {
-                        selectedItem.CancelEdit();
+                        selectedItem.CancelEdit(); // ViewModel cancels, resets value, sets IsInEditMode = false
+                        dataGrid.CancelEdit(DataGridEditingUnit.Row); // Tell DataGrid to cancel its edit operation for the row
+                        // dataGrid.CancelEdit(DataGridEditingUnit.Cell); // Alternative: if only cell edit needs cancelling
+                        System.Diagnostics.Debug.WriteLine("CancelEdit called, IsInEditMode after: " + selectedItem.IsInEditMode);
                         e.Handled = true;
                     }
                     break;
 
                 case Key.F2:
-                    // F2 key: Start editing
+                    System.Diagnostics.Debug.WriteLine("F2 pressed, IsEditable: " + selectedItem.IsEditable + ", IsInEditMode (before): " + selectedItem.IsInEditMode);
                     if (!selectedItem.IsInEditMode && selectedItem.IsEditable)
                     {
                         selectedItem.IsInEditMode = true;
+                        System.Diagnostics.Debug.WriteLine("F2: IsInEditMode set to true");
+                        // Consistently call BeginEdit like in Enter key handler
+                        // dataGrid.BeginEdit(e); // Pass original event args if needed by BeginEdit overload
+                        dataGrid.BeginEdit();    // Or the parameterless overload if sufficient
+                        System.Diagnostics.Debug.WriteLine("F2: dataGrid.BeginEdit() called");
                         e.Handled = true;
                     }
                     break;
@@ -208,6 +216,41 @@ namespace JsonConfigEditor
             {
                 // Cancel the edit
                 item.CancelEdit();
+            }
+        }
+
+        // Handler for double-click on a value cell to start editing
+        private void ValueCell_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is DataGridCell cell && cell.DataContext is DataGridRowItemViewModel vm)
+            {
+                var dataGrid = MainDataGrid; // Assuming MainDataGrid is the x:Name of your DataGrid
+                if (vm.IsEditable && !vm.IsInEditMode)
+                {
+                    vm.IsInEditMode = true;
+                    // It's important to ensure the DataGrid itself knows to go into edit mode for this cell.
+                    // Dispatcher is used because DataGrid might not be ready to switch to edit mode immediately.
+                    Dispatcher.BeginInvoke(new Action(() => 
+                    {
+                        dataGrid.SelectedItem = vm; // Ensure the row is selected
+                        dataGrid.CurrentCell = new DataGridCellInfo(vm, dataGrid.Columns[1]); // Assuming value column is index 1
+                        dataGrid.BeginEdit();
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                    e.Handled = true;
+                }
+            }
+        }
+
+        // Handler for double-click on a name cell to toggle expansion
+        private void NameCell_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is DataGridCell cell && cell.DataContext is DataGridRowItemViewModel vm)
+            {
+                if (vm.IsExpandable)
+                {
+                    vm.IsExpanded = !vm.IsExpanded;
+                    e.Handled = true;
+                }
             }
         }
 

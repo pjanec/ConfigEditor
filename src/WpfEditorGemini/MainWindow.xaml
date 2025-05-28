@@ -5,6 +5,7 @@
         xmlns:views="clr-namespace:JsonConfigEditor.Views"
         xmlns:converters="clr-namespace:JsonConfigEditor.Wpf.Converters"
         xmlns:ap="clr-namespace:JsonConfigEditor.Wpf.AttachedProperties"
+        xmlns:local="clr-namespace:JsonConfigEditor"
         Title="{Binding WindowTitle}" 
         Height="600" Width="1000"
         WindowStartupLocation="CenterScreen">
@@ -206,6 +207,7 @@
         <DataGrid Grid.Row="2" 
                   x:Name="MainDataGrid"
                   ItemsSource="{Binding FlatItemsSource}"
+                  SelectedItem="{Binding SelectedGridItem, Mode=TwoWay}"
                   AutoGenerateColumns="False"
                   CanUserSortColumns="False"
                   GridLinesVisibility="Horizontal"
@@ -262,6 +264,11 @@
             <DataGrid.Columns>
                 <!-- Expandable Node Name Column -->
                 <DataGridTemplateColumn Header="Name" Width="300" CanUserResize="True">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell">
+                            <EventSetter Event="MouseDoubleClick" Handler="NameCell_MouseDoubleClick" />
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <Grid Margin="{Binding Indentation}">
@@ -290,6 +297,23 @@
 
                 <!-- Value Column -->
                 <DataGridTemplateColumn Header="Value" Width="*" CanUserResize="True">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell">
+                            <EventSetter Event="MouseDoubleClick" Handler="ValueCell_MouseDoubleClick" />
+                            <Setter Property="ToolTip">
+                                <Setter.Value>
+                                    <ToolTip>
+                                        <ToolTip.Content>
+                                            <MultiBinding Converter="{StaticResource CustomTooltipConverter}">
+                                                <Binding Path="." />
+                                                <Binding Path="DataContext.UiRegistry" RelativeSource="{RelativeSource AncestorType={x:Type local:MainWindow}}" />
+                                            </MultiBinding>
+                                        </ToolTip.Content>
+                                    </ToolTip>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
                     <DataGridTemplateColumn.CellTemplateSelector>
                         <StaticResource ResourceKey="NodeValueTemplateSelector" />
                     </DataGridTemplateColumn.CellTemplateSelector>

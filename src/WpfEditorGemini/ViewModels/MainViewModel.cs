@@ -47,6 +47,7 @@ namespace JsonConfigEditor.ViewModels
         private bool _showSchemaNodes = true; // Toggle for DOM vs DOM+Schema view
         private string _searchText = string.Empty;
         private DataGridRowItemViewModel? _currentlyEditedItem;
+        private DataGridRowItemViewModel? _selectedGridItem; // For TwoWay binding with DataGrid
         private List<SearchResult> _searchResults = new();
         private int _currentSearchIndex = -1;
 
@@ -157,6 +158,16 @@ namespace JsonConfigEditor.ViewModels
         {
             get => _currentFilePath;
             private set => SetProperty(ref _currentFilePath, value);
+        }
+
+        /// <summary>
+        /// Gets or sets the currently selected item in the DataGrid.
+        /// Used for TwoWay binding to preserve selection across list refreshes.
+        /// </summary>
+        public DataGridRowItemViewModel? SelectedGridItem
+        {
+            get => _selectedGridItem;
+            set => SetProperty(ref _selectedGridItem, value);
         }
 
         /// <summary>
@@ -695,22 +706,57 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         private void RefreshFlatList()
         {
-            FlatItemsSource.Clear();
-
             if (_rootDomNode == null)
+            {
+                FlatItemsSource.Clear();
+                _persistentVmMap.Clear();
+                SelectedGridItem = null; // Clear selection
                 return;
+            }
 
-            // Build the flat list
-            var flatItems = new List<DataGridRowItemViewModel>();
-            BuildFlatListRecursive(_rootDomNode, flatItems);
+            // Preserve selected item's underlying DomNode or placeholder identifier
+            object? selectedIdentifier = null;
+            if(SelectedGridItem != null)
+            {
+                selectedIdentifier = SelectedGridItem.IsDomNodePresent ? 
+                                     (object?)SelectedGridItem.DomNode :
+                                     SelectedGridItem.NodeName; // Use NodeName for placeholders
+            }
 
-            // Apply filtering
-            var filteredItems = ApplyFiltering(flatItems);
+            var tempFlatList = new List<DataGridRowItemViewModel>();
+            BuildFlatListRecursive(_rootDomNode, tempFlatList);
 
-            // Add to observable collection
-            foreach (var item in filteredItems)
+            var processedList = ApplyFiltering(tempFlatList);
+
+            FlatItemsSource.Clear();
+            _persistentVmMap.Clear(); 
+
+            DataGridRowItemViewModel? itemToReselect = null;
+
+            foreach (var item in processedList)
             {
                 FlatItemsSource.Add(item);
+                if (item.DomNode != null)
+                {
+                    _persistentVmMap[item.DomNode] = item;
+                    if (selectedIdentifier is DomNode selectedDomNode && item.DomNode == selectedDomNode)
+                    {
+                        itemToReselect = item;
+                    }
+                }
+                else if (selectedIdentifier is string selectedName && item.NodeName == selectedName) 
+                {
+                     itemToReselect = item;
+                }
+            }
+            HighlightSearchResults();
+
+            SelectedGridItem = itemToReselect; // Re-apply selection through the bound property
+            
+            // Ensure the re-selected item is visible if focus is important
+            if (SelectedGridItem != null)
+            {
+                // ParentViewModel.EnsureVisible(SelectedGridItem); // Conceptual - needs DataGrid access
             }
         }
 
