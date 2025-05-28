@@ -281,6 +281,7 @@
                                 <!-- Expand/Collapse Button -->
                                 <ToggleButton Grid.Column="0" 
                                               IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                              Click="ExpandToggleButton_Click"
                                               Visibility="{Binding IsExpandable, Converter={StaticResource BooleanToVisibilityConverter}}"
                                               Width="16" Height="16" 
                                               Margin="0,0,4,0"

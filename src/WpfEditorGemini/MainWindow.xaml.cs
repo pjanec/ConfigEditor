@@ -5,6 +5,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 // Added for NodeValueTemplateSelector
 using JsonConfigEditor.Views;
@@ -479,53 +480,135 @@ namespace JsonConfigEditor
                     
                     Action focusAction = () => 
                     {
-                        // Verify again that the item is still the selected one, in case of rapid changes.
-                        if (MainDataGrid.SelectedItem != selectedVm) return;
+                        if (MainDataGrid.SelectedItem != selectedVm)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"FocusAction: SelectedItem changed from '{selectedVm?.NodeName}' before action could run. Aborting focus attempt.");
+                            return;
+                        }
 
                         var row = MainDataGrid.ItemContainerGenerator.ContainerFromItem(selectedVm) as DataGridRow;
                         if (row == null)
                         {
-                            MainDataGrid.UpdateLayout(); // Force layout update
-                            MainDataGrid.ScrollIntoView(selectedVm); // Scroll again after layout
+                            System.Diagnostics.Debug.WriteLine($"FocusAction: Row for '{selectedVm.NodeName}' not found initially. Updating layout and scrolling.");
+                            MainDataGrid.UpdateLayout(); 
+                            MainDataGrid.ScrollIntoView(selectedVm); 
                             row = MainDataGrid.ItemContainerGenerator.ContainerFromItem(selectedVm) as DataGridRow;
                         }
 
                         if (row != null)
                         {
-                            // Try to set CurrentCell to a non-editable part of the row first, like the row header or first cell.
-                            // This might prevent the DataGrid from auto-initiating an edit on the value cell when the row gets focus.
-                            if (MainDataGrid.Columns.Any())
+                            DataGridColumn? nameColumn = MainDataGrid.Columns.FirstOrDefault(c => c.Header?.ToString() == "Name");
+                            if (nameColumn != null)
                             {
-                                var firstColumn = MainDataGrid.Columns[0];
-                                MainDataGrid.CurrentCell = new DataGridCellInfo(selectedVm, firstColumn);
+                                DataGridCell? cell = GetCell(row, nameColumn); // Use the new helper
+                                if (cell != null)
+                                {
+                                    MainDataGrid.CurrentCell = new DataGridCellInfo(cell); // Update CurrentCell
+                                    System.Diagnostics.Debug.WriteLine($"FocusAction: Set CurrentCell to actual cell for '{selectedVm.NodeName}'.");
+                                    if (!cell.IsKeyboardFocusWithin)
+                                    {
+                                        bool success = cell.Focus(); // Focus the cell
+                                        System.Diagnostics.Debug.WriteLine($"FocusAction: cell.Focus() for '{selectedVm.NodeName}' " + (success ? "succeeded." : "failed."));
+                                    }
+                                    else
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"FocusAction: Cell for '{selectedVm.NodeName}' already had keyboard focus within.");
+                                    }
+                                }
+                                else
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"FocusAction: DataGridCell for 'Name' column not found for '{selectedVm.NodeName}'. Falling back to row focus and item/column CurrentCell.");
+                                    MainDataGrid.CurrentCell = new DataGridCellInfo(selectedVm, nameColumn); // Set CurrentCell using item and column
+                                    if (!row.IsKeyboardFocusWithin)
+                                    {
+                                        bool success = row.Focus(); // Fallback to row focus
+                                        System.Diagnostics.Debug.WriteLine($"FocusAction: Fallback row.Focus() for '{selectedVm.NodeName}' " + (success ? "succeeded." : "failed."));
+                                    }
+                                    else
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"FocusAction: Fallback - Row for '{selectedVm.NodeName}' already had keyboard focus within.");
+                                    }
+                                }
                             }
-
-                            if (!row.IsKeyboardFocusWithin)
+                            else
                             {
-                                bool success = row.Focus();
-                                System.Diagnostics.Debug.WriteLine($"Focus attempt on row for VM '{selectedVm.NodeName}': {(success ? "Succeeded" : "Failed")}");
+                                System.Diagnostics.Debug.WriteLine($"FocusAction: 'Name' column not found. Focusing row for '{selectedVm.NodeName}'.");
+                                if (!row.IsKeyboardFocusWithin)
+                                {
+                                    bool success = row.Focus();
+                                     System.Diagnostics.Debug.WriteLine($"FocusAction: Name column not found - row.Focus() for '{selectedVm.NodeName}' " + (success ? "succeeded." : "failed."));
+                                }
+                                else
+                                {
+                                     System.Diagnostics.Debug.WriteLine($"FocusAction: Name column not found - Row for '{selectedVm.NodeName}' already had keyboard focus within.");
+                                }
                             }
                         }
                         else
                         {
-                            System.Diagnostics.Debug.WriteLine($"Could not find DataGridRow container for VM '{selectedVm.NodeName}' after layout.");
+                            System.Diagnostics.Debug.WriteLine($"FocusAction: Row for '{selectedVm.NodeName}' still not found after layout/scroll. Cannot set focus.");
                         }
                     };
 
-                    // If the DataGrid itself doesn't have focus, focus it first.
-                    // Use Loaded priority to ensure DataGrid processes its own focus logic first.
                     if (!MainDataGrid.IsKeyboardFocusWithin)
                     {
-                        MainDataGrid.Focus(); // Focus the grid
-                        MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.Loaded);
+                        System.Diagnostics.Debug.WriteLine($"FocusAction: MainDataGrid does not have focus. Focusing DataGrid first for '{selectedVm?.NodeName}'.");
+                        MainDataGrid.Focus(); 
+                        MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.DataBind);
                     }
                     else
                     {
-                        // If DataGrid already has focus, use Background to allow other UI updates to settle.
-                        MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.Background);
+                        System.Diagnostics.Debug.WriteLine($"FocusAction: MainDataGrid ALREADY has focus. Dispatching for '{selectedVm?.NodeName}'.");
+                        MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.DataBind);
                     }
                 }
             }
+        }
+
+        private void ExpandToggleButton_Click(object sender, RoutedEventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine("ExpandToggleButton_Click FIRED!");
+            if (sender is ToggleButton tb && tb.DataContext is DataGridRowItemViewModel vm)
+            {
+                System.Diagnostics.Debug.WriteLine($"ToggleButton Clicked for VM: {vm.NodeName}, Current VM.IsExpanded (before manual set): {vm.IsExpanded}, ToggleButton IsChecked: {tb.IsChecked}");
+
+                // Manually ensure the ViewModel's IsExpanded property reflects the ToggleButton's state.
+                // The IsExpanded setter on the VM will handle calling OnExpansionChanged.
+                // tb.IsChecked is bool? (nullable), vm.IsExpanded is bool.
+                bool newExpansionState = tb.IsChecked ?? false; // Default to false if tb.IsChecked is null (shouldn't happen here)
+                
+                if (vm.IsExpanded != newExpansionState)
+                {
+                    vm.IsExpanded = newExpansionState; 
+                }
+                System.Diagnostics.Debug.WriteLine($"VM.IsExpanded (after manual set): {vm.IsExpanded}");
+            }
+        }
+
+        // Helper function to get a specific cell from a row and column
+        public static DataGridCell? GetCell(DataGridRow row, DataGridColumn column)
+        {
+            if (row == null || column == null) return null;
+
+            // Get the FrameworkElement that is the content of the cell.
+            var cellContent = column.GetCellContent(row);
+            if (cellContent == null)
+            {
+                // Cell content might not be generated yet. Try to force it.
+                // This can happen if the row is virtualized and not fully realized.
+                // Applying template to the row might help ensure its parts are created.
+                row.ApplyTemplate(); 
+                cellContent = column.GetCellContent(row);
+                if (cellContent == null) return null;
+            }
+
+            // The DataGridCell is the parent of the cell's content.
+            DependencyObject? parent = System.Windows.Media.VisualTreeHelper.GetParent(cellContent);
+            while (parent != null && !(parent is DataGridCell))
+            {
+                parent = System.Windows.Media.VisualTreeHelper.GetParent(parent);
+            }
+            return parent as DataGridCell;
         }
     }
 } 
