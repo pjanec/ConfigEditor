@@ -4,6 +4,7 @@
         xmlns:vm="clr-namespace:JsonConfigEditor.ViewModels"
         xmlns:views="clr-namespace:JsonConfigEditor.Views"
         xmlns:converters="clr-namespace:JsonConfigEditor.Wpf.Converters"
+        xmlns:ap="clr-namespace:JsonConfigEditor.Wpf.AttachedProperties"
         Title="{Binding WindowTitle}" 
         Height="600" Width="1000"
         WindowStartupLocation="CenterScreen">
@@ -29,6 +30,7 @@
             </ResourceDictionary.MergedDictionaries>
 
             <converters:CustomTooltipConverter x:Key="CustomTooltipConverter" />
+            <converters:BooleanToStringConverter x:Key="BooleanToStringConverter" />
 
             <DataTemplate x:Key="DisplayStringTemplate">
                 <TextBlock Text="{Binding ValueDisplay}" VerticalAlignment="Center" Margin="2,0" />
@@ -59,11 +61,13 @@
             </DataTemplate>
 
             <DataTemplate x:Key="EditStringTemplate">
-                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center" />
+                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" 
+                         ap:FocusAndSelect.IsEnabled="True" />
             </DataTemplate>
 
             <DataTemplate x:Key="EditNumberTemplate">
-                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" HorizontalAlignment="Left" 
+                         ap:FocusAndSelect.IsEnabled="True" />
             </DataTemplate>
 
             <DataTemplate x:Key="EditBooleanTemplate">
@@ -77,15 +81,18 @@
             </DataTemplate>
 
             <DataTemplate x:Key="EditRefTemplate">
-                 <TextBox Text="{Binding EditValue, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center" />
+                 <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" 
+                          ap:FocusAndSelect.IsEnabled="True" />
             </DataTemplate>
 
             <DataTemplate x:Key="EditAddItemTemplate">
-                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center" />
+                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" 
+                         ap:FocusAndSelect.IsEnabled="True" />
             </DataTemplate>
 
             <DataTemplate x:Key="EditSchemaOnlyTemplate">
-                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center" />
+                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" 
+                         ap:FocusAndSelect.IsEnabled="True" />
             </DataTemplate>
             
             <views:NodeValueTemplateSelector x:Key="NodeValueTemplateSelector" 

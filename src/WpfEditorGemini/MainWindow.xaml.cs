@@ -59,18 +59,29 @@ namespace JsonConfigEditor
             switch (e.Key)
             {
                 case Key.Enter:
-                    // Enter key: Start editing or commit edit
+                    System.Diagnostics.Debug.WriteLine("Enter pressed on item: " + selectedItem.NodeName + ", IsEditable: " + selectedItem.IsEditable + ", IsInEditMode (before): " + selectedItem.IsInEditMode);
                     if (selectedItem.IsInEditMode)
                     {
-                        if (selectedItem.CommitEdit())
+                        if (selectedItem.CommitEdit()) // ViewModel's commit logic
                         {
-                            selectedItem.IsInEditMode = false;
-                            e.Handled = true;
+                           selectedItem.IsInEditMode = false; // Update ViewModel state first
+                           dataGrid.CommitEdit(); // Tell DataGrid to finalize its edit state
+                           System.Diagnostics.Debug.WriteLine("Edit committed, IsInEditMode: " + selectedItem.IsInEditMode);
+                           e.Handled = true; // We've handled the commit
+                        }
+                        else
+                        {
+                            // Commit failed (e.g., validation error in CommitEdit)
+                            // Keep edit mode active, DataGrid should show validation error if TextBox is set up for it.
+                            // Don't handle 'e' so DataGrid might show its own error indication if any.
+                            System.Diagnostics.Debug.WriteLine("CommitEdit failed. Keeping edit mode.");
                         }
                     }
                     else if (selectedItem.IsEditable)
                     {
                         selectedItem.IsInEditMode = true;
+                        System.Diagnostics.Debug.WriteLine("IsInEditMode (after): " + selectedItem.IsInEditMode);
+                        dataGrid.BeginEdit(e); 
                         e.Handled = true;
                     }
                     break;
