@@ -44,6 +44,8 @@ namespace JsonConfigEditor.ViewModels
         private bool _showSchemaNodes = true; // Toggle for DOM vs DOM+Schema view
         private string _searchText = string.Empty;
         private DataGridRowItemViewModel? _currentlyEditedItem;
+        private List<SearchResult> _searchResults = new();
+        private int _currentSearchIndex = -1;
 
         // --- Commands ---
         public ICommand NewFileCommand { get; }
@@ -300,12 +302,18 @@ namespace JsonConfigEditor.ViewModels
 
         private void ExecuteFindNext()
         {
-            // TODO: Implement find next
+            if (_searchResults.Count == 0) return;
+            _currentSearchIndex = (_currentSearchIndex + 1) % _searchResults.Count;
+            HighlightSearchResults();
+            ScrollToCurrentSearchResult();
         }
 
         private void ExecuteFindPrevious()
         {
-            // TODO: Implement find previous
+            if (_searchResults.Count == 0) return;
+            _currentSearchIndex = (_currentSearchIndex - 1 + _searchResults.Count) % _searchResults.Count;
+            HighlightSearchResults();
+            ScrollToCurrentSearchResult();
         }
 
         private bool CanExecuteFind()
@@ -683,27 +691,93 @@ namespace JsonConfigEditor.ViewModels
             return filtered;
         }
 
-        /// <summary>
-        /// Performs search highlighting.
-        /// </summary>
+        // Comprehensive search logic for DOM and schema-only nodes
+        private void BuildSearchIndex(string searchText, List<SearchResult> results)
+        {
+            if (_rootDomNode == null) return;
+            var visited = new HashSet<DataGridRowItemViewModel>();
+            // Traverse DOM tree
+            void TraverseDom(DomNode node)
+            {
+                if (_persistentVmMap.TryGetValue(node, out var vm))
+                {
+                    if (!visited.Contains(vm) && vm.NodeName.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                    {
+                        results.Add(new SearchResult(vm, node is ObjectNode or ArrayNode ? node.Name : vm.NodeName, false));
+                        visited.Add(vm);
+                    }
+                }
+                switch (node)
+                {
+                    case ObjectNode obj:
+                        foreach (var child in obj.GetChildren()) TraverseDom(child);
+                        break;
+                    case ArrayNode arr:
+                        foreach (var item in arr.GetItems()) TraverseDom(item);
+                        break;
+                }
+            }
+            TraverseDom(_rootDomNode);
+            // Traverse schema-only nodes if enabled
+            if (ShowSchemaNodes)
+            {
+                foreach (var vm in _persistentVmMap.Values)
+                {
+                    if (vm.IsSchemaOnlyNode && !visited.Contains(vm) && vm.NodeName.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                    {
+                        results.Add(new SearchResult(vm, vm.NodeName, true));
+                        visited.Add(vm);
+                    }
+                }
+            }
+        }
+
         private void PerformSearch()
         {
-            // Clear previous search highlights
-            foreach (var item in FlatItemsSource)
-            {
+            // Clear previous highlights
+            foreach (var item in _persistentVmMap.Values)
                 item.IsHighlightedInSearch = false;
-            }
-
-            if (string.IsNullOrEmpty(SearchText))
-                return;
-
-            // Highlight matching items
-            foreach (var item in FlatItemsSource)
+            _searchResults.Clear();
+            _currentSearchIndex = -1;
+            if (string.IsNullOrEmpty(SearchText)) return;
+            BuildSearchIndex(SearchText, _searchResults);
+            if (_searchResults.Count > 0)
             {
-                if (item.NodeName.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
-                {
-                    item.IsHighlightedInSearch = true;
-                }
+                _currentSearchIndex = 0;
+                HighlightSearchResults();
+                ScrollToCurrentSearchResult();
+            }
+        }
+
+        private void HighlightSearchResults()
+        {
+            for (int i = 0; i < _searchResults.Count; i++)
+            {
+                var vm = _searchResults[i].Item;
+                vm.IsHighlightedInSearch = (i == _currentSearchIndex);
+            }
+        }
+
+        private void ScrollToCurrentSearchResult()
+        {
+            if (_currentSearchIndex >= 0 && _currentSearchIndex < _searchResults.Count)
+            {
+                var vm = _searchResults[_currentSearchIndex].Item;
+                // Expand parents if needed
+                ExpandAncestors(vm);
+                // Scroll into view (if UI supports it)
+                // (You may need to raise an event or call a method in the view)
+            }
+        }
+
+        private void ExpandAncestors(DataGridRowItemViewModel vm)
+        {
+            var parent = vm.DomNode?.Parent;
+            while (parent != null)
+            {
+                if (_persistentVmMap.TryGetValue(parent, out var parentVm))
+                    parentVm.IsExpanded = true;
+                parent = parent.Parent;
             }
         }
 
@@ -758,6 +832,19 @@ namespace JsonConfigEditor.ViewModels
                 var stringJson = $"\"{value}\"";
                 var jsonDoc = System.Text.Json.JsonDocument.Parse(stringJson);
                 return _jsonParser.ParseFromJsonElement(jsonDoc.RootElement, name, parent);
+            }
+        }
+
+        private class SearchResult
+        {
+            public DataGridRowItemViewModel Item { get; set; }
+            public string Path { get; set; }
+            public bool IsSchemaOnly { get; set; }
+            public SearchResult(DataGridRowItemViewModel item, string path, bool isSchemaOnly)
+            {
+                Item = item;
+                Path = path;
+                IsSchemaOnly = isSchemaOnly;
             }
         }
     }
