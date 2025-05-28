@@ -78,6 +78,8 @@ namespace JsonConfigEditor.ViewModels
         public ICommand LoadSchemaCommand { get; }
         public ICommand OpenModalEditorCommand { get; }
         public ICommand DeleteSelectedNodesCommand { get; }
+        public ICommand ExpandSelectedRecursiveCommand { get; }
+        public ICommand CollapseSelectedRecursiveCommand { get; }
 
         // --- Public Properties ---
 
@@ -358,6 +360,8 @@ namespace JsonConfigEditor.ViewModels
             LoadSchemaCommand = new RelayCommand(ExecuteLoadSchema);
             OpenModalEditorCommand = new RelayCommand(param => ExecuteOpenModalEditor(param as DataGridRowItemViewModel), param => CanExecuteOpenModalEditor(param as DataGridRowItemViewModel));
             DeleteSelectedNodesCommand = new RelayCommand(param => ExecuteDeleteSelectedNodes(param as DataGridRowItemViewModel), param => CanExecuteDeleteSelectedNodes(param as DataGridRowItemViewModel));
+            ExpandSelectedRecursiveCommand = new RelayCommand(param => ExecuteExpandSelectedRecursive(param as DataGridRowItemViewModel), param => CanExecuteExpandCollapseSelectedRecursive(param as DataGridRowItemViewModel)); 
+            CollapseSelectedRecursiveCommand = new RelayCommand(param => ExecuteCollapseSelectedRecursive(param as DataGridRowItemViewModel), param => CanExecuteExpandCollapseSelectedRecursive(param as DataGridRowItemViewModel));
 
             // Initialize with empty document
             InitializeEmptyDocument();
@@ -1914,6 +1918,103 @@ namespace JsonConfigEditor.ViewModels
 
             _domToSchemaMap.Remove(node);
             _persistentVmMap.Remove(node);
+        }
+
+        // --- Expansion/Collapse All --- 
+        private bool CanExecuteExpandCollapseSelectedRecursive(DataGridRowItemViewModel? item = null)
+        {
+            var targetItem = item ?? SelectedGridItem;
+            return targetItem != null && targetItem.IsExpandable;
+        }
+        private void ExecuteExpandSelectedRecursive(DataGridRowItemViewModel? item = null)
+        {
+            var targetItem = item ?? SelectedGridItem;
+            if (targetItem == null || !targetItem.IsExpandable) return;
+
+            System.Diagnostics.Debug.WriteLine($"ExecuteExpandSelectedRecursive called for '{targetItem.NodeName}'");
+
+            if (targetItem.DomNode != null)
+            {
+                SetExpansionStateRecursive(targetItem.DomNode, true);
+            }
+            else if (targetItem.IsSchemaOnlyNode && targetItem.SchemaContextNode != null)
+            {
+                // Expand this schema node and all its descendants in the schema expansion state map
+                UpdateSchemaExpansionStates(true, targetItem.SchemaContextNode, targetItem.SchemaNodePathKey);
+            }
+            RefreshFlatList();
+        }
+
+        private void ExecuteCollapseSelectedRecursive(DataGridRowItemViewModel? item = null)
+        {
+            var targetItem = item ?? SelectedGridItem;
+            if (targetItem == null || !targetItem.IsExpandable) return;
+
+            System.Diagnostics.Debug.WriteLine($"ExecuteCollapseSelectedRecursive called for '{targetItem.NodeName}'");
+
+            if (targetItem.DomNode != null)
+            {
+                SetExpansionStateRecursive(targetItem.DomNode, false);
+            }
+            else if (targetItem.IsSchemaOnlyNode && targetItem.SchemaContextNode != null)
+            {
+                // Collapse this schema node and all its descendants in the schema expansion state map
+                UpdateSchemaExpansionStates(false, targetItem.SchemaContextNode, targetItem.SchemaNodePathKey);
+            }
+            RefreshFlatList();
+        }
+
+        private void SetExpansionStateRecursive(DomNode? node, bool expand)
+        {
+            if (node == null) return;
+
+            if (_persistentVmMap.TryGetValue(node, out var vm))
+            {
+                if (vm.IsExpandable) // Check if the VM itself thinks it can be expanded/collapsed
+                {
+                    vm.SetExpansionStateInternal(expand); // Use internal setter to avoid loop if it calls RefreshFlatList
+                }
+            }
+            // else if node is not in _persistentVmMap, its VM will be created during RefreshFlatList
+            // and its initial expansion will be determined by default logic or schema state if applicable.
+
+            if (node is ObjectNode objectNode)
+            {
+                foreach (var child in objectNode.GetChildren())
+                {
+                    SetExpansionStateRecursive(child, expand);
+                }
+            }
+            else if (node is ArrayNode arrayNode)
+            {
+                foreach (var item in arrayNode.GetItems())
+                {
+                    SetExpansionStateRecursive(item, expand);
+                }
+            }
+        }
+
+        private void UpdateSchemaExpansionStates(bool expand, SchemaNode? schemaNode, string currentPathKey)
+        {
+            if (schemaNode == null) return;
+
+            // Update current schema node's expansion state if it's an object or array
+            if (schemaNode.NodeType == SchemaNodeType.Object || schemaNode.NodeType == SchemaNodeType.Array)
+            {
+                _schemaNodeExpansionState[currentPathKey] = expand;
+            }
+
+            // Recursively update children if this node is now expanded (or if collapsing all, path is still relevant)
+            if (schemaNode.Properties != null)
+            {
+                foreach (var prop in schemaNode.Properties)
+                {
+                    var childPathKey = string.IsNullOrEmpty(currentPathKey) ? prop.Key : $"{currentPathKey}/{prop.Key}";
+                    UpdateSchemaExpansionStates(expand, prop.Value, childPathKey);
+                }
+            }
+            // No explicit handling for ArrayItemSchema here, as _schemaNodeExpansionState is keyed by property paths.
+            // Array item expansion is part of the parent ArrayNode's VM.
         }
     }
 } 

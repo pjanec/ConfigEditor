@@ -22,6 +22,7 @@
         <KeyBinding Key="F" Modifiers="Ctrl" Command="{Binding FocusSearchCommand}" />
         <KeyBinding Key="F3" Command="{Binding FindNextCommand}" />
         <KeyBinding Key="F3" Modifiers="Shift" Command="{Binding FindPreviousCommand}" />
+        <KeyBinding Key="Delete" Command="{Binding DeleteSelectedNodesCommand}" CommandParameter="{Binding SelectedGridItem}"/>
     </Window.InputBindings>
 
     <Window.Resources>
@@ -223,12 +224,6 @@
                   ScrollViewer.VerticalScrollBarVisibility="Auto"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             
-            <DataGrid.InputBindings>
-                <KeyBinding Key="Delete" 
-                            Command="{Binding Path=DataContext.DeleteSelectedNodesCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
-                            CommandParameter="{Binding SelectedItem, ElementName=MainDataGrid}" />
-            </DataGrid.InputBindings>
-            
             <!-- Row Style Selector -->
             <DataGrid.RowStyle>
                 <Style TargetType="DataGridRow">
@@ -238,7 +233,13 @@
                                 <MenuItem Header="Delete"
                                           Command="{Binding Path=ParentViewModel.DeleteSelectedNodesCommand}" 
                                           CommandParameter="{Binding}"/>
-                                <!-- Add other items like Copy, Paste later -->
+                                <Separator />
+                                <MenuItem Header="Expand Recursive"
+                                          Command="{Binding Path=ParentViewModel.ExpandSelectedRecursiveCommand}"
+                                          CommandParameter="{Binding}" />
+                                <MenuItem Header="Collapse Recursive"
+                                          Command="{Binding Path=ParentViewModel.CollapseSelectedRecursiveCommand}"
+                                          CommandParameter="{Binding}" />
                             </ContextMenu>
                         </Setter.Value>
                     </Setter>
@@ -290,7 +291,7 @@
                         <DataTemplate>
                             <Grid Margin="{Binding Indentation}">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="20" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 
