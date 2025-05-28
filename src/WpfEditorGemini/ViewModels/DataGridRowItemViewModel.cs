@@ -36,6 +36,7 @@ namespace JsonConfigEditor.ViewModels
 
         // Added private fields for new properties
         private IValueEditor? _modalEditorInstance;
+        private string _originalValueBeforeEdit = string.Empty;
 
         // --- Constructor for actual DomNodes ---
         public DataGridRowItemViewModel(DomNode domNode, SchemaNode? schemaContextNode, MainViewModel parentViewModel)
@@ -305,23 +306,15 @@ namespace JsonConfigEditor.ViewModels
             get => _isInEditMode;
             set
             {
-                if (IsEditable || (IsAddItemPlaceholder && value)) // Allow entering edit mode for add item placeholder
+                if (SetProperty(ref _isInEditMode, value))
                 {
-                    if (SetProperty(ref _isInEditMode, value) && _isInEditMode)
+                    // If entering edit mode, capture current value for potential revert
+                    if (_isInEditMode)
                     {
-                        // Initialize EditValue when entering edit mode
-                        InitializeEditValue();
-                        ParentViewModel.SetCurrentlyEditedItem(this);
+                        _originalValueBeforeEdit = EditValue; // Assuming EditValue holds current committed value
                     }
-                    else if (!_isInEditMode)
-                    {
-                        ParentViewModel.SetCurrentlyEditedItem(null);
-                    }
-                }
-                else if (_isInEditMode && !value) // Allow exiting edit mode even if not editable
-                {
-                    SetProperty(ref _isInEditMode, false);
-                    ParentViewModel.SetCurrentlyEditedItem(null);
+                    // If exiting edit mode, ParentViewModel might need to know.
+                    // ParentViewModel.HandleEditModeChange(this, _isInEditMode);
                 }
             }
         }
@@ -352,8 +345,36 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         public bool IsHighlightedInSearch
         {
-            get => _isHighlightedInSearch;
-            set => SetProperty(ref _isHighlightedInSearch, value);
+            // This is now a getter that queries the MainViewModel's global search results
+            get 
+            {
+                if (_parentViewModel == null) return false;
+                if (DomNode != null)
+                {
+                    return _parentViewModel.IsDomNodeGloballyMatched(DomNode);
+                }
+                else if (IsSchemaOnlyNode && !string.IsNullOrEmpty(SchemaNodePathKey))
+                {
+                    return _parentViewModel.IsSchemaPathGloballyMatched(SchemaNodePathKey);
+                }
+                return false; // Default if no context
+            }
+            // Setter is removed. Highlighting is driven by MainViewModel's state.
+            // set => SetProperty(ref _isHighlightedInSearch, value); // Keep for now for ClearHighlight, then remove if not needed
+        }
+
+        public void ClearHighlight()
+        {
+            // This method might not be strictly necessary if IsHighlightedInSearch is purely a getter
+            // and the MainViewModel handles clearing its global sets, triggering a refresh that updates this getter.
+            // However, if direct manipulation or notification is ever needed, it can be implemented here.
+            // For now, let's ensure it sets the underlying field if it exists, or simply trigger a property change
+            // to force re-evaluation by bindings.
+            if (_isHighlightedInSearch) // only change and notify if it was true
+            {
+                 _isHighlightedInSearch = false; // Directly set to false
+                 OnPropertyChanged(nameof(IsHighlightedInSearch)); // Notify UI to re-evaluate
+            }
         }
 
         // --- Schema Derived Read-Only Properties for UI ---

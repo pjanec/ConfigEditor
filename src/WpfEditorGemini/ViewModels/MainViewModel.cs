@@ -17,6 +17,7 @@ using System.Windows;
 using System.Windows.Input;
 using JsonConfigEditor.Wpf.Services;
 using JsonConfigEditor.Contracts.Editors;
+using System.Threading; // Added for Timer
 
 namespace JsonConfigEditor.ViewModels
 {
@@ -50,12 +51,19 @@ namespace JsonConfigEditor.ViewModels
         private string _searchText = string.Empty;
         private DataGridRowItemViewModel? _currentlyEditedItem;
         private DataGridRowItemViewModel? _selectedGridItem; // For TwoWay binding with DataGrid
-        private List<SearchResult> _searchResults = new();
+        private List<SearchResult> _searchResults = new(); // For F3 navigation (visible/filtered items)
         private int _currentSearchIndex = -1;
 
         // --- Private Fields: Undo/Redo ---
         private readonly Stack<EditOperation> _undoStack = new();
         private readonly Stack<EditOperation> _redoStack = new();
+
+        // --- Private Fields: Search ---
+        private System.Threading.Timer? _searchDebounceTimer;
+        private const int SearchDebounceMilliseconds = 500;
+        private readonly object _searchLock = new object(); // For thread safety with timer
+        private HashSet<DomNode> _globallyMatchedDomNodes = new HashSet<DomNode>();
+        private HashSet<string> _globallyMatchedSchemaNodePaths = new HashSet<string>();
 
         // --- Serializer Options for converting object to JsonElement ---
         private static readonly JsonSerializerOptions _defaultSerializerOptions = new JsonSerializerOptions
@@ -149,7 +157,9 @@ namespace JsonConfigEditor.ViewModels
             {
                 if (SetProperty(ref _searchText, value))
                 {
-                    PerformSearch();
+                    // Debounce the search
+                    _searchDebounceTimer?.Dispose(); // Dispose previous timer
+                    _searchDebounceTimer = new System.Threading.Timer(DebouncedSearchAction, null, SearchDebounceMilliseconds, System.Threading.Timeout.Infinite);
                 }
             }
         }
@@ -373,7 +383,7 @@ namespace JsonConfigEditor.ViewModels
         {
             if (CheckUnsavedChanges())
             {
-                NewDocument();
+                NewDocument(); // This will call ResetSearchState
             }
         }
 
@@ -392,7 +402,7 @@ namespace JsonConfigEditor.ViewModels
             {
                 try
                 {
-                    await LoadFileAsync(openDialog.FileName);
+                    await LoadFileAsync(openDialog.FileName); // This will call ResetSearchState
                 }
                 catch (Exception ex)
                 {
@@ -497,26 +507,24 @@ namespace JsonConfigEditor.ViewModels
 
         private void ExecuteFindNext()
         {
-            if (_searchResults.Count == 0) return;
+            if (!_searchResults.Any()) return; // Use _searchResults (navigable items)
             _currentSearchIndex = (_currentSearchIndex + 1) % _searchResults.Count;
             
             var targetVm = _searchResults[_currentSearchIndex].Item;
-            SelectedGridItem = targetVm; // Select the new current search result
-            ExpandAncestors(targetVm);   // Expand its parents
-            // ScrollToCurrentSearchResult(); // This might be needed if View doesn't auto-scroll on selection
-                                          // And its internal logic would need to use SelectedGridItem.
-            // No call to HighlightSearchResults() needed as all results are already highlighted by PerformSearch.
+            SelectedGridItem = targetVm; 
+            ExpandAncestors(targetVm);   
+            // TODO: Notify View to scroll SelectedGridItem into view.
         }
 
         private void ExecuteFindPrevious()
         {
-            if (_searchResults.Count == 0) return;
+            if (!_searchResults.Any()) return;  // Use _searchResults (navigable items)
             _currentSearchIndex = (_currentSearchIndex - 1 + _searchResults.Count) % _searchResults.Count;
             
             var targetVm = _searchResults[_currentSearchIndex].Item;
-            SelectedGridItem = targetVm; // Select the new current search result
-            ExpandAncestors(targetVm);   // Expand its parents
-            // ScrollToCurrentSearchResult(); // Similar to above
+            SelectedGridItem = targetVm; 
+            ExpandAncestors(targetVm);  
+            // TODO: Notify View to scroll SelectedGridItem into view.
         }
 
         private bool CanExecuteFind()
@@ -628,15 +636,12 @@ namespace JsonConfigEditor.ViewModels
                 _rootDomNode = await _jsonParser.ParseFromFileAsync(filePath);
                 CurrentFilePath = filePath;
                 IsDirty = false;
-
-                // Rebuild DOM to schema mapping
+                
+                ResetSearchState(); // Clear search state
                 RebuildDomToSchemaMapping();
-
-                // Refresh the flat list
                 RefreshFlatList();
-
-                // Validate the document
                 await ValidateDocumentAsync();
+                OnPropertyChanged(nameof(WindowTitle)); // Ensure title updates if it depends on CurrentFilePath
             }
             catch (Exception ex)
             {
@@ -675,7 +680,7 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         public void NewDocument()
         {
-            InitializeEmptyDocument();
+            InitializeEmptyDocument(); // Calls ResetSearchState
             CurrentFilePath = null;
             IsDirty = false;
             OnPropertyChanged(nameof(WindowTitle));
@@ -1368,146 +1373,213 @@ namespace JsonConfigEditor.ViewModels
             return filtered;
         }
 
-        // Comprehensive search logic for DOM and schema-only nodes
-        private void BuildSearchIndex(string searchText, List<SearchResult> results)
+        // --- Search Logic ---
+
+        private void DebouncedSearchAction(object? state)
         {
-            if (_rootDomNode == null) return;
-            var visited = new HashSet<DataGridRowItemViewModel>();
-            // Traverse DOM tree
-            void TraverseDom(DomNode node)
+            lock (_searchLock) // Ensure only one search operation runs at a time
             {
-                if (_persistentVmMap.TryGetValue(node, out var vm))
+                // Must dispatch to UI thread if updating UI-bound collections or properties
+                Application.Current?.Dispatcher.Invoke(() =>
                 {
-                    if (!visited.Contains(vm) && vm.NodeName.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                    if (string.IsNullOrEmpty(SearchText))
                     {
-                        results.Add(new SearchResult(vm, node is ObjectNode or ArrayNode ? node.Name : vm.NodeName, false));
-                        visited.Add(vm);
+                        ResetSearchState(); // This will clear highlights and refresh list
                     }
-                }
-                switch (node)
-                {
-                    case ObjectNode obj:
-                        foreach (var child in obj.GetChildren()) TraverseDom(child);
-                        break;
-                    case ArrayNode arr:
-                        foreach (var item in arr.GetItems()) TraverseDom(item);
-                        break;
-                }
-            }
-            TraverseDom(_rootDomNode);
-            // Traverse schema-only nodes if enabled
-            if (ShowSchemaNodes)
-            {
-                foreach (var vm in _persistentVmMap.Values)
-                {
-                    if (vm.IsSchemaOnlyNode && !visited.Contains(vm) && vm.NodeName.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                    else
                     {
-                        results.Add(new SearchResult(vm, vm.NodeName, true));
-                        visited.Add(vm);
+                        ExecuteSearchLogicAndRefreshUI();
                     }
-                }
+                });
             }
         }
-
-        private void PerformSearch()
+        
+        private void ResetSearchState()
         {
-            // Clear previous highlights from all items 
-            // Iterate through _persistentVmMap.Values if it represents all possible VMs that could be highlighted.
-            // Or, if FlatItemsSource is reliably up-to-date before search, iterate that.
-            // For simplicity and to ensure all potentially highlighted items are cleared, let's iterate _persistentVmMap
-            foreach (var vm in _persistentVmMap.Values) // Assuming _persistentVmMap holds relevant VMs
-            {
-                vm.IsHighlightedInSearch = false;
-            }
-            // Also clear from any VMs that might be in FlatItemsSource but not in _persistentVmMap (e.g. schema-only not yet materialized but somehow was highlighted)
-            foreach (var vm in FlatItemsSource)
-            {
-                vm.IsHighlightedInSearch = false; 
-            }
+            // Don't set SearchText here to avoid re-triggering setter logic if called from SearchText setter itself.
+            // If called from New/Load, SearchText should be reset separately if desired or managed by UI.
+            // For now, focus on clearing internal state. If SearchText is "" in setter, this will be called.
 
+            _globallyMatchedDomNodes.Clear();
+            _globallyMatchedSchemaNodePaths.Clear();
             _searchResults.Clear();
             _currentSearchIndex = -1;
 
-            if (string.IsNullOrEmpty(SearchText)) 
-            {
-                // RefreshFlatList(); // Consider if a full refresh is needed to clear UI completely or if loops above are enough
-                return;
-            }
+            // Clear highlights on existing VMs
+            foreach (var vm in _persistentVmMap.Values) { vm.ClearHighlight(); }
+            foreach (var vm in FlatItemsSource) { vm.ClearHighlight(); }
             
-            BuildSearchIndex(SearchText, _searchResults); // This populates _searchResults
+            System.Diagnostics.Debug.WriteLine("Search state reset.");
+            RefreshFlatList(); // Refresh to update UI (e.g. remove highlights, update selection)
+        }
+
+        private void ExecuteSearchLogicAndRefreshUI()
+        {
+            System.Diagnostics.Debug.WriteLine($"Executing search for: '{SearchText}'");
+            BuildAndApplyGlobalSearchMatches(SearchText);
+            UpdateNavigableSearchResults(); // Rebuild _searchResults based on FlatItemsSource and global matches
+            RefreshFlatList(); // This will cause VMs to re-evaluate IsHighlightedInSearch
+        }
+
+        private void BuildAndApplyGlobalSearchMatches(string searchText)
+        {
+            _globallyMatchedDomNodes.Clear();
+            _globallyMatchedSchemaNodePaths.Clear();
+
+            if (string.IsNullOrEmpty(searchText)) return;
+
+            // 1. Search DOM Nodes
+            if (_rootDomNode != null)
+            {
+                SearchDomNodeRecursive(_rootDomNode, searchText.ToLowerInvariant());
+            }
+
+            // 2. Search Schema Nodes (if shown)
+            if (ShowSchemaNodes)
+            {
+                var rootSchema = _schemaLoader.GetRootSchema();
+                if (rootSchema != null)
+                {
+                    SearchSchemaNodeRecursive(rootSchema, searchText.ToLowerInvariant(), "");
+                }
+            }
+            System.Diagnostics.Debug.WriteLine($"Global search found {_globallyMatchedDomNodes.Count} DOM matches and {_globallyMatchedSchemaNodePaths.Count} schema path matches.");
+        }
+
+        private void SearchDomNodeRecursive(DomNode node, string lowerSearchText)
+        {
+            // Check node name (Path.GetFileName might be useful for last segment if Name is full path for some)
+            if (node.Name.ToLowerInvariant().Contains(lowerSearchText))
+            {
+                _globallyMatchedDomNodes.Add(node);
+            }
+            // Check node value if it's a ValueNode
+            if (node is ValueNode valueNode)
+            {
+                // Simple string check on the value. More sophisticated checks could be added (e.g. for numbers).
+                if (valueNode.Value.ToString().ToLowerInvariant().Contains(lowerSearchText))
+                {
+                    _globallyMatchedDomNodes.Add(node);
+                }
+            }
+            // TODO: Add search for RefNode reference paths if desired
+
+            if (node is ObjectNode objectNode)
+            {
+                foreach (var child in objectNode.GetChildren())
+                {
+                    SearchDomNodeRecursive(child, lowerSearchText);
+                }
+            }
+            else if (node is ArrayNode arrayNode)
+            {
+                foreach (var item in arrayNode.GetItems())
+                {
+                    SearchDomNodeRecursive(item, lowerSearchText);
+                }
+            }
+        }
+
+        private void SearchSchemaNodeRecursive(SchemaNode schemaNode, string lowerSearchText, string currentPathKey)
+        {
+            // Check schema node name (property name)
+            if (schemaNode.Name.ToLowerInvariant().Contains(lowerSearchText))
+            {
+                 // currentPathKey should be the full path to this schemaNode
+                _globallyMatchedSchemaNodePaths.Add(currentPathKey);
+            }
+            // Optionally, search in schema descriptions, titles, etc.
+            // if (schemaNode.Description?.ToLowerInvariant().Contains(lowerSearchText) == true) { ... }
+
+            if (schemaNode.NodeType == SchemaNodeType.Object && schemaNode.Properties != null)
+            {
+                foreach (var prop in schemaNode.Properties)
+                {
+                    var childPathKey = string.IsNullOrEmpty(currentPathKey) ? prop.Key : $"{currentPathKey}/{prop.Key}";
+                    SearchSchemaNodeRecursive(prop.Value, lowerSearchText, childPathKey);
+                }
+            }
+            else if (schemaNode.NodeType == SchemaNodeType.Array && schemaNode.ItemSchema != null)
+            {
+                // Schema arrays themselves don't have named children in the same way objects do.
+                // The ItemSchema's properties would be searched if it's an object.
+                // For now, we only match the array node itself by its name.
+                // If ItemSchema is an object, and we want to search "prototype" properties:
+                // SearchSchemaNodeRecursive(schemaNode.ItemSchema, lowerSearchText, $"{currentPathKey}/*"); // Or some other placeholder for item schema context
+            }
+        }
+        
+        private void UpdateNavigableSearchResults()
+        {
+            _searchResults.Clear();
+            _currentSearchIndex = -1;
+
+            foreach (var vm in FlatItemsSource)
+            {
+                bool isMatch = false;
+                if (vm.DomNode != null && _globallyMatchedDomNodes.Contains(vm.DomNode))
+                {
+                    isMatch = true;
+                }
+                else if (vm.IsSchemaOnlyNode && !string.IsNullOrEmpty(vm.SchemaNodePathKey) && _globallyMatchedSchemaNodePaths.Contains(vm.SchemaNodePathKey))
+                {
+                    isMatch = true;
+                }
+
+                if (isMatch)
+                {
+                    // Path for SearchResult could be vm.DomNode.Path or vm.SchemaNodePathKey
+                    string path = vm.DomNode?.Path ?? vm.SchemaNodePathKey ?? vm.NodeName;
+                    _searchResults.Add(new SearchResult(vm, path, vm.IsSchemaOnlyNode));
+                }
+            }
+            System.Diagnostics.Debug.WriteLine($"Updated navigable search results: {_searchResults.Count} items.");
 
             if (_searchResults.Any())
             {
-                _currentSearchIndex = 0; // Set current index to the first result
-                HighlightAllSearchResults(); // New method/logic to highlight all results
-                
-                // Select and expand the first result
-                var firstResultVm = _searchResults[_currentSearchIndex].Item;
-                SelectedGridItem = firstResultVm;
-                ExpandAncestors(firstResultVm);
-                // TODO: Notify View to scroll SelectedGridItem into view
+                _currentSearchIndex = 0;
+                SelectedGridItem = _searchResults[_currentSearchIndex].Item;
+                ExpandAncestors(SelectedGridItem);
             }
-            // No need to call RefreshFlatList() here if highlight changes on VMs trigger UI updates automatically.
-            // If not, RefreshFlatList() might be needed after changing IsHighlightedInSearch states.
+            else
+            {
+                // If no navigable results, what should selection be? Current behavior: stays as is or becomes null.
+                // SelectedGridItem = null; // Optionally clear selection if no search results in current view
+            }
         }
 
-        // Renamed and modified to highlight ALL search results
-        private void HighlightAllSearchResults() 
+        // Public accessors for DataGridRowItemViewModel to check highlight status
+        public bool IsDomNodeGloballyMatched(DomNode node) => _globallyMatchedDomNodes.Contains(node);
+        public bool IsSchemaPathGloballyMatched(string schemaPathKey) => !string.IsNullOrEmpty(schemaPathKey) && _globallyMatchedSchemaNodePaths.Contains(schemaPathKey);
+
+        // --- Old Search Methods (to be removed or ensured they are no longer called) ---
+        private void BuildSearchIndex(string searchText, List<SearchResult> results)
         {
-            if (!_searchResults.Any()) return;
-
-            var resultSetVMs = new HashSet<DataGridRowItemViewModel>(_searchResults.Select(r => r.Item));
-
-            // Iterate through all displayable items and set their highlight state
-            // This ensures that even items not currently in _persistentVmMap but visible (e.g. schema-only) are handled.
-            foreach (var vmInList in FlatItemsSource)
-            {
-                vmInList.IsHighlightedInSearch = resultSetVMs.Contains(vmInList);
-            }
-            // Also ensure VMs in persistent map that might not be in FlatItemsSource currently (due to filtering/virtualization) are updated
-            foreach (var vmInMap in _persistentVmMap.Values)
-            {
-                if (resultSetVMs.Contains(vmInMap))
-                {
-                    vmInMap.IsHighlightedInSearch = true;
-                }
-                else
-                {
-                     vmInMap.IsHighlightedInSearch = false; // Ensure non-results are cleared
-                }
-            }
+            // This method's direct responsibility for populating _searchResults for navigation
+            // is now handled by UpdateNavigableSearchResults.
+            // Its traversal logic is now in BuildAndApplyGlobalSearchMatches (via SearchDomNodeRecursive and SearchSchemaNodeRecursive).
+            // This can be removed if not called elsewhere. For safety, leaving a stub.
+             System.Diagnostics.Debug.WriteLine("BuildSearchIndex (old) called - should be deprecated.");
         }
-
-        // This method is kept for jumping, but highlighting is now global
+        
         private void HighlightSearchResults() 
         {
-            // This method used to highlight only the _currentSearchIndex.
-            // Its original logic is now superseded by HighlightAllSearchResults() 
-            // and PerformSearch() directly setting IsHighlightedInSearch on all results.
-            // We can leave this empty or remove calls to it if ExecuteFindNext/Previous don't need it.
-            // For now, let's assume ExecuteFindNext/Previous will directly select and expand, relying on global highlighting.
+            // This is now entirely superseded by IsHighlightedInSearch on DataGridRowItemViewModel
+            // and the global match sets.
+            System.Diagnostics.Debug.WriteLine("HighlightSearchResults (old) called - should be deprecated.");
         }
 
         private void ScrollToCurrentSearchResult()
-            {
-            if (_currentSearchIndex >= 0 && _currentSearchIndex < _searchResults.Count)
-                {
-                var vm = _searchResults[_currentSearchIndex].Item;
-                // Expand parents if needed
-                ExpandAncestors(vm);
-                // Scroll into view (if UI supports it)
-                // (You may need to raise an event or call a method in the view)
-                }
-            }
-
-        private void ExpandAncestors(DataGridRowItemViewModel vm)
         {
-            var parent = vm.DomNode?.Parent;
-            while (parent != null)
+            // This is primarily a View concern. ViewModel can select the item.
+            // If this method had any VM logic, it needs to be reviewed.
+            // For now, it seems to just call ExpandAncestors, which is good.
+            if (_currentSearchIndex >= 0 && _currentSearchIndex < _searchResults.Count)
             {
-                if (_persistentVmMap.TryGetValue(parent, out var parentVm))
-                    parentVm.IsExpanded = true;
-                parent = parent.Parent;
+                var vm = _searchResults[_currentSearchIndex].Item;
+                ExpandAncestors(vm); 
+                // Actual scrolling must be done in View.
+                 System.Diagnostics.Debug.WriteLine("ScrollToCurrentSearchResult (old) called. Expanded ancestors. Scrolling is View's job.");
             }
         }
 
@@ -2079,6 +2151,76 @@ namespace JsonConfigEditor.ViewModels
             }
             // No explicit handling for ArrayItemSchema here, as _schemaNodeExpansionState is keyed by property paths.
             // Array item expansion is part of the parent ArrayNode's VM.
+        }
+
+        private void ExpandAncestors(DataGridRowItemViewModel? vm)
+        {
+            if (vm == null) return;
+
+            // Attempt to get the parent from the DomNode first
+            var parentNode = vm.DomNode?.Parent;
+            while (parentNode != null)
+            {
+                if (_persistentVmMap.TryGetValue(parentNode, out var parentVm))
+                {
+                    parentVm.IsExpanded = true;
+                }
+                parentNode = parentNode.Parent;
+            }
+
+            // If it was a schema-only node, or to ensure UI consistency for complex cases,
+            // we can also try to walk up the FlatItemsSource if the parent VM isn't found via DomNode path.
+            // This part is a bit trickier as FlatItemsSource is flat. We'd rely on Depth.
+            // For now, the DomNode based approach is primary. We might need a more robust parent lookup for schema-only if an issue.
+            // One way for schema-only nodes: reconstruct parent path key and find VM if DomNode path is null.
+            if (vm.IsSchemaOnlyNode && !string.IsNullOrEmpty(vm.SchemaNodePathKey))
+            {
+                string currentPathKey = vm.SchemaNodePathKey;
+                while (currentPathKey.Contains("/"))
+                {
+                    int lastSlash = currentPathKey.LastIndexOf('/');
+                    string parentPathKey = currentPathKey.Substring(0, lastSlash);
+                    // Find the VM for this parent schema path key.
+                    // This requires iterating _persistentVmMap or FlatItemsSource to find the schema VM by its path key.
+                    var parentSchemaVm = _persistentVmMap.Values.FirstOrDefault(pvm => pvm.IsSchemaOnlyNode && pvm.SchemaNodePathKey == parentPathKey) ?? 
+                                         FlatItemsSource.FirstOrDefault(fvm => fvm.IsSchemaOnlyNode && fvm.SchemaNodePathKey == parentPathKey);
+                    if (parentSchemaVm != null)
+                    {
+                        parentSchemaVm.IsExpanded = true;
+                    }
+                    else
+                    {
+                        // Parent schema VM not found in current lists, might not be visible or doesn't exist as a separate entry.
+                        // This can happen if schema structure is deep but UI flattens it differently.
+                    }
+                    currentPathKey = parentPathKey;
+                    if (string.IsNullOrEmpty(currentPathKey)) break; // Reached root or invalid path segment
+                }
+            }
+        }
+
+        private void ValidatePendingEdits()
+        {
+            // Implement any additional validation logic you want to execute when edits are pending
+            // This method can be called when edits are saved, or when the user navigates away from the editor
+            // You can add any custom validation logic you want to execute here
+        }
+    }
+
+    // Ensure SearchResult class is public if it needs to be accessed by DataGridRowItemViewModel indirectly
+    // or if its properties are bound in a way that requires public accessibility.
+    // For now, assuming it's mainly used internally by MainViewModel.
+    // If linter errors about accessibility appear, make this public.
+    public class SearchResult // Made public to avoid potential accessibility issues if list is exposed
+    {
+        public DataGridRowItemViewModel Item { get; set; }
+        public string Path { get; set; } // Path or identifier of the found item
+        public bool IsSchemaOnly { get; set; }
+        public SearchResult(DataGridRowItemViewModel item, string path, bool isSchemaOnly)
+        {
+            Item = item;
+            Path = path;
+            IsSchemaOnly = isSchemaOnly;
         }
     }
 } 
