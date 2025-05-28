@@ -1,6 +1,6 @@
 {
   "ApplicationName": "JSON Config Editor Demo",
-  "ExtraNode":  "string_type",
+  "ExtraNode": "string_type",
   "EnableLogging": true,
   "Database": {
     "ConnectionString": "Server=localhost;Database=ConfigEditor;Trusted_Connection=true;",
@@ -13,7 +13,6 @@
     "*.example.com"
   ],
   "features": {
-    "EnableFeatureA": false,
     "EnableFeatureB": true,
     "Advanced": {
       "CountryCode": "US",
@@ -42,8 +41,8 @@
       "Value": 100
     },
     {
-      "Name": "Item 2", 
+      "Name": "Item 2",
       "Value": 200
     }
   ]
-} 
+}

@@ -1,6 +1,7 @@
 using JsonConfigEditor.Contracts.Attributes;
 using JsonConfigEditor.Core.Schema;
 using System;
+using System.Collections; // Required for IDictionary, IEnumerable
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -11,7 +12,7 @@ using System.Threading.Tasks;
 using JsonConfigEditor.Contracts.Rendering;
 using JsonConfigEditor.Contracts.Editors;
 using JsonConfigEditor.Contracts.Tooltips;
-using JsonConfigEditor.Wpf.Services;
+using JsonConfigEditor.Wpf.Services; // Assuming this is for CustomUIRegistryService
 
 namespace JsonConfigEditor.Core.SchemaLoading
 {
@@ -21,9 +22,12 @@ namespace JsonConfigEditor.Core.SchemaLoading
     /// </summary>
     public class SchemaLoaderService : ISchemaLoaderService
     {
-        private readonly Dictionary<string, SchemaNode> _rootSchemas = new();
+        private readonly Dictionary<string, SchemaNode> _rootSchemas = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _errorMessages = new();
         private readonly CustomUIRegistryService _uiRegistry;
+        
+        // Missing field from previous erroneous edit
+        private readonly Dictionary<string, Type> _processedTypes = new Dictionary<string, Type>();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SchemaLoaderService"/> class.
@@ -51,11 +55,12 @@ namespace JsonConfigEditor.Core.SchemaLoading
         /// <returns>A task representing the asynchronous operation</returns>
         public async Task LoadSchemasFromAssembliesAsync(IEnumerable<string> assemblyPaths)
         {
-            await Task.Run(() =>
+            await Task.Run(() => // Use Task.Run for CPU-bound work on a background thread
             {
                 _rootSchemas.Clear();
                 _errorMessages.Clear();
-                _uiRegistry.ClearRegistry();
+                _uiRegistry.ClearRegistry(); // Assuming this is safe to call multiple times
+                _processedTypes.Clear(); // Clear for fresh loading session
 
                 foreach (var assemblyPath in assemblyPaths)
                 {
@@ -65,7 +70,7 @@ namespace JsonConfigEditor.Core.SchemaLoading
                     }
                     catch (Exception ex)
                     {
-                        _errorMessages.Add($"Failed to process assembly path '{assemblyPath}': {ex.Message}");
+                        _errorMessages.Add($"SchemaLoaderService: Failed to process assembly path '{assemblyPath}': {ex.Message}");
                     }
                 }
             });
@@ -78,31 +83,24 @@ namespace JsonConfigEditor.Core.SchemaLoading
         /// <returns>The most specific schema node, or null if no schema matches</returns>
         public SchemaNode? FindSchemaForPath(string domPath)
         {
-            if (string.IsNullOrEmpty(domPath))
-                return null;
+            if (domPath == null) throw new ArgumentNullException(nameof(domPath));
 
-            // Find the longest matching mount path
-            var bestMatch = _rootSchemas
-                .Where(kvp => domPath.StartsWith(kvp.Key) || string.IsNullOrEmpty(kvp.Key))
+            var bestMatchRoot = _rootSchemas
+                .Where(kvp => domPath.StartsWith(kvp.Key, StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(kvp.Key)) // "" mount path is a candidate for all
                 .OrderByDescending(kvp => kvp.Key.Length)
+                .Select(kvp => kvp.Value)
                 .FirstOrDefault();
 
-            if (bestMatch.Value == null)
-                return null;
+            if (bestMatchRoot == null) return null;
 
-            var rootSchema = bestMatch.Value;
-            var mountPath = bestMatch.Key;
+            string relativePath = domPath;
+            if (!string.IsNullOrEmpty(bestMatchRoot.MountPath) && domPath.StartsWith(bestMatchRoot.MountPath, StringComparison.OrdinalIgnoreCase))
+            {
+                relativePath = domPath.Substring(bestMatchRoot.MountPath.Length);
+            }
+            relativePath = relativePath.TrimStart('/');
 
-            // If the path exactly matches the mount path, return the root schema
-            if (domPath == mountPath || (string.IsNullOrEmpty(mountPath) && string.IsNullOrEmpty(domPath)))
-                return rootSchema;
-
-            // Navigate within the schema to find the specific node
-            var relativePath = string.IsNullOrEmpty(mountPath) ? domPath : domPath.Substring(mountPath.Length);
-            if (relativePath.StartsWith("/"))
-                relativePath = relativePath.Substring(1);
-
-            return NavigateSchemaPath(rootSchema, relativePath);
+            return NavigateSchemaPath(bestMatchRoot, relativePath);
         }
 
         /// <summary>
@@ -112,6 +110,8 @@ namespace JsonConfigEditor.Core.SchemaLoading
         {
             _rootSchemas.Clear();
             _errorMessages.Clear();
+            _processedTypes.Clear();
+            _uiRegistry.ClearRegistry();
         }
 
         /// <summary>
@@ -121,12 +121,16 @@ namespace JsonConfigEditor.Core.SchemaLoading
         /// </summary>
         public SchemaNode? GetRootSchema()
         {
-            if (_rootSchemas.TryGetValue("$root", out var rootSchemaFromPath))
+            // Prefer empty string "" as the key for the absolute root schema, as per common interpretation.
+            if (_rootSchemas.TryGetValue("", out var rootSchema))
             {
-                return rootSchemaFromPath;
+                return rootSchema;
             }
-            // Fallback to the first loaded schema if "$root" is not explicitly defined.
-            // This assumes the first schema loaded is intended as the primary one if no explicit root is set.
+            // Fallback to "$root" if that's used, or first as ultimate fallback.
+            if (_rootSchemas.TryGetValue("$root", out rootSchema))
+            {
+                return rootSchema;
+            }
             return _rootSchemas.Values.FirstOrDefault();
         }
 
@@ -137,7 +141,6 @@ namespace JsonConfigEditor.Core.SchemaLoading
         {
             if (Directory.Exists(assemblyPath))
             {
-                // Process all .dll files in the directory
                 var dllFiles = Directory.GetFiles(assemblyPath, "*.dll", SearchOption.TopDirectoryOnly);
                 foreach (var dllFile in dllFiles)
                 {
@@ -150,7 +153,7 @@ namespace JsonConfigEditor.Core.SchemaLoading
             }
             else
             {
-                _errorMessages.Add($"Assembly path '{assemblyPath}' is not a valid file or directory");
+                _errorMessages.Add($"SchemaLoaderService: Assembly path '{assemblyPath}' is not a valid file or directory.");
             }
         }
 
@@ -161,12 +164,24 @@ namespace JsonConfigEditor.Core.SchemaLoading
         {
             try
             {
-                var assembly = Assembly.LoadFrom(assemblyFilePath);
+                var assembly = Assembly.LoadFrom(assemblyFilePath); // Consider AssemblyLoadContext for unloadability if needed
                 ProcessAssembly(assembly);
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                _errorMessages.Add($"SchemaLoaderService: Failed to load assembly '{assemblyFilePath}' due to type load errors: {ex.Message}");
+                if (ex.LoaderExceptions != null)
+                {
+                    foreach (var loaderException in ex.LoaderExceptions)
+                    {
+                        if (loaderException != null)
+                            _errorMessages.Add($"SchemaLoaderService:   LoaderException: {loaderException.Message}");
+                    }
+                }
             }
             catch (Exception ex)
             {
-                _errorMessages.Add($"Failed to load assembly '{assemblyFilePath}': {ex.Message}");
+                _errorMessages.Add($"SchemaLoaderService: Failed to load assembly '{assemblyFilePath}': {ex.Message}");
             }
         }
 
@@ -180,363 +195,355 @@ namespace JsonConfigEditor.Core.SchemaLoading
                 var types = assembly.GetTypes();
                 foreach (var type in types)
                 {
-                    var configSchemaAttr = type.GetCustomAttribute<ConfigSchemaAttribute>();
-                    if (configSchemaAttr != null)
+                    try
                     {
-                        ProcessSchemaClass(type, configSchemaAttr);
+                        var configSchemaAttr = type.GetCustomAttribute<ConfigSchemaAttribute>();
+                        if (configSchemaAttr != null)
+                        {
+                            ProcessSchemaClass(type, configSchemaAttr);
+                        }
+                        DiscoverAndRegisterCustomUIComponents(type);
                     }
-
-                    // Discover and register custom UI components
-                    DiscoverAndRegisterCustomUIComponents(type);
+                    catch (Exception ex)
+                    {
+                         _errorMessages.Add($"SchemaLoaderService: Error processing type '{type.FullName}' in assembly '{assembly.FullName}': {ex.Message}");
+                    }
+                }
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                _errorMessages.Add($"SchemaLoaderService: Failed to process types in assembly '{assembly.FullName}' due to type load errors: {ex.Message}");
+                if (ex.LoaderExceptions != null)
+                {
+                    foreach (var loaderException in ex.LoaderExceptions)
+                    {
+                        if (loaderException != null)
+                        _errorMessages.Add($"SchemaLoaderService:   LoaderException: {loaderException.Message}");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _errorMessages.Add($"Failed to process types in assembly '{assembly.FullName}': {ex.Message}");
+                _errorMessages.Add($"SchemaLoaderService: Failed to process types in assembly '{assembly.FullName}': {ex.Message}");
             }
         }
 
         /// <summary>
         /// Processes a class marked with ConfigSchemaAttribute.
         /// </summary>
-        private void ProcessSchemaClass(Type schemaType, ConfigSchemaAttribute configSchemaAttr)
+        private void ProcessSchemaClass(Type schemaClassType, ConfigSchemaAttribute configSchemaAttribute)
         {
-            try
+            var mountPath = configSchemaAttribute.MountPath ?? ""; // Ensure mountPath is not null
+
+            if (_rootSchemas.ContainsKey(mountPath))
             {
-                var mountPath = configSchemaAttr.MountPath;
-
-                // Check for duplicate mount paths
-                if (_rootSchemas.ContainsKey(mountPath))
-                {
-                    _errorMessages.Add($"Duplicate mount path '{mountPath}' found in type '{schemaType.FullName}'. Previous definition will be overwritten.");
-                }
-
-                // Build the schema recursively
-                var processedTypes = new HashSet<Type>();
-                var schemaNode = BuildSchemaRecursive(schemaType, schemaType.Name, null, processedTypes);
-                
-                // Set the mount path for the root schema
-                var rootSchema = new SchemaNode(
-                    schemaNode.Name,
-                    schemaNode.ClrType,
-                    schemaNode.IsRequired,
-                    schemaNode.IsReadOnly,
-                    schemaNode.DefaultValue,
-                    schemaNode.Min,
-                    schemaNode.Max,
-                    schemaNode.RegexPattern,
-                    schemaNode.AllowedValues,
-                    schemaNode.IsEnumFlags,
-                    schemaNode.Properties,
-                    schemaNode.AdditionalPropertiesSchema,
-                    schemaNode.AllowAdditionalProperties,
-                    schemaNode.ItemSchema,
-                    mountPath);
-
-                _rootSchemas[mountPath] = rootSchema;
+                _errorMessages.Add($"SchemaLoaderService: Duplicate mount path '{mountPath}' for type '{schemaClassType.FullName}'. Previous: '{_rootSchemas[mountPath].ClrType.FullName}'. Overwriting.");
             }
-            catch (Exception ex)
+            
+            // Pass schemaClassType.Name as the initial name for the root schema node
+            var rootNode = ParseTypeRecursive(schemaClassType, schemaClassType.Name, mountPath, memberInfo: null, isRootConfigSchemaType: true);
+            if (rootNode != null)
             {
-                _errorMessages.Add($"Failed to process schema class '{schemaType.FullName}': {ex.Message}");
-            }
-        }
+                // The MountPath is an intrinsic property of the root SchemaNode, set via constructor or property
+                // If SchemaNode constructor doesn't take mountPath directly for all nodes, ensure it's set here for roots.
+                // Assuming SchemaNode has a constructor or property for MountPath.
+                // If the SchemaNode constructor used by ParseTypeRecursive doesn't set MountPath, 
+                // we might need a different constructor or a setter for the root one.
+                // For now, let's assume ParseTypeRecursive sets currentPath, and for root, currentPath IS mountPath.
+                // The current SchemaNode constructor takes mountPath as the last optional string parameter.
+                // We need to ensure this is correctly passed or reconstructed.
 
-        /// <summary>
-        /// Recursively builds a schema node from a C# type.
-        /// </summary>
-        private SchemaNode BuildSchemaRecursive(Type currentType, string nodeName, PropertyInfo? sourcePropertyInfo, HashSet<Type> processedTypesInPath)
-        {
-            // Prevent infinite recursion
-            if (processedTypesInPath.Contains(currentType))
+                // Reconstruct the root node with the mount path IF the main constructor doesn't take it
+                // OR if ParseTypeRecursive's `currentPath` isn't automatically the MountPath for the root.
+                // Based on SchemaNode provided, it has an optional mountPath.
+                // ParseTypeRecursive passes `currentPath` which is `mountPath` for the root.
+
+                _rootSchemas[mountPath] = rootNode; // rootNode should have its MountPath correctly set if constructor handles it
+                 System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ProcessSchemaClass: Registered root schema for Type='{schemaClassType.FullName}', MountPath='{mountPath}', SchemaNodeName='{rootNode.Name}'");
+            }
+            else
             {
-                // Return a simple schema for recursive types
-                return new SchemaNode(nodeName, currentType, false, false, null, null, null, null, null, false, null, null, false, null);
+                 _errorMessages.Add($"SchemaLoaderService: Failed to parse root schema for type '{schemaClassType.FullName}' at mount path '{mountPath}'.");
             }
-
-            processedTypesInPath.Add(currentType);
-
-            try
-            {
-                // Get property-level attributes if this is from a property
-                var isRequired = IsPropertyRequired(sourcePropertyInfo, currentType);
-                var isReadOnly = IsPropertyReadOnly(sourcePropertyInfo);
-                var defaultValue = GetDefaultValue(sourcePropertyInfo, currentType);
-                var (min, max) = GetMinMaxValues(sourcePropertyInfo);
-                var regexPattern = GetRegexPattern(sourcePropertyInfo);
-                var allowedValues = GetAllowedValues(sourcePropertyInfo, currentType);
-                var isEnumFlags = currentType.IsEnum && currentType.GetCustomAttribute<FlagsAttribute>() != null;
-
-                // Determine the schema type and build accordingly
-                if (IsCollectionType(currentType, out var itemType))
-                {
-                    // Array type
-                    var itemSchema = itemType != null ? BuildSchemaRecursive(itemType, "*", null, new HashSet<Type>(processedTypesInPath)) : null;
-                    return new SchemaNode(nodeName, currentType, isRequired, isReadOnly, defaultValue, min, max, regexPattern, allowedValues, isEnumFlags, null, null, false, itemSchema);
-                }
-                else if (IsDictionaryType(currentType, out var valueType))
-                {
-                    // Object type with additional properties
-                    var additionalPropertiesSchema = valueType != null ? BuildSchemaRecursive(valueType, "*", null, new HashSet<Type>(processedTypesInPath)) : null;
-                    return new SchemaNode(nodeName, currentType, isRequired, isReadOnly, defaultValue, min, max, regexPattern, allowedValues, isEnumFlags, null, additionalPropertiesSchema, true, null);
-                }
-                else if (IsComplexType(currentType))
-                {
-                    // Object type with defined properties
-                    var properties = BuildPropertiesSchema(currentType, processedTypesInPath);
-                    return new SchemaNode(nodeName, currentType, isRequired, isReadOnly, defaultValue, min, max, regexPattern, allowedValues, isEnumFlags, properties, null, false, null);
-                }
-                else
-                {
-                    // Value type
-                    return new SchemaNode(nodeName, currentType, isRequired, isReadOnly, defaultValue, min, max, regexPattern, allowedValues, isEnumFlags, null, null, false, null);
-                }
-            }
-            finally
-            {
-                processedTypesInPath.Remove(currentType);
-            }
-        }
-
-        /// <summary>
-        /// Builds the properties schema for a complex type.
-        /// </summary>
-        private Dictionary<string, SchemaNode> BuildPropertiesSchema(Type objectType, HashSet<Type> processedTypesInPath)
-        {
-            var properties = new Dictionary<string, SchemaNode>();
-
-            var publicProperties = objectType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.CanRead && p.GetIndexParameters().Length == 0); // Exclude indexers
-
-            foreach (var property in publicProperties)
-            {
-                try
-                {
-                    var propertySchema = BuildSchemaRecursive(property.PropertyType, property.Name, property, processedTypesInPath);
-                    properties[property.Name] = propertySchema;
-                }
-                catch (Exception ex)
-                {
-                    _errorMessages.Add($"Failed to build schema for property '{property.Name}' in type '{objectType.FullName}': {ex.Message}");
-                }
-            }
-
-            return properties;
         }
 
         /// <summary>
         /// Navigates within a schema to find a node at the specified path.
         /// </summary>
-        private SchemaNode? NavigateSchemaPath(SchemaNode rootSchema, string relativePath)
+        private SchemaNode? NavigateSchemaPath(SchemaNode currentSchema, string relativePath)
         {
-            if (string.IsNullOrEmpty(relativePath))
-                return rootSchema;
+            if (string.IsNullOrEmpty(relativePath)) return currentSchema;
 
-            var pathSegments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            var currentSchema = rootSchema;
-
-            foreach (var segment in pathSegments)
+            var segments = relativePath.Split('/');
+            foreach (var segment in segments)
             {
                 if (currentSchema.Properties != null && currentSchema.Properties.TryGetValue(segment, out var propertySchema))
                 {
                     currentSchema = propertySchema;
                 }
-                else if (currentSchema.ItemSchema != null && int.TryParse(segment, out _))
+                else if (currentSchema.ItemSchema != null && int.TryParse(segment, out _)) // Array item
                 {
-                    // Array index
                     currentSchema = currentSchema.ItemSchema;
                 }
-                else if (currentSchema.AdditionalPropertiesSchema != null)
+                else if (currentSchema.AdditionalPropertiesSchema != null) // Dictionary item
                 {
-                    // Dynamic property
                     currentSchema = currentSchema.AdditionalPropertiesSchema;
                 }
                 else
                 {
-                    return null; // Path not found
+                    return null; // Path segment not found
                 }
             }
-
             return currentSchema;
         }
 
-        // Helper methods for reflection and attribute processing
-
-        private bool IsPropertyRequired(PropertyInfo? propertyInfo, Type propertyType)
+        private SchemaNode? ParseTypeRecursive(Type type, string name, string currentPath, MemberInfo? memberInfo = null, bool isRootConfigSchemaType = false)
         {
-            if (propertyInfo == null)
-                return false;
+            // Logging entry point
+            System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive: Parsing Type='{type.FullName}', Name='{name}', Path='{currentPath}', IsRootConfig='{isRootConfigSchemaType}'");
 
-            // Check for nullable reference types or value types
+            if (_processedTypes.TryGetValue(currentPath, out var foundType) && foundType == type)
+            {
+                System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive:     SKIPPING Type='{type.FullName}' at Path='{currentPath}' due to cycle (already processed this type at this exact path).");
+                return new SchemaNode(name, type, false, true, null, null, null, null, null, false, null, null, false, null, isRootConfigSchemaType ? currentPath : null); // Return a stub for cycles
+            }
+            _processedTypes[currentPath] = type;
+
+            var nodeType = GetSchemaNodeType(type);
+            var remarks = new List<string>();
+
+            // Property-specific attributes (if memberInfo is PropertyInfo)
+            PropertyInfo? propertyInfo = memberInfo as PropertyInfo;
+            bool isRequired = propertyInfo != null && IsPropertyRequired(propertyInfo, type);
+            bool isReadOnly = propertyInfo != null && IsPropertyReadOnly(propertyInfo);
+            object? defaultValue = GetDefaultValue(propertyInfo, type); // Handles both PropertyInfo and Type
+            (double? min, double? max) = propertyInfo != null ? GetMinMaxValues(propertyInfo) : (null, null);
+            string? regexPattern = propertyInfo != null ? GetRegexPattern(propertyInfo) : null;
+            List<string>? allowedValues = GetAllowedValues(propertyInfo, type); // Handles both
+            bool isEnumFlags = type.IsEnum && type.GetCustomAttribute<FlagsAttribute>() != null;
+
+            // Mount path is only for the absolute root of a schema tree from [ConfigSchema]
+            string? mountPathForNode = isRootConfigSchemaType ? currentPath : null;
+
+            SchemaNode? resultNode = null;
+
+            if (nodeType == SchemaNodeType.Value)
+            {
+                resultNode = new SchemaNode(name, type, isRequired, isReadOnly, defaultValue, min, max, regexPattern, allowedValues, isEnumFlags, null, null, false, null, mountPathForNode);
+                System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive: Created VALUE SchemaNode for Path='{currentPath}', Name='{name}', ClrType='{type.FullName}'");
+            }
+            else if (nodeType == SchemaNodeType.Array)
+            {
+                System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive: Path='{currentPath}', Name='{name}' is ARRAY type.");
+                resultNode = CreateArraySchemaNode(type, name, currentPath, isRequired, isReadOnly, defaultValue, mountPathForNode, memberInfo, isRootConfigSchemaType);
+            }
+            else if (nodeType == SchemaNodeType.Object) // This includes Dictionaries now based on GetSchemaNodeType
+            {
+                 if (type.IsGenericType && typeof(IDictionary).IsAssignableFrom(type) && type.GetGenericArguments().Length == 2 && type.GetGenericArguments()[0] == typeof(string))
+                 {
+                    System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive: Path='{currentPath}', Name='{name}' is DICTIONARY<string, T> type.");
+                    resultNode = CreateDictionarySchemaNode(type, name, currentPath, isRequired, isReadOnly, defaultValue, mountPathForNode, memberInfo, isRootConfigSchemaType);
+                 }
+                 else // Regular complex object
+                 {
+                    System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive: Path='{currentPath}', Name='{name}' is COMPLEX OBJECT type. Iterating properties...");
+                    var properties = new Dictionary<string, SchemaNode>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var propInfo in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive:   Processing Property='{propInfo.Name}' of Type='{type.FullName}' (PropertyType='{propInfo.PropertyType.FullName}')");
+                        if (ShouldIgnoreProperty(propInfo))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive:     IGNORING Property='{propInfo.Name}' due to ShouldIgnoreProperty (e.g., [JsonIgnore]).");
+                            continue;
+                        }
+                        string propertyPath = string.IsNullOrEmpty(currentPath) ? propInfo.Name : $"{currentPath}/{propInfo.Name}";
+                        
+                        System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive:     RECURSING for Property='{propInfo.Name}', PropertyPath='{propertyPath}'");
+                        var propertySchema = ParseTypeRecursive(propInfo.PropertyType, propInfo.Name, propertyPath, propInfo, false); // isRootConfigSchemaType is false for children
+                        if (propertySchema != null)
+                        {
+                            properties[propInfo.Name] = propertySchema;
+                            System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive:     SUCCESSFULLY parsed Property='{propInfo.Name}', added to Properties dictionary for '{name}'.");
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive:     FAILED to parse Property='{propInfo.Name}' (returned null), NOT added for '{name}'.");
+                        }
+                    }
+                    resultNode = new SchemaNode(name, type, isRequired, isReadOnly, defaultValue, min, max, regexPattern, allowedValues, isEnumFlags, properties, null, properties.Any(), null, mountPathForNode);
+                    System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive: Created OBJECT SchemaNode for Path='{currentPath}', Name='{name}', ClrType='{type.FullName}', Properties.Count='{properties.Count}'");
+                 }
+            }
+            else 
+            {
+                 System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive: Path='{currentPath}', Name='{name}', Type='{type.FullName}' resulted in UNKNOWN SchemaNodeType from GetSchemaNodeType. Returning null.");
+            }
+            
+            _processedTypes.Remove(currentPath); // Backtrack for current path
+            return resultNode;
+        }
+        
+        private SchemaNodeType GetSchemaNodeType(Type type)
+        {
+            if (type.IsPrimitive || type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime) || type == typeof(Guid) || type.IsEnum)
+            {
+                return SchemaNodeType.Value;
+            }
+            // Check for IEnumerable<T> but not IDictionary specifically
+            if (type.IsArray || (type.IsGenericType && typeof(IEnumerable).IsAssignableFrom(type) && !typeof(IDictionary).IsAssignableFrom(type) && type.GetGenericArguments().Length == 1) )
+            {
+                return SchemaNodeType.Array;
+            }
+            // Covers classes, structs (that are not primitive/enum), and IDictionary<string, T>
+            if (type.IsClass || (type.IsValueType && !type.IsEnum && !type.IsPrimitive) || typeof(IDictionary).IsAssignableFrom(type))
+            {
+                return SchemaNodeType.Object;
+            }
+            System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.GetSchemaNodeType: Type '{type.FullName}' fell through to fallback as ValueNode.");
+            return SchemaNodeType.Value; // Fallback
+        }
+
+        private SchemaNode CreateArraySchemaNode(Type type, string name, string currentPath, bool isRequired, bool isReadOnly, object? defaultValue, string? mountPath, MemberInfo? memberInfo, bool isRootConfigSchemaType)
+        {
+            Type? itemType = null;
+            if (type.IsArray) itemType = type.GetElementType();
+            else if (type.IsGenericType && type.GetGenericArguments().Length == 1)
+            {
+                itemType = type.GetGenericArguments()[0];
+            }
+
+            SchemaNode? itemSchema = null;
+            if (itemType != null)
+            {
+                string itemPath = $"{currentPath}/*"; // Placeholder path for item schema definition
+                 System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.CreateArraySchemaNode: Recursing for ItemSchema of Array='{name}', ItemType='{itemType.FullName}', ItemPath='{itemPath}'");
+                itemSchema = ParseTypeRecursive(itemType, "*", itemPath, null, false); // Name for item schema is typically "*"
+            }
+            var arrayNode = new SchemaNode(name, type, isRequired, isReadOnly, defaultValue, null, null, null, null, false, null, null, false, itemSchema, mountPath);
+            System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive: Created ARRAY SchemaNode for Path='{currentPath}', Name='{name}', ClrType='{type.FullName}', ItemSchemaName='{itemSchema?.Name}'");
+            return arrayNode;
+        }
+
+        private SchemaNode CreateDictionarySchemaNode(Type type, string name, string currentPath, bool isRequired, bool isReadOnly, object? defaultValue, string? mountPath, MemberInfo? memberInfo, bool isRootConfigSchemaType)
+        {
+            SchemaNode? additionalPropertiesSchema = null;
+            if (type.IsGenericType && type.GetGenericArguments().Length == 2)
+            {
+                var valueType = type.GetGenericArguments()[1];
+                string valuePath = $"{currentPath}/*"; // Placeholder for value schema definition
+                System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.CreateDictionarySchemaNode: Recursing for AdditionalPropertiesSchema of Dictionary='{name}', ValueType='{valueType.FullName}', ValuePath='{valuePath}'");
+                additionalPropertiesSchema = ParseTypeRecursive(valueType, "*", valuePath, null, false);
+            }
+            // Dictionaries allow additional properties by nature.
+            var dictNode = new SchemaNode(name, type, isRequired, isReadOnly, defaultValue, null, null, null, null, false, null, additionalPropertiesSchema, true, null, mountPath);
+            System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ParseTypeRecursive: Created DICTIONARY SchemaNode for Path='{currentPath}', Name='{name}', ClrType='{type.FullName}', AdditionalPropertiesSchemaName='{additionalPropertiesSchema?.Name}'");
+            return dictNode;
+        }
+        
+        private bool ShouldIgnoreProperty(PropertyInfo propertyInfo)
+        {
+            // Only consider System.Text.Json.Serialization.JsonIgnoreAttribute
+            return propertyInfo.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>() != null;
+        }
+        
+        private bool IsPropertyRequired(PropertyInfo propertyInfo, Type propertyType)
+        {
             var nullabilityContext = new NullabilityInfoContext();
             var nullabilityInfo = nullabilityContext.Create(propertyInfo);
-            
             return nullabilityInfo.WriteState == NullabilityState.NotNull;
         }
 
-        private bool IsPropertyReadOnly(PropertyInfo? propertyInfo)
+        private bool IsPropertyReadOnly(PropertyInfo propertyInfo)
         {
-            return propertyInfo?.GetCustomAttribute<ReadOnlyAttribute>()?.IsReadOnly ?? false;
+            return propertyInfo.GetCustomAttribute<ReadOnlyAttribute>()?.IsReadOnly ?? false;
         }
-
-        private object? GetDefaultValue(PropertyInfo? propertyInfo, Type propertyType)
+        
+        private object? GetDefaultValue(PropertyInfo? propertyInfo, Type typeForDefault)
         {
-            // Try to get default value from property initializer or constructor
-            // This is a simplified implementation - in practice, this would be more complex
+            if (propertyInfo != null)
+            {
+                var defaultValueAttr = propertyInfo.GetCustomAttribute<DefaultValueAttribute>();
+                if (defaultValueAttr != null) return defaultValueAttr.Value;
+            }
             try
             {
-                if (propertyType.IsValueType)
-                {
-                    return Activator.CreateInstance(propertyType);
-                }
-                else if (propertyType.GetConstructor(Type.EmptyTypes) != null)
-                {
-                    return Activator.CreateInstance(propertyType);
-                }
+                 // For value types, Activator.CreateInstance returns their default (0, false, etc.)
+                if (typeForDefault.IsValueType) return Activator.CreateInstance(typeForDefault);
+                // For reference types with a parameterless constructor, create an instance.
+                if (typeForDefault.GetConstructor(Type.EmptyTypes) != null) return Activator.CreateInstance(typeForDefault);
             }
-            catch
-            {
-                // Ignore errors in default value creation
+            catch (Exception ex) {
+                 System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.GetDefaultValue: Error creating default for Type='{typeForDefault.FullName}', Property='{propertyInfo?.Name}'. Ex: {ex.Message}");
             }
-
-            return null;
+            return null; 
         }
 
-        private (double? min, double? max) GetMinMaxValues(PropertyInfo? propertyInfo)
+        private (double? min, double? max) GetMinMaxValues(PropertyInfo propertyInfo)
         {
-            var rangeAttr = propertyInfo?.GetCustomAttribute<RangeAttribute>();
+            var rangeAttr = propertyInfo.GetCustomAttribute<RangeAttribute>();
             if (rangeAttr != null)
             {
-                return (Convert.ToDouble(rangeAttr.Minimum), Convert.ToDouble(rangeAttr.Maximum));
+                try 
+                {
+                    object minVal = rangeAttr.Minimum;
+                    object maxVal = rangeAttr.Maximum;
+                    if (minVal is IConvertible && maxVal is IConvertible)
+                    { 
+                        return (Convert.ToDouble(minVal), Convert.ToDouble(maxVal)); 
+                    }
+                }
+                catch (Exception ex) {
+                    System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.GetMinMaxValues: Error converting RangeAttribute for Property='{propertyInfo.Name}'. Ex: {ex.Message}");
+                }
             }
             return (null, null);
         }
 
-        private string? GetRegexPattern(PropertyInfo? propertyInfo)
+        private string? GetRegexPattern(PropertyInfo propertyInfo)
         {
-            return propertyInfo?.GetCustomAttribute<SchemaRegexPatternAttribute>()?.Pattern;
+            return propertyInfo.GetCustomAttribute<SchemaRegexPatternAttribute>()?.Pattern;
         }
 
-        private List<string>? GetAllowedValues(PropertyInfo? propertyInfo, Type propertyType)
+        private List<string>? GetAllowedValues(PropertyInfo? propertyInfo, Type typeForEnumCheck)
         {
-            // Check for custom allowed values attribute
-            var allowedValuesAttr = propertyInfo?.GetCustomAttribute<SchemaAllowedValuesAttribute>();
-            if (allowedValuesAttr != null)
+            if (propertyInfo != null)
             {
-                return allowedValuesAttr.AllowedValues.ToList();
+                var allowedValuesAttr = propertyInfo.GetCustomAttribute<SchemaAllowedValuesAttribute>();
+                if (allowedValuesAttr != null) return allowedValuesAttr.AllowedValues.ToList();
             }
-
-            // Check for enum types
-            if (propertyType.IsEnum)
-            {
-                return Enum.GetNames(propertyType).ToList();
-            }
-
+            if (typeForEnumCheck.IsEnum) return Enum.GetNames(typeForEnumCheck).ToList();
             return null;
         }
-
-        private bool IsCollectionType(Type type, out Type? itemType)
-        {
-            itemType = null;
-
-            if (type.IsArray)
-            {
-                itemType = type.GetElementType();
-                return true;
-            }
-
-            if (type.IsGenericType)
-            {
-                var genericTypeDef = type.GetGenericTypeDefinition();
-                if (genericTypeDef == typeof(List<>) || genericTypeDef == typeof(IList<>) || 
-                    genericTypeDef == typeof(ICollection<>) || genericTypeDef == typeof(IEnumerable<>))
-                {
-                    itemType = type.GetGenericArguments()[0];
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private bool IsDictionaryType(Type type, out Type? valueType)
-        {
-            valueType = null;
-
-            if (type.IsGenericType)
-            {
-                var genericTypeDef = type.GetGenericTypeDefinition();
-                if (genericTypeDef == typeof(Dictionary<,>) || genericTypeDef == typeof(IDictionary<,>))
-                {
-                    var genericArgs = type.GetGenericArguments();
-                    if (genericArgs[0] == typeof(string)) // Key must be string
-                    {
-                        valueType = genericArgs[1];
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        private bool IsComplexType(Type type)
-        {
-            return !type.IsPrimitive && 
-                   type != typeof(string) && 
-                   type != typeof(DateTime) && 
-                   type != typeof(decimal) && 
-                   !type.IsEnum &&
-                   type != typeof(Guid);
-        }
-
-        /// <summary>
-        /// Discovers and registers custom UI components (renderers, editors, tooltips) from the given type.
-        /// </summary>
-        /// <param name="typeInAssembly">The type to inspect for custom UI attributes.</param>
+        
         private void DiscoverAndRegisterCustomUIComponents(Type typeInAssembly)
         {
             if (!typeInAssembly.IsClass || typeInAssembly.IsAbstract) return;
 
-            // Discover Renderers
             var rendererAttrs = typeInAssembly.GetCustomAttributes<ValueRendererAttribute>(false);
             foreach (var attr in rendererAttrs)
             {
                 if (typeof(IValueRenderer).IsAssignableFrom(typeInAssembly))
-                {
                     _uiRegistry.RegisterRenderer(attr.TargetClrType, typeInAssembly);
-                }
                 else
-                {
-                    _errorMessages.Add($"UI Discovery Error: Type '{typeInAssembly.FullName}' has ValueRendererAttribute but does not implement IValueRenderer.");
-                }
+                     _errorMessages.Add($"UI Discovery Error: Type '{typeInAssembly.FullName}' has ValueRendererAttribute but does not implement IValueRenderer.");
             }
 
-            // Discover Editors
             var editorAttrs = typeInAssembly.GetCustomAttributes<ValueEditorAttribute>(false);
             foreach (var attr in editorAttrs)
             {
                 if (typeof(IValueEditor).IsAssignableFrom(typeInAssembly))
-                {
                     _uiRegistry.RegisterEditor(attr.TargetClrType, typeInAssembly, attr.RequiresModal);
-                }
                 else
-                {
                     _errorMessages.Add($"UI Discovery Error: Type '{typeInAssembly.FullName}' has ValueEditorAttribute but does not implement IValueEditor.");
-                }
             }
 
-            // Discover Tooltip Providers
             var tooltipAttrs = typeInAssembly.GetCustomAttributes<TooltipProviderAttribute>(false);
             foreach (var attr in tooltipAttrs)
             {
                 if (typeof(ITooltipProvider).IsAssignableFrom(typeInAssembly))
-                {
-                    _uiRegistry.RegisterTooltipProvider(attr.TargetClrType, typeInAssembly);
-                }
+                     _uiRegistry.RegisterTooltipProvider(attr.TargetClrType, typeInAssembly);
                 else
-                {
                     _errorMessages.Add($"UI Discovery Error: Type '{typeInAssembly.FullName}' has TooltipProviderAttribute but does not implement ITooltipProvider.");
-                }
             }
         }
     }

@@ -1118,6 +1118,54 @@ namespace JsonConfigEditor.ViewModels
             var tempFlatList = new List<DataGridRowItemViewModel>();
             BuildFlatListRecursive(_rootDomNode, tempFlatList);
 
+            // Augment with VMs for other schema roots if not represented by DOM or already added by BuildFlatListRecursive for the primary root
+            if (_showSchemaNodes && _schemaLoader?.RootSchemas != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"RefreshFlatList: Checking for unrepresented schema roots. Total roots: {_schemaLoader.RootSchemas.Count}");
+                var primaryRootSchema = _schemaLoader.GetRootSchema();
+
+                foreach (var schemaEntry in _schemaLoader.RootSchemas)
+                {
+                    string mountPath = schemaEntry.Key;
+                    SchemaNode schemaRoot = schemaEntry.Value;
+
+                    // Skip the primary root schema if its items are handled by BuildFlatListRecursive via _rootDomNode
+                    if (schemaRoot == primaryRootSchema && string.IsNullOrEmpty(mountPath))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"RefreshFlatList: Skipping primary schema root '{schemaRoot.Name}' at empty MountPath as it's handled by DOM recursion.");
+                        continue;
+                    }
+
+                    // Check if a DOM node already exists at this mount path.
+                    DomNode? existingDomForMountPath = FindDomNodeByPath(mountPath);
+                    if (existingDomForMountPath != null)
+                    {
+                         System.Diagnostics.Debug.WriteLine($"RefreshFlatList: Skipping schema root '{schemaRoot.Name}' at MountPath='{mountPath}' because a DOM node exists there.");
+                        continue;
+                    }
+                    
+                    // Check if a VM for this specific schema root (identified by its mountPath) already exists at the top level (depth 1).
+                    // Depth 1 corresponds to Indentation.Left == 20 (assuming IndentSize is 20).
+                    if (tempFlatList.Any(vm => vm.IsSchemaOnlyNode && vm.SchemaNodePathKey == mountPath && vm.Indentation.Left == 20))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"RefreshFlatList: Skipping schema root '{schemaRoot.Name}' at MountPath='{mountPath}' because a VM already exists in tempFlatList at depth 1.");
+                        continue;
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"RefreshFlatList: Adding VM for unrepresented schema root '{schemaRoot.Name}' at MountPath='{mountPath}'.");
+                    int depth = 1; // Display these other schema roots at depth 1
+                    string propertyName = schemaRoot.Name; // Display name for this schema root entry
+                    
+                    var rootSchemaVm = new DataGridRowItemViewModel(schemaRoot, propertyName, this, depth, mountPath);
+                    tempFlatList.Add(rootSchemaVm);
+                    if (rootSchemaVm.IsExpanded && rootSchemaVm.IsExpandable)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"RefreshFlatList: Expanded VM for schema root '{schemaRoot.Name}'. Adding its children.");
+                        AddSchemaOnlyChildrenRecursive(rootSchemaVm, tempFlatList, depth);
+                    }
+                }
+            }
+
             var processedList = ApplyFiltering(tempFlatList);
 
             FlatItemsSource.Clear();
