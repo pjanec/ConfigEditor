@@ -42,7 +42,7 @@
             </DataTemplate>
 
             <DataTemplate x:Key="DisplayBooleanTemplate">
-                <CheckBox IsChecked="{Binding ValueDisplay, Converter={StaticResource BooleanToStringConverter}}" IsEnabled="False" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                <CheckBox IsChecked="{Binding ValueDisplay, Converter={StaticResource BooleanToStringConverter}, Mode=OneWay}" IsEnabled="False" VerticalAlignment="Center" HorizontalAlignment="Left" />
             </DataTemplate>
             
             <DataTemplate x:Key="DisplayEnumTemplate">

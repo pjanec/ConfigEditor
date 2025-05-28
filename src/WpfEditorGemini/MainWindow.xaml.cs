@@ -22,9 +22,17 @@ namespace JsonConfigEditor
         {
             InitializeComponent();
 
-            // Set UiRegistry for the NodeValueTemplateSelector
-            if (this.Resources["NodeValueTemplateSelector"] is NodeValueTemplateSelector selector && DataContext is MainViewModel vm)
+            if (DataContext is MainViewModel vmInstance)
             {
+                vmInstance.PropertyChanged += MainViewModel_PropertyChanged;
+                 // Set UiRegistry for the NodeValueTemplateSelector
+                if (this.Resources["NodeValueTemplateSelector"] is NodeValueTemplateSelector selector)
+                {
+                    selector.UiRegistry = vmInstance.UiRegistry;
+                }
+            }
+            else if (this.Resources["NodeValueTemplateSelector"] is NodeValueTemplateSelector selector && DataContext is MainViewModel vm)
+            { // Fallback for original logic, though DataContext should be vmInstance here
                 selector.UiRegistry = vm.UiRegistry;
             }
             
@@ -224,21 +232,34 @@ namespace JsonConfigEditor
         {
             if (sender is DataGridCell cell && cell.DataContext is DataGridRowItemViewModel vm)
             {
-                var dataGrid = MainDataGrid; // Assuming MainDataGrid is the x:Name of your DataGrid
+                // Ensure we are on the actual DataGrid, not a header or other element.
+                var dataGrid = FindVisualParent<DataGrid>(cell);
+                if (dataGrid == null) return;
+
                 if (vm.IsEditable && !vm.IsInEditMode)
                 {
-                    vm.IsInEditMode = true;
-                    // It's important to ensure the DataGrid itself knows to go into edit mode for this cell.
-                    // Dispatcher is used because DataGrid might not be ready to switch to edit mode immediately.
-                    Dispatcher.BeginInvoke(new Action(() => 
-                    {
-                        dataGrid.SelectedItem = vm; // Ensure the row is selected
-                        dataGrid.CurrentCell = new DataGridCellInfo(vm, dataGrid.Columns[1]); // Assuming value column is index 1
-                        dataGrid.BeginEdit();
-                    }), System.Windows.Threading.DispatcherPriority.Background);
+                    vm.IsInEditMode = true; 
+
+                    // Ensure the cell/row is selected and focused before calling BeginEdit
+                    dataGrid.SelectedItem = vm;
+                    dataGrid.CurrentCell = new DataGridCellInfo(cell); // Use the clicked cell directly
+                    
+                    // It's often better to let the DataGrid handle bringing the cell into edit mode if possible
+                    // after its properties are set. BeginEdit() might be called implicitly by focusing a cell in edit mode.
+                    // Or call it explicitly.
+                    dataGrid.BeginEdit(); 
                     e.Handled = true;
                 }
             }
+        }
+
+        // Helper to find visual parent (add this if not already present)
+        public static T? FindVisualParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            DependencyObject parentObject = System.Windows.Media.VisualTreeHelper.GetParent(child);
+            if (parentObject == null) return null;
+            if (parentObject is T parent) return parent;
+            return FindVisualParent<T>(parentObject);
         }
 
         // Handler for double-click on a name cell to toggle expansion
@@ -325,6 +346,32 @@ namespace JsonConfigEditor
             }
 
             base.OnClosing(e);
+        }
+
+        private void MainViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(MainViewModel.SelectedGridItem))
+            {
+                if (ViewModel.SelectedGridItem != null)
+                {
+                    MainDataGrid.ScrollIntoView(ViewModel.SelectedGridItem);
+                    // Attempt to focus the row. Finding the DataGridRow container can be tricky.
+                    var row = MainDataGrid.ItemContainerGenerator.ContainerFromItem(ViewModel.SelectedGridItem) as DataGridRow;
+                    if (row != null)
+                    {
+                        row.Focus();
+                    }
+                    else
+                    {
+                        // If container is not generated yet, try focusing after layout update
+                        MainDataGrid.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            var rowAfterLayout = MainDataGrid.ItemContainerGenerator.ContainerFromItem(ViewModel.SelectedGridItem) as DataGridRow;
+                            rowAfterLayout?.Focus();
+                        }), System.Windows.Threading.DispatcherPriority.Loaded);
+                    }
+                }
+            }
         }
     }
 } 

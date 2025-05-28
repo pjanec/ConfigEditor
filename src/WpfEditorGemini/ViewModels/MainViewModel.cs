@@ -11,6 +11,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -1065,6 +1066,26 @@ namespace JsonConfigEditor.ViewModels
                 _persistentVmMap.Remove(node);
                 _domToSchemaMap.Remove(node);
                 RefreshFlatList();
+            }
+        }
+
+        // Method to be called by DataGridRowItemViewModel to record a value change for undo/redo
+        internal void RecordValueEdit(ValueNode node, JsonElement oldValue, JsonElement newValue)
+        {
+            // Ensure distinct JsonElement instances for oldValue and newValue if they might point to the same underlying data
+            // ValueNode.Value setter should handle cloning, and TryUpdateFromString creates new JsonElements.
+            // So, direct use should be fine here.
+            RecordEditOperation(new ValueEditOperation(node, oldValue, newValue));
+            
+            // Trigger general post-edit logic
+            IsDirty = true;
+            OnPropertyChanged(nameof(WindowTitle));
+            _ = ValidateDocumentAsync(); // Re-validate after change
+
+            // Refresh the specific item in the list if direct DOM manipulation doesn't auto-update UI sufficient
+            if (_persistentVmMap.TryGetValue(node, out var vmToUpdate))
+            {
+                vmToUpdate.RefreshDisplayProperties(); // To update ValueDisplay etc.
             }
         }
     }

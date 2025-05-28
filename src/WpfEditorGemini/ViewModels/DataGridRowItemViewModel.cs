@@ -392,20 +392,23 @@ namespace JsonConfigEditor.ViewModels
             {
                 if (_isAddItemPlaceholder)
                 {
-                    // Handle adding new array item
+                    // TODO: Implement Undo/Redo for AddArrayItem
                     return ParentViewModel.AddArrayItem(_parentArrayNodeForPlaceholder!, EditValue, _itemSchemaForPlaceholder);
                 }
                 else if (IsSchemaOnlyNode)
                 {
-                    // Handle materializing schema-only node
+                    // TODO: Implement Undo/Redo for MaterializeSchemaOnlyNode
                     return ParentViewModel.MaterializeSchemaOnlyNode(this, EditValue);
                 }
                 else if (_domNode is ValueNode valueNode)
                 {
-                    // Handle updating existing value node
+                    JsonElement oldValue = valueNode.Value; // Clone if necessary, ValueNode.Value should return a clone or be safe
+                    
                     if (valueNode.TryUpdateFromString(EditValue))
                     {
-                        ParentViewModel.OnNodeValueChanged(this);
+                        JsonElement newValue = valueNode.Value; // Get the new value
+                        ParentViewModel.RecordValueEdit(valueNode, oldValue, newValue); // For Undo/Redo
+                        // OnNodeValueChanged is now implicitly handled by RecordValueEdit's effect on IsDirty & validation
                         SetValidationState(true, "");
                         return true;
                     }
@@ -417,10 +420,15 @@ namespace JsonConfigEditor.ViewModels
                 }
                 else if (_domNode is RefNode refNode)
                 {
-                    // Handle updating reference path
-                    refNode.ReferencePath = EditValue;
-                    ParentViewModel.OnNodeValueChanged(this);
-                    SetValidationState(true, "");
+                    string oldPath = refNode.ReferencePath;
+                    if (oldPath != EditValue) // Check if value actually changed
+                    {
+                        refNode.ReferencePath = EditValue;
+                        // TODO: Implement Undo/Redo for RefNode path changes
+                        // ParentViewModel.RecordRefPathEdit(refNode, oldPath, EditValue); 
+                        ParentViewModel.OnNodeValueChanged(this); // General notification
+                    }
+                    SetValidationState(true, ""); // Assume ref path string is always valid for now
                     return true;
                 }
 
