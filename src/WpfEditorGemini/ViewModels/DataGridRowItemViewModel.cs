@@ -214,9 +214,12 @@ namespace JsonConfigEditor.ViewModels
             {
                 if (_isExpandedInternal != value && IsExpandable)
                 {
+                    bool oldValue = _isExpandedInternal;
                     _isExpandedInternal = value;
-                    OnPropertyChanged();
-                    ParentViewModel.OnExpansionChanged(this); // Triggers list refresh
+                    System.Diagnostics.Debug.WriteLine($"VM '{NodeName}' ({GetHashCode()}): IsExpanded changed from {oldValue} to {_isExpandedInternal}. Firing OnPropertyChanged.");
+                    OnPropertyChanged(); 
+                    System.Diagnostics.Debug.WriteLine($"VM '{NodeName}' ({GetHashCode()}): Calling ParentViewModel.OnExpansionChanged.");
+                    ParentViewModel.OnExpansionChanged(this); 
                 }
             }
         }

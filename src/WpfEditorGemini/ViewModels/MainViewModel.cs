@@ -771,14 +771,21 @@ namespace JsonConfigEditor.ViewModels
             {
                 _domToSchemaMap.TryGetValue(node, out var schema);
                 viewModel = new DataGridRowItemViewModel(node, schema, this);
-                _persistentVmMap[node] = viewModel;
+                // DO NOT add to _persistentVmMap here; it's cleared and repopulated by RefreshFlatList after this recursion.
+                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: CREATED NEW VM for node '{viewModel.NodeName}' ({viewModel.GetHashCode()}), IsDomNodePresent: {viewModel.IsDomNodePresent}, Initial IsExpanded: {viewModel.IsExpanded}");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: REUSED VM for node '{viewModel.NodeName}' ({viewModel.GetHashCode()}), IsDomNodePresent: {viewModel.IsDomNodePresent}, Current IsExpanded: {viewModel.IsExpanded}");
             }
 
             flatItems.Add(viewModel);
 
+            System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: Checking expansion for VM '{viewModel.NodeName}' ({viewModel.GetHashCode()}), IsExpanded property value: {viewModel.IsExpanded}");
             // Add children if expanded
-            if (viewModel.IsExpanded)
+            if (viewModel.IsExpanded) // Use the IsExpanded property of the retrieved/created VM
             {
+                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: VM '{viewModel.NodeName}' IS expanded, adding children.");
                 switch (node)
                 {
                     case ObjectNode objectNode:
@@ -815,6 +822,10 @@ namespace JsonConfigEditor.ViewModels
                         }
                         break;
                 }
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"BuildFlatListRecursive: VM '{viewModel.NodeName}' is NOT expanded.");
             }
         }
 

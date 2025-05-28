@@ -72,7 +72,7 @@
             </DataTemplate>
 
             <DataTemplate x:Key="EditBooleanTemplate">
-                <CheckBox IsChecked="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                <CheckBox IsChecked="{Binding EditValue, Converter={StaticResource BooleanToStringConverter}, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" HorizontalAlignment="Left" />
             </DataTemplate>
             
             <DataTemplate x:Key="EditEnumTemplate">

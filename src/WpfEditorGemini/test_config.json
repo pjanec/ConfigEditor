@@ -1,0 +1,42 @@
+{
+  "applicationName": "SampleConfigEditorApp",
+  "version": "1.2.3",
+  "isEnabled": true,
+  "logLevel": null,
+  "maxConnections": 100,
+  "connectionTimeoutSeconds": 30.5,
+  "featureFlags": {
+    "newDashboard": true,
+    "betaAnalytics": false,
+    "userGroups": null
+  },
+  "contactPoints": [
+    {
+      "type": "email",
+      "value": "support@example.com",
+      "priority": 1
+    },
+    {
+      "type": "phone",
+      "value": "555-1234",
+      "priority": 2
+    },
+    {
+      "type": "slack",
+      "value": "#support-channel",
+      "priority": null
+    }
+  ],
+  "allowedStrings": [
+    "alpha",
+    "beta",
+    "gamma"
+  ],
+  "matrix": [
+    [1, 2, 3],
+    [4, 5, 6],
+    [null, 8, 9.9]
+  ],
+  "emptyArray": [],
+  "emptyObject": {}
+} 
