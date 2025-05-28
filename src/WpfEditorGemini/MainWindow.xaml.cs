@@ -6,6 +6,8 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+// Added for NodeValueTemplateSelector
+using JsonConfigEditor.Views;
 
 namespace JsonConfigEditor
 {
@@ -19,6 +21,12 @@ namespace JsonConfigEditor
         public MainWindow()
         {
             InitializeComponent();
+
+            // Set UiRegistry for the NodeValueTemplateSelector
+            if (this.Resources["NodeValueTemplateSelector"] is NodeValueTemplateSelector selector && DataContext is MainViewModel vm)
+            {
+                selector.UiRegistry = vm.UiRegistry;
+            }
             
             // Set up keyboard navigation
             SetupKeyboardNavigation();

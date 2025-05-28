@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:JsonConfigEditor.ViewModels"
         xmlns:views="clr-namespace:JsonConfigEditor.Views"
+        xmlns:converters="clr-namespace:JsonConfigEditor.Wpf.Converters"
         Title="{Binding WindowTitle}" 
         Height="600" Width="1000"
         WindowStartupLocation="CenterScreen">
@@ -22,21 +23,88 @@
     </Window.InputBindings>
 
     <Window.Resources>
-        <views:NodeValueTemplateSelector x:Key="NodeValueTemplateSelector"
-            DisplayStringTemplate="{StaticResource DisplayStringTemplate}"
-            DisplayNumberTemplate="{StaticResource DisplayNumberTemplate}"
-            DisplayBooleanTemplate="{StaticResource DisplayBooleanTemplate}"
-            DisplayEnumTemplate="{StaticResource DisplayEnumTemplate}"
-            DisplayRefTemplate="{StaticResource DisplayRefTemplate}"
-            DisplayAddItemTemplate="{StaticResource DisplayAddItemTemplate}"
-            DisplaySchemaOnlyTemplate="{StaticResource DisplaySchemaOnlyTemplate}"
-            EditStringTemplate="{StaticResource EditStringTemplate}"
-            EditNumberTemplate="{StaticResource EditNumberTemplate}"
-            EditBooleanTemplate="{StaticResource EditBooleanTemplate}"
-            EditEnumTemplate="{StaticResource EditEnumTemplate}"
-            EditRefTemplate="{StaticResource EditRefTemplate}"
-            EditAddItemTemplate="{StaticResource EditAddItemTemplate}"
-            EditSchemaOnlyTemplate="{StaticResource EditSchemaOnlyTemplate}" />
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Wpf/Resources/ModalEditors.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <converters:CustomTooltipConverter x:Key="CustomTooltipConverter" />
+
+            <DataTemplate x:Key="DisplayStringTemplate">
+                <TextBlock Text="{Binding ValueDisplay}" VerticalAlignment="Center" Margin="2,0" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="DisplayNumberTemplate">
+                <TextBlock Text="{Binding ValueDisplay}" VerticalAlignment="Center" Margin="2,0" HorizontalAlignment="Left" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="DisplayBooleanTemplate">
+                <CheckBox IsChecked="{Binding ValueDisplay, Converter={StaticResource BooleanToStringConverter}}" IsEnabled="False" VerticalAlignment="Center" HorizontalAlignment="Left" />
+            </DataTemplate>
+            
+            <DataTemplate x:Key="DisplayEnumTemplate">
+                 <TextBlock Text="{Binding ValueDisplay}" VerticalAlignment="Center" Margin="2,0" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="DisplayRefTemplate">
+                 <TextBlock Text="{Binding ValueDisplay}" VerticalAlignment="Center" Margin="2,0" FontStyle="Italic" Foreground="Blue" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="DisplayAddItemTemplate">
+                 <TextBlock Text="{Binding NodeName}" VerticalAlignment="Center" Margin="2,0" FontStyle="Italic" Foreground="Gray" />
+            </DataTemplate>
+            
+            <DataTemplate x:Key="DisplaySchemaOnlyTemplate">
+                 <TextBlock Text="{Binding ValueDisplay}" VerticalAlignment="Center" Margin="2,0" FontStyle="Italic" Foreground="DarkGray" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="EditStringTemplate">
+                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="EditNumberTemplate">
+                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center" HorizontalAlignment="Left" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="EditBooleanTemplate">
+                <CheckBox IsChecked="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" HorizontalAlignment="Left" />
+            </DataTemplate>
+            
+            <DataTemplate x:Key="EditEnumTemplate">
+                <ComboBox ItemsSource="{Binding SchemaContextNode.AllowedValues}" 
+                          SelectedItem="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" 
+                          IsEditable="False" VerticalAlignment="Center"/>
+            </DataTemplate>
+
+            <DataTemplate x:Key="EditRefTemplate">
+                 <TextBox Text="{Binding EditValue, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="EditAddItemTemplate">
+                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="EditSchemaOnlyTemplate">
+                <TextBox Text="{Binding EditValue, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center" />
+            </DataTemplate>
+            
+            <views:NodeValueTemplateSelector x:Key="NodeValueTemplateSelector" 
+                ModalEditorButtonTemplate="{StaticResource ModalEditorButtonTemplate}"
+                DisplayStringTemplate="{StaticResource DisplayStringTemplate}"
+                DisplayNumberTemplate="{StaticResource DisplayNumberTemplate}"
+                DisplayBooleanTemplate="{StaticResource DisplayBooleanTemplate}"
+                DisplayEnumTemplate="{StaticResource DisplayEnumTemplate}"
+                DisplayRefTemplate="{StaticResource DisplayRefTemplate}"
+                DisplayAddItemTemplate="{StaticResource DisplayAddItemTemplate}"
+                DisplaySchemaOnlyTemplate="{StaticResource DisplaySchemaOnlyTemplate}"
+                EditStringTemplate="{StaticResource EditStringTemplate}"
+                EditNumberTemplate="{StaticResource EditNumberTemplate}"
+                EditBooleanTemplate="{StaticResource EditBooleanTemplate}"
+                EditEnumTemplate="{StaticResource EditEnumTemplate}"
+                EditRefTemplate="{StaticResource EditRefTemplate}"
+                EditAddItemTemplate="{StaticResource EditAddItemTemplate}"
+                EditSchemaOnlyTemplate="{StaticResource EditSchemaOnlyTemplate}" />
+        </ResourceDictionary>
     </Window.Resources>
 
     <Grid>

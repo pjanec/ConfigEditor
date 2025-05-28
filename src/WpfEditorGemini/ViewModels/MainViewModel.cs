@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using JsonConfigEditor.Wpf.Services;
+using JsonConfigEditor.Contracts.Editors;
 
 namespace JsonConfigEditor.ViewModels
 {
@@ -65,6 +66,7 @@ namespace JsonConfigEditor.ViewModels
         public ICommand FindNextCommand { get; }
         public ICommand FindPreviousCommand { get; }
         public ICommand LoadSchemaCommand { get; }
+        public ICommand OpenModalEditorCommand { get; }
 
         // --- Public Properties ---
 
@@ -251,6 +253,7 @@ namespace JsonConfigEditor.ViewModels
             FindNextCommand = new RelayCommand(ExecuteFindNext, CanExecuteFind);
             FindPreviousCommand = new RelayCommand(ExecuteFindPrevious, CanExecuteFind);
             LoadSchemaCommand = new RelayCommand(ExecuteLoadSchema);
+            OpenModalEditorCommand = new RelayCommand(ExecuteOpenModalEditor, CanExecuteOpenModalEditor);
 
             // Initialize with empty document
             InitializeEmptyDocument();
@@ -388,6 +391,51 @@ namespace JsonConfigEditor.ViewModels
         private bool CanExecuteFind()
         {
             return !string.IsNullOrEmpty(SearchText);
+        }
+
+        private bool CanExecuteOpenModalEditor(object? parameter)
+        {
+            var vm = parameter as DataGridRowItemViewModel;
+            return vm?.ModalEditorInstance != null;
+        }
+
+        private void ExecuteOpenModalEditor(object? parameter)
+        {
+            var vm = parameter as DataGridRowItemViewModel;
+            if (vm == null || vm.ModalEditorInstance == null)
+                return;
+
+            IValueEditor editor = vm.ModalEditorInstance;
+            object viewModelForEditor = vm; // The DataGridRowItemViewModel itself is passed as context
+
+            // --- Placeholder for Modal Dialog Logic ---
+            // 1. Create the editor control: FrameworkElement? editorControl = editor.CreateEditControl(viewModelForEditor);
+            //    If editorControl is null, perhaps show an error or do nothing.
+            // 2. Create a new Window (or a custom modal dialog UserControl).
+            // 3. Set the editorControl as the content of this new Window/UserControl.
+            // 4. Configure the Window (Title, SizeToContent, ShowInTaskbar=false, Owner, etc.).
+            // 5. Show the Window as a dialog: window.ShowDialog();
+            // 6. Handle the result of ShowDialog(). If true (e.g., user clicked OK):
+            //    - The custom editor control itself should have updated vm.EditValue.
+            //    - Call vm.CommitEdit() to attempt to save the value to the DOM.
+            //    - vm.IsInEditMode = false; // Exit edit mode for the row
+            // If false (e.g., user clicked Cancel or closed the dialog):
+            //    - vm.CancelEdit(); // Or simply revert vm.EditValue if the editor didn't change it until commit.
+            //    - vm.IsInEditMode = false;
+
+            MessageBox.Show($"Attempting to open modal editor for: {vm.NodeName}\nEditor Type: {editor.GetType().Name}\nThis is a placeholder. Actual modal dialog logic needs to be implemented here.", 
+                            "Open Modal Editor", MessageBoxButton.OK, MessageBoxImage.Information);
+            
+            // Example of how the editor might be used (actual dialog logic is more complex)
+            // var editorControl = editor.CreateEditControl(viewModelForEditor);
+            // if (editorControl != null) {
+            //     // Code to host editorControl in a new modal window...
+            //     // bool? dialogResult = new ModalWindow(editorControl).ShowDialog();
+            //     // if (dialogResult == true) {
+            //     //     vm.CommitEdit();
+            //     // }
+            //     // vm.IsInEditMode = false;
+            // }
         }
 
         private async void ExecuteLoadSchema()

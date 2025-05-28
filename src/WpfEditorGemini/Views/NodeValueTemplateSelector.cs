@@ -41,19 +41,19 @@ namespace JsonConfigEditor.Views
                 return base.SelectTemplate(item, container);
 
             Type? targetType = vm.SchemaContextNode?.ClrType;
+            DataTemplate? customTemplate = null;
 
             if (UiRegistry != null && targetType != null)
             {
-                if (!vm.IsInEditMode || !vm.IsEditable)
+                if (!vm.IsInEditMode || !vm.IsEditable) // DISPLAY MODE
                 {
                     IValueRenderer? customRenderer = UiRegistry.GetValueRenderer(targetType);
                     if (customRenderer != null)
                     {
-                        FrameworkElement? control = customRenderer.CreateDisplayControl(vm);
-                        if (control != null) return CreateDataTemplateForControl(vm, control, false);
+                        customTemplate = customRenderer.GetDisplayTemplate(vm);
                     }
                 }
-                else
+                else // EDIT MODE
                 {
                     var editorInfo = UiRegistry.GetValueEditor(targetType);
                     if (editorInfo?.Editor != null)
@@ -61,17 +61,19 @@ namespace JsonConfigEditor.Views
                         if (editorInfo.Value.RequiresModal)
                         {
                             vm.ModalEditorInstance = editorInfo.Value.Editor;
-                            return ModalEditorButtonTemplate;
+                            return ModalEditorButtonTemplate; // This remains a specific template
                         }
                         else
                         {
-                            FrameworkElement? control = editorInfo.Value.Editor.CreateEditControl(vm);
-                            if (control != null) return CreateDataTemplateForControl(vm, control, true);
+                            customTemplate = editorInfo.Value.Editor.GetEditTemplate(vm);
                         }
                     }
                 }
             }
 
+            if (customTemplate != null) return customTemplate;
+
+            // Fallback to existing logic if no custom UI component found or UiRegistry not set
             if (!vm.IsInEditMode || !vm.IsEditable)
             {
                 if (vm.IsAddItemPlaceholder)
@@ -127,22 +129,6 @@ namespace JsonConfigEditor.Views
 
                 return EditStringTemplate;
             }
-        }
-
-        private DataTemplate CreateDataTemplateForControl(DataGridRowItemViewModel vm, FrameworkElement control, bool isEditMode)
-        {
-            var contentPresenter = new FrameworkElementFactory(typeof(ContentPresenter));
-            if (isEditMode)
-            {
-                vm.DynamicEditControl = control; 
-                contentPresenter.SetBinding(ContentPresenter.ContentProperty, new System.Windows.Data.Binding(nameof(DataGridRowItemViewModel.DynamicEditControl)));
-            }
-            else
-            {
-                vm.DynamicDisplayControl = control; 
-                contentPresenter.SetBinding(ContentPresenter.ContentProperty, new System.Windows.Data.Binding(nameof(DataGridRowItemViewModel.DynamicDisplayControl)));
-            }
-            return new DataTemplate { VisualTree = contentPresenter };
         }
     }
 } 

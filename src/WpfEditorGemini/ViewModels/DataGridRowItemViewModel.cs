@@ -35,8 +35,6 @@ namespace JsonConfigEditor.ViewModels
 
         // Added private fields for new properties
         private IValueEditor? _modalEditorInstance;
-        private FrameworkElement? _dynamicEditControl;
-        private FrameworkElement? _dynamicDisplayControl;
 
         // --- Constructor for actual DomNodes ---
         public DataGridRowItemViewModel(DomNode domNode, SchemaNode? schemaContextNode, MainViewModel parentViewModel)
@@ -486,26 +484,6 @@ namespace JsonConfigEditor.ViewModels
             set
             {
                 _modalEditorInstance = value;
-                OnPropertyChanged();
-            }
-        }
-
-        public FrameworkElement? DynamicEditControl
-        {
-            get => _dynamicEditControl;
-            set
-            {
-                _dynamicEditControl = value;
-                OnPropertyChanged();
-            }
-        }
-
-        public FrameworkElement? DynamicDisplayControl
-        { 
-            get => _dynamicDisplayControl;
-            set
-            {
-                _dynamicDisplayControl = value;
                 OnPropertyChanged();
             }
         }

@@ -13,13 +13,13 @@ namespace JsonConfigEditor.Contracts.Editors
     public interface IValueEditor
     {
         /// <summary>
-        /// Creates or provides a FrameworkElement to edit the value of the DomNode.
-        /// This control will be hosted within the DataGrid cell (or a modal if RequiresModal is true).
-        /// The FrameworkElement should bind to properties like 'EditValue' on the provided viewModel.
+        /// Gets a DataTemplate to edit the value of the DomNode.
+        /// This template will be used for the DataGrid cell content when in edit mode (unless RequiresModal is true).
+        /// The DataTemplate should bind to properties like 'EditValue' on the provided viewModel.
         /// </summary>
         /// <param name="viewModel">The ViewModel of the DataGrid row item, providing access to DomNode, SchemaNode, EditValue, etc.</param>
-        /// <returns>A FrameworkElement to be used for editing the value, or null to use a default editor.</returns>
-        FrameworkElement? CreateEditControl(object viewModel); // viewModel will be DataGridRowItemViewModel
+        /// <returns>A DataTemplate to be used for editing the value, or null to use a default editor.</returns>
+        DataTemplate? GetEditTemplate(object viewModel); // viewModel will be DataGridRowItemViewModel
 
         /// <summary>
         /// Gets a value indicating whether this custom editor requires a modal dialog for editing,

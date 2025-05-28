@@ -1,7 +1,5 @@
 // --- File: JsonConfigEditor.Contracts/Rendering/IValueRenderer.cs ---
-using System.Windows; // For FrameworkElement or DataTemplate
-using JsonConfigEditor.Core.Dom;
-using JsonConfigEditor.Core.Schema;
+using System.Windows; // For DataTemplate
 
 namespace JsonConfigEditor.Contracts.Rendering
 {
@@ -14,12 +12,12 @@ namespace JsonConfigEditor.Contracts.Rendering
     public interface IValueRenderer
     {
         /// <summary>
-        /// Creates or provides a FrameworkElement to display the value of the DomNode.
-        /// This control will be hosted within the DataGrid cell.
-        /// The FrameworkElement should ideally bind to properties of the provided viewModel.
+        /// Gets a DataTemplate to display the value of the DomNode.
+        /// This template will be used for the DataGrid cell content.
+        /// The DataTemplate should typically bind to properties of the provided viewModel.
         /// </summary>
         /// <param name="viewModel">The ViewModel of the DataGrid row item, providing access to DomNode, SchemaNode, and other states.</param>
-        /// <returns>A FrameworkElement to be used for displaying the value, or null to use default rendering.</returns>
-        FrameworkElement? CreateDisplayControl(object viewModel); // viewModel will be DataGridRowItemViewModel
+        /// <returns>A DataTemplate to be used for displaying the value, or null to use default rendering.</returns>
+        DataTemplate? GetDisplayTemplate(object viewModel); // viewModel will be DataGridRowItemViewModel
     }
 } 
