@@ -499,13 +499,24 @@ namespace JsonConfigEditor.ViewModels
         {
             if (_searchResults.Count == 0) return;
             _currentSearchIndex = (_currentSearchIndex + 1) % _searchResults.Count;
-            HighlightSearchResults();
-            ScrollToCurrentSearchResult();
+            
+            var targetVm = _searchResults[_currentSearchIndex].Item;
+            SelectedGridItem = targetVm; // Select the new current search result
+            ExpandAncestors(targetVm);   // Expand its parents
+            // ScrollToCurrentSearchResult(); // This might be needed if View doesn't auto-scroll on selection
+                                          // And its internal logic would need to use SelectedGridItem.
+            // No call to HighlightSearchResults() needed as all results are already highlighted by PerformSearch.
         }
 
         private void ExecuteFindPrevious()
         {
             if (_searchResults.Count == 0) return;
+            _currentSearchIndex = (_currentSearchIndex - 1 + _searchResults.Count) % _searchResults.Count;
+            
+            var targetVm = _searchResults[_currentSearchIndex].Item;
+            SelectedGridItem = targetVm; // Select the new current search result
+            ExpandAncestors(targetVm);   // Expand its parents
+            // ScrollToCurrentSearchResult(); // Similar to above
         }
 
         private bool CanExecuteFind()
@@ -1400,28 +1411,81 @@ namespace JsonConfigEditor.ViewModels
 
         private void PerformSearch()
         {
-            // Clear previous highlights
-            foreach (var item in _persistentVmMap.Values)
-                item.IsHighlightedInSearch = false;
+            // Clear previous highlights from all items 
+            // Iterate through _persistentVmMap.Values if it represents all possible VMs that could be highlighted.
+            // Or, if FlatItemsSource is reliably up-to-date before search, iterate that.
+            // For simplicity and to ensure all potentially highlighted items are cleared, let's iterate _persistentVmMap
+            foreach (var vm in _persistentVmMap.Values) // Assuming _persistentVmMap holds relevant VMs
+            {
+                vm.IsHighlightedInSearch = false;
+            }
+            // Also clear from any VMs that might be in FlatItemsSource but not in _persistentVmMap (e.g. schema-only not yet materialized but somehow was highlighted)
+            foreach (var vm in FlatItemsSource)
+            {
+                vm.IsHighlightedInSearch = false; 
+            }
+
             _searchResults.Clear();
             _currentSearchIndex = -1;
-            if (string.IsNullOrEmpty(SearchText)) return;
-            BuildSearchIndex(SearchText, _searchResults);
-            if (_searchResults.Count > 0)
+
+            if (string.IsNullOrEmpty(SearchText)) 
             {
-                _currentSearchIndex = 0;
-                HighlightSearchResults();
-                ScrollToCurrentSearchResult();
+                // RefreshFlatList(); // Consider if a full refresh is needed to clear UI completely or if loops above are enough
+                return;
+            }
+            
+            BuildSearchIndex(SearchText, _searchResults); // This populates _searchResults
+
+            if (_searchResults.Any())
+            {
+                _currentSearchIndex = 0; // Set current index to the first result
+                HighlightAllSearchResults(); // New method/logic to highlight all results
+                
+                // Select and expand the first result
+                var firstResultVm = _searchResults[_currentSearchIndex].Item;
+                SelectedGridItem = firstResultVm;
+                ExpandAncestors(firstResultVm);
+                // TODO: Notify View to scroll SelectedGridItem into view
+            }
+            // No need to call RefreshFlatList() here if highlight changes on VMs trigger UI updates automatically.
+            // If not, RefreshFlatList() might be needed after changing IsHighlightedInSearch states.
+        }
+
+        // Renamed and modified to highlight ALL search results
+        private void HighlightAllSearchResults() 
+        {
+            if (!_searchResults.Any()) return;
+
+            var resultSetVMs = new HashSet<DataGridRowItemViewModel>(_searchResults.Select(r => r.Item));
+
+            // Iterate through all displayable items and set their highlight state
+            // This ensures that even items not currently in _persistentVmMap but visible (e.g. schema-only) are handled.
+            foreach (var vmInList in FlatItemsSource)
+            {
+                vmInList.IsHighlightedInSearch = resultSetVMs.Contains(vmInList);
+            }
+            // Also ensure VMs in persistent map that might not be in FlatItemsSource currently (due to filtering/virtualization) are updated
+            foreach (var vmInMap in _persistentVmMap.Values)
+            {
+                if (resultSetVMs.Contains(vmInMap))
+                {
+                    vmInMap.IsHighlightedInSearch = true;
+                }
+                else
+                {
+                     vmInMap.IsHighlightedInSearch = false; // Ensure non-results are cleared
+                }
             }
         }
 
-        private void HighlightSearchResults()
+        // This method is kept for jumping, but highlighting is now global
+        private void HighlightSearchResults() 
         {
-            for (int i = 0; i < _searchResults.Count; i++)
-            {
-                var vm = _searchResults[i].Item;
-                vm.IsHighlightedInSearch = (i == _currentSearchIndex);
-            }
+            // This method used to highlight only the _currentSearchIndex.
+            // Its original logic is now superseded by HighlightAllSearchResults() 
+            // and PerformSearch() directly setting IsHighlightedInSearch on all results.
+            // We can leave this empty or remove calls to it if ExecuteFindNext/Previous don't need it.
+            // For now, let's assume ExecuteFindNext/Previous will directly select and expand, relying on global highlighting.
         }
 
         private void ScrollToCurrentSearchResult()
