@@ -14,6 +14,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using JsonConfigEditor.Wpf.Services;
 
 namespace JsonConfigEditor.ViewModels
 {
@@ -29,6 +30,7 @@ namespace JsonConfigEditor.ViewModels
         private readonly IDomNodeToJsonSerializer _jsonSerializer;
         private readonly ISchemaLoaderService _schemaLoader;
         private readonly ValidationService _validationService;
+        private readonly CustomUIRegistryService _uiRegistry;
 
         // --- Private Fields: Core Data State ---
         private DomNode? _rootDomNode;
@@ -65,6 +67,11 @@ namespace JsonConfigEditor.ViewModels
         public ICommand LoadSchemaCommand { get; }
 
         // --- Public Properties ---
+
+        /// <summary>
+        /// Gets the registry for custom UI components.
+        /// </summary>
+        public CustomUIRegistryService UiRegistry => _uiRegistry;
 
         /// <summary>
         /// Gets the flat list of items to display in the DataGrid.
@@ -228,8 +235,9 @@ namespace JsonConfigEditor.ViewModels
             // Initialize services
             _jsonParser = new JsonDomParser();
             _jsonSerializer = new DomNodeToJsonSerializer();
-            _schemaLoader = new SchemaLoaderService();
             _validationService = new ValidationService();
+            _uiRegistry = new CustomUIRegistryService();
+            _schemaLoader = new SchemaLoaderService(_uiRegistry);
 
             // Initialize commands
             NewFileCommand = new RelayCommand(ExecuteNewFile);

@@ -3,6 +3,11 @@ using JsonConfigEditor.Core.Dom;
 using System.Windows;
 using System.Windows.Controls;
 using System.Text.Json;
+using JsonConfigEditor.Wpf.Services;
+using JsonConfigEditor.Contracts.Rendering;
+using JsonConfigEditor.Contracts.Editors;
+using JsonConfigEditor.Core.Schema;
+using System;
 
 namespace JsonConfigEditor.Views
 {
@@ -16,6 +21,7 @@ namespace JsonConfigEditor.Views
         public DataTemplate? DisplayRefTemplate { get; set; }
         public DataTemplate? DisplaySchemaOnlyTemplate { get; set; }
         public DataTemplate? DisplayAddItemTemplate { get; set; }
+        public DataTemplate? DisplayEnumTemplate { get; set; }
 
         public DataTemplate? EditStringTemplate { get; set; }
         public DataTemplate? EditBooleanTemplate { get; set; }
@@ -25,12 +31,47 @@ namespace JsonConfigEditor.Views
         public DataTemplate? EditSchemaOnlyTemplate { get; set; }
         public DataTemplate? EditAddItemTemplate { get; set; }
 
+        public DataTemplate? ModalEditorButtonTemplate { get; set; }
+
+        public CustomUIRegistryService? UiRegistry { get; set; }
+
         public override DataTemplate? SelectTemplate(object item, DependencyObject container)
         {
             if (item is not DataGridRowItemViewModel vm)
                 return base.SelectTemplate(item, container);
 
-            // If not in edit mode or not editable, select display template
+            Type? targetType = vm.SchemaContextNode?.ClrType;
+
+            if (UiRegistry != null && targetType != null)
+            {
+                if (!vm.IsInEditMode || !vm.IsEditable)
+                {
+                    IValueRenderer? customRenderer = UiRegistry.GetValueRenderer(targetType);
+                    if (customRenderer != null)
+                    {
+                        FrameworkElement? control = customRenderer.CreateDisplayControl(vm);
+                        if (control != null) return CreateDataTemplateForControl(vm, control, false);
+                    }
+                }
+                else
+                {
+                    var editorInfo = UiRegistry.GetValueEditor(targetType);
+                    if (editorInfo?.Editor != null)
+                    {
+                        if (editorInfo.Value.RequiresModal)
+                        {
+                            vm.ModalEditorInstance = editorInfo.Value.Editor;
+                            return ModalEditorButtonTemplate;
+                        }
+                        else
+                        {
+                            FrameworkElement? control = editorInfo.Value.Editor.CreateEditControl(vm);
+                            if (control != null) return CreateDataTemplateForControl(vm, control, true);
+                        }
+                    }
+                }
+            }
+
             if (!vm.IsInEditMode || !vm.IsEditable)
             {
                 if (vm.IsAddItemPlaceholder)
@@ -60,7 +101,7 @@ namespace JsonConfigEditor.Views
 
                 return DisplayStringTemplate;
             }
-            else // Edit mode
+            else
             {
                 if (vm.IsAddItemPlaceholder)
                     return EditAddItemTemplate ?? EditStringTemplate;
@@ -70,7 +111,6 @@ namespace JsonConfigEditor.Views
 
                 if (vm.DomNode is ValueNode valueNode)
                 {
-                    // Check schema first for enum/allowed values
                     if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
                         return EditEnumTemplate ?? EditStringTemplate;
 
@@ -87,6 +127,22 @@ namespace JsonConfigEditor.Views
 
                 return EditStringTemplate;
             }
+        }
+
+        private DataTemplate CreateDataTemplateForControl(DataGridRowItemViewModel vm, FrameworkElement control, bool isEditMode)
+        {
+            var contentPresenter = new FrameworkElementFactory(typeof(ContentPresenter));
+            if (isEditMode)
+            {
+                vm.DynamicEditControl = control; 
+                contentPresenter.SetBinding(ContentPresenter.ContentProperty, new System.Windows.Data.Binding(nameof(DataGridRowItemViewModel.DynamicEditControl)));
+            }
+            else
+            {
+                vm.DynamicDisplayControl = control; 
+                contentPresenter.SetBinding(ContentPresenter.ContentProperty, new System.Windows.Data.Binding(nameof(DataGridRowItemViewModel.DynamicDisplayControl)));
+            }
+            return new DataTemplate { VisualTree = contentPresenter };
         }
     }
 } 

@@ -8,6 +8,10 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using JsonConfigEditor.Contracts.Rendering;
+using JsonConfigEditor.Contracts.Editors;
+using JsonConfigEditor.Contracts.Tooltips;
+using JsonConfigEditor.Wpf.Services;
 
 namespace JsonConfigEditor.Core.SchemaLoading
 {
@@ -19,6 +23,16 @@ namespace JsonConfigEditor.Core.SchemaLoading
     {
         private readonly Dictionary<string, SchemaNode> _rootSchemas = new();
         private readonly List<string> _errorMessages = new();
+        private readonly CustomUIRegistryService _uiRegistry;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SchemaLoaderService"/> class.
+        /// </summary>
+        /// <param name="uiRegistry">The UI registry service for custom renderers and editors.</param>
+        public SchemaLoaderService(CustomUIRegistryService uiRegistry)
+        {
+            _uiRegistry = uiRegistry ?? throw new ArgumentNullException(nameof(uiRegistry));
+        }
 
         /// <summary>
         /// Gets the loaded root schemas keyed by their mount paths.
@@ -41,6 +55,7 @@ namespace JsonConfigEditor.Core.SchemaLoading
             {
                 _rootSchemas.Clear();
                 _errorMessages.Clear();
+                _uiRegistry.ClearRegistry();
 
                 foreach (var assemblyPath in assemblyPaths)
                 {
@@ -154,6 +169,9 @@ namespace JsonConfigEditor.Core.SchemaLoading
                     {
                         ProcessSchemaClass(type, configSchemaAttr);
                     }
+
+                    // Discover and register custom UI components
+                    DiscoverAndRegisterCustomUIComponents(type);
                 }
             }
             catch (Exception ex)
@@ -453,6 +471,57 @@ namespace JsonConfigEditor.Core.SchemaLoading
                    type != typeof(decimal) && 
                    !type.IsEnum &&
                    type != typeof(Guid);
+        }
+
+        /// <summary>
+        /// Discovers and registers custom UI components (renderers, editors, tooltips) from the given type.
+        /// </summary>
+        /// <param name="typeInAssembly">The type to inspect for custom UI attributes.</param>
+        private void DiscoverAndRegisterCustomUIComponents(Type typeInAssembly)
+        {
+            if (!typeInAssembly.IsClass || typeInAssembly.IsAbstract) return;
+
+            // Discover Renderers
+            var rendererAttrs = typeInAssembly.GetCustomAttributes<ValueRendererAttribute>(false);
+            foreach (var attr in rendererAttrs)
+            {
+                if (typeof(IValueRenderer).IsAssignableFrom(typeInAssembly))
+                {
+                    _uiRegistry.RegisterRenderer(attr.TargetClrType, typeInAssembly);
+                }
+                else
+                {
+                    _errorMessages.Add($"UI Discovery Error: Type '{typeInAssembly.FullName}' has ValueRendererAttribute but does not implement IValueRenderer.");
+                }
+            }
+
+            // Discover Editors
+            var editorAttrs = typeInAssembly.GetCustomAttributes<ValueEditorAttribute>(false);
+            foreach (var attr in editorAttrs)
+            {
+                if (typeof(IValueEditor).IsAssignableFrom(typeInAssembly))
+                {
+                    _uiRegistry.RegisterEditor(attr.TargetClrType, typeInAssembly, attr.RequiresModal);
+                }
+                else
+                {
+                    _errorMessages.Add($"UI Discovery Error: Type '{typeInAssembly.FullName}' has ValueEditorAttribute but does not implement IValueEditor.");
+                }
+            }
+
+            // Discover Tooltip Providers
+            var tooltipAttrs = typeInAssembly.GetCustomAttributes<TooltipProviderAttribute>(false);
+            foreach (var attr in tooltipAttrs)
+            {
+                if (typeof(ITooltipProvider).IsAssignableFrom(typeInAssembly))
+                {
+                    _uiRegistry.RegisterTooltipProvider(attr.TargetClrType, typeInAssembly);
+                }
+                else
+                {
+                    _errorMessages.Add($"UI Discovery Error: Type '{typeInAssembly.FullName}' has TooltipProviderAttribute but does not implement ITooltipProvider.");
+                }
+            }
         }
     }
 } 

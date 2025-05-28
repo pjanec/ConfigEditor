@@ -2,6 +2,8 @@ using JsonConfigEditor.Core.Dom;
 using JsonConfigEditor.Core.Schema;
 using System;
 using System.Windows;
+using System.Text.Json;      // For JsonElement
+using JsonConfigEditor.Contracts.Editors;
 
 namespace JsonConfigEditor.ViewModels
 {
@@ -31,6 +33,11 @@ namespace JsonConfigEditor.ViewModels
         private readonly string? _nameOverrideForSchemaOnly; // Name for schema-only property placeholders
         private readonly int _depthForSchemaOnly; // Depth for schema-only/placeholder nodes
 
+        // Added private fields for new properties
+        private IValueEditor? _modalEditorInstance;
+        private FrameworkElement? _dynamicEditControl;
+        private FrameworkElement? _dynamicDisplayControl;
+
         // --- Constructor for actual DomNodes ---
         public DataGridRowItemViewModel(DomNode domNode, SchemaNode? schemaContextNode, MainViewModel parentViewModel)
         {
@@ -39,6 +46,10 @@ namespace JsonConfigEditor.ViewModels
             _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
             _isAddItemPlaceholder = false;
             _isExpandedInternal = (_domNode is ObjectNode || _domNode is ArrayNode) && (_domNode.Depth < 2); // Default expand first few levels
+            // Initialize IsValid based on current validation status if available from MainViewModel
+            // Initialize _editValue based on DomNode
+            if (_domNode is ValueNode vn) { _editValue = vn.Value.ToString(); }
+            else if (_domNode is RefNode rn) { _editValue = rn.ReferencePath ?? string.Empty; }
         }
 
         // --- Constructor for Schema-Only Property Placeholders ---
@@ -51,6 +62,8 @@ namespace JsonConfigEditor.ViewModels
             _depthForSchemaOnly = depth;
             _isAddItemPlaceholder = false;
             _isExpandedInternal = (schemaPropertyNode.NodeType == SchemaNodeType.Object || schemaPropertyNode.NodeType == SchemaNodeType.Array) && (depth < 2);
+            // Initialize _editValue based on DefaultValue for schema-only node
+            _editValue = _schemaContextNode.DefaultValue?.ToString() ?? string.Empty;
         }
 
         // --- Constructor for "Add Item" Array Placeholders ---
@@ -65,6 +78,7 @@ namespace JsonConfigEditor.ViewModels
             _depthForSchemaOnly = depth;
             _isAddItemPlaceholder = true;
             _isExpandedInternal = false; // Placeholders are not expandable
+            _editValue = string.Empty; // No edit value for add item placeholder initially
         }
 
         // --- Public Properties for DataBinding and Logic ---
@@ -113,13 +127,16 @@ namespace JsonConfigEditor.ViewModels
         {
             get
             {
-                string name = _isAddItemPlaceholder ? _nameOverrideForSchemaOnly! :
-                              IsSchemaOnlyNode ? _nameOverrideForSchemaOnly! :
-                              _domNode!.Name;
+                if (_isAddItemPlaceholder) return _nameOverrideForSchemaOnly!;
+                if (IsSchemaOnlyNode) return _nameOverrideForSchemaOnly!;
+                if (_domNode == null) return "(Error: DomNode is null)"; // Should not happen if not placeholder
+
+                string name = _domNode.Name;
 
                 // Determine if parent context is an array
-                bool isParentArray = (_domNode?.Parent is ArrayNode) ||
-                                     (_parentArrayNodeForPlaceholder != null && _isAddItemPlaceholder);
+                bool isParentArray = (_domNode.Parent is ArrayNode) ||
+                                     (_parentArrayNodeForPlaceholder != null && _isAddItemPlaceholder); 
+                                     // TODO: (IsSchemaOnlyNode && ParentViewModel.GetParentSchemaForSchemaOnlyNode(this)?.NodeType == SchemaNodeType.Array); // Conceptual parent schema lookup
 
                 if (isParentArray && int.TryParse(name, out _)) // If name is numeric index
                 {
@@ -138,36 +155,32 @@ namespace JsonConfigEditor.ViewModels
         {
             get
             {
-                if (IsDomNodePresent && _domNode != null) // DomNode is present
+                if (_isAddItemPlaceholder) return ""; // Placeholder text handled by NodeName or specific template
+                if (IsSchemaOnlyNode)
                 {
-                    return _domNode switch
-                    {
-                        ValueNode vn => vn.GetDisplayValue(),
-                        RefNode rn => rn.GetDisplayValue(),
-                        ArrayNode an => $"[{an.Count} items]",
-                        ObjectNode on => "[Object]",
-                        _ => string.Empty
-                    };
+                    // Display default value or type hint for schema-only nodes
+                    if (_schemaContextNode.DefaultValue != null)
+                        return _schemaContextNode.DefaultValue.ToString() ?? "(null default)";
+                    return $"(Add {_schemaContextNode.ClrType.Name})";
                 }
-                else if (_isAddItemPlaceholder)
+                if (_domNode is ValueNode vn)
                 {
-                    return "(Click to add item)";
+                    if (vn.Value.ValueKind == JsonValueKind.Null) return "(null)";
+                    return vn.Value.ToString();
                 }
-                else // Schema-only node
+                if (_domNode is RefNode rn)
                 {
-                    // Display default value from SchemaContextNode.DefaultValue
-                    if (_schemaContextNode?.DefaultValue != null)
-                    {
-                        return _schemaContextNode.DefaultValue.ToString() ?? "";
-                    }
-                    
-                    return _schemaContextNode?.NodeType switch
-                    {
-                        SchemaNodeType.Array => "[Array]",
-                        SchemaNodeType.Object => "[Object]",
-                        _ => "(default)"
-                    };
+                    return rn.ReferencePath ?? "(empty ref)";
                 }
+                if (_domNode is ObjectNode on)
+                {
+                    return "[Object]"; // Or count of items: on.Children.Count
+                }
+                if (_domNode is ArrayNode an)
+                {
+                    return $"[{an.Items.Count} items]";
+                }
+                return "(unknown)";
             }
         }
 
@@ -464,6 +477,37 @@ namespace JsonConfigEditor.ViewModels
             OnPropertyChanged(nameof(ValueDisplay));
             OnPropertyChanged(nameof(IsDomNodePresent));
             OnPropertyChanged(nameof(IsEditable));
+        }
+
+        // Added public properties
+        public IValueEditor? ModalEditorInstance
+        {
+            get => _modalEditorInstance;
+            set
+            {
+                _modalEditorInstance = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public FrameworkElement? DynamicEditControl
+        {
+            get => _dynamicEditControl;
+            set
+            {
+                _dynamicEditControl = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public FrameworkElement? DynamicDisplayControl
+        { 
+            get => _dynamicDisplayControl;
+            set
+            {
+                _dynamicDisplayControl = value;
+                OnPropertyChanged();
+            }
         }
     }
 } 
