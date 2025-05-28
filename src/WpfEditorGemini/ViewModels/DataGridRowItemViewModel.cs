@@ -46,9 +46,14 @@ namespace JsonConfigEditor.ViewModels
             _isAddItemPlaceholder = false;
             _isExpandedInternal = (_domNode is ObjectNode || _domNode is ArrayNode) && (_domNode.Depth < 2); // Default expand first few levels
 
+            if (_schemaContextNode != null)
+            {
+                // ModalEditorInstance = _parentViewModel.UiRegistry.ResolveEditor(_schemaContextNode); // You will need to implement ResolveEditor and uncomment this
+            }
+
             if (_domNode is ValueNode vn) { _editValue = vn.Value.ToString(); }
             else if (_domNode is RefNode rn) { _editValue = rn.ReferencePath ?? string.Empty; }
-            System.Diagnostics.Debug.WriteLine($"DGRIVM Constructor (DOM): NodeName: {NodeName}, Path: {_domNode?.Path}, Schema: {_schemaContextNode?.Name}, IsEditable: {IsEditable}, IsSchemaOnly: {IsSchemaOnlyNode}");
+            System.Diagnostics.Debug.WriteLine($"DGRIVM Constructor (DOM): NodeName: {NodeName}, Path: {_domNode?.Path}, Schema: {_schemaContextNode?.Name}, IsEditable: {IsEditable}, IsSchemaOnly: {IsSchemaOnlyNode}, ModalEditor: {ModalEditorInstance?.GetType().Name}");
         }
 
         // --- Constructor for Schema-Only Property Placeholders ---
@@ -68,8 +73,8 @@ namespace JsonConfigEditor.ViewModels
             _editValue = _schemaContextNode.DefaultValue?.ToString() ?? string.Empty;
             
             // Set ModalEditorInstance for schema-only nodes as well
-            // ModalEditorInstance = _parentViewModel.UiRegistry.GetEditor(_schemaContextNode); // Linter error: GetEditor not found
-            System.Diagnostics.Debug.WriteLine($"DGRIVM Constructor (Schema-Only): NodeName: {NodeName}, PathKey: {_pathKeyForSchemaOnlyNode}, Schema: {_schemaContextNode?.Name}, IsEditable: {IsEditable}, IsSchemaOnly: {IsSchemaOnlyNode}");
+            // ModalEditorInstance = _parentViewModel.UiRegistry.ResolveEditor(_schemaContextNode); // You will need to implement ResolveEditor and uncomment this
+            System.Diagnostics.Debug.WriteLine($"DGRIVM Constructor (Schema-Only): NodeName: {NodeName}, PathKey: {_pathKeyForSchemaOnlyNode}, Schema: {_schemaContextNode?.Name}, IsEditable: {IsEditable}, IsSchemaOnly: {IsSchemaOnlyNode}, ModalEditor: {ModalEditorInstance?.GetType().Name}");
         }
 
         // --- Constructor for "Add Item" Array Placeholders ---
