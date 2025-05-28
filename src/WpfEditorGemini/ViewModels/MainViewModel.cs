@@ -47,6 +47,10 @@ namespace JsonConfigEditor.ViewModels
         private List<SearchResult> _searchResults = new();
         private int _currentSearchIndex = -1;
 
+        // --- Private Fields: Undo/Redo ---
+        private readonly Stack<EditOperation> _undoStack = new();
+        private readonly Stack<EditOperation> _redoStack = new();
+
         // --- Commands ---
         public ICommand NewFileCommand { get; }
         public ICommand OpenFileCommand { get; }
@@ -157,6 +161,64 @@ namespace JsonConfigEditor.ViewModels
                 var dirtyIndicator = IsDirty ? "*" : "";
                 return $"JSON Configuration Editor - {fileName}{dirtyIndicator}";
             }
+        }
+
+        // --- Private class EditOperation ---
+        private abstract class EditOperation
+        {
+            public abstract void Undo(MainViewModel vm);
+            public abstract void Redo(MainViewModel vm);
+        }
+
+        private sealed class ValueEditOperation : EditOperation
+        {
+            private readonly DomNode _node;
+            private readonly System.Text.Json.JsonElement _oldValue;
+            private readonly System.Text.Json.JsonElement _newValue;
+
+            public ValueEditOperation(DomNode node, System.Text.Json.JsonElement oldValue, System.Text.Json.JsonElement newValue)
+            {
+                _node = node;
+                _oldValue = oldValue;
+                _newValue = newValue;
+            }
+
+            public override void Undo(MainViewModel vm) => vm.SetNodeValue(_node, _oldValue);
+            public override void Redo(MainViewModel vm) => vm.SetNodeValue(_node, _newValue);
+        }
+
+        private sealed class AddNodeOperation : EditOperation
+        {
+            private readonly DomNode _parent;
+            private readonly DomNode _newNode;
+            private readonly string _name;
+
+            public AddNodeOperation(DomNode parent, DomNode newNode, string name)
+            {
+                _parent = parent;
+                _newNode = newNode;
+                _name = name;
+            }
+
+            public override void Undo(MainViewModel vm) => vm.RemoveNode(_newNode);
+            public override void Redo(MainViewModel vm) => vm.AddNode(_parent, _newNode, _name);
+        }
+
+        private sealed class RemoveNodeOperation : EditOperation
+        {
+            private readonly DomNode _parent;
+            private readonly DomNode _removedNode;
+            private readonly string _name;
+
+            public RemoveNodeOperation(DomNode parent, DomNode removedNode, string name)
+            {
+                _parent = parent;
+                _removedNode = removedNode;
+                _name = name;
+            }
+
+            public override void Undo(MainViewModel vm) => vm.AddNode(_parent, _removedNode, _name);
+            public override void Redo(MainViewModel vm) => vm.RemoveNode(_removedNode);
         }
 
         // --- Constructor ---
@@ -275,25 +337,27 @@ namespace JsonConfigEditor.ViewModels
 
         private void ExecuteUndo()
         {
-            // TODO: Implement undo functionality
+            if (_undoStack.Count == 0) return;
+            var op = _undoStack.Pop();
+            op.Undo(this);
+            _redoStack.Push(op);
+            RefreshFlatList();
+            OnPropertyChanged(nameof(WindowTitle));
         }
 
-        private bool CanExecuteUndo()
-        {
-            // TODO: Check if undo is available
-            return false;
-        }
+        private bool CanExecuteUndo() => _undoStack.Count > 0;
 
         private void ExecuteRedo()
         {
-            // TODO: Implement redo functionality
+            if (_redoStack.Count == 0) return;
+            var op = _redoStack.Pop();
+            op.Redo(this);
+            _undoStack.Push(op);
+            RefreshFlatList();
+            OnPropertyChanged(nameof(WindowTitle));
         }
 
-        private bool CanExecuteRedo()
-        {
-            // TODO: Check if redo is available
-            return false;
-        }
+        private bool CanExecuteRedo() => _redoStack.Count > 0;
 
         private void ExecuteFocusSearch()
         {
@@ -311,9 +375,6 @@ namespace JsonConfigEditor.ViewModels
         private void ExecuteFindPrevious()
         {
             if (_searchResults.Count == 0) return;
-            _currentSearchIndex = (_currentSearchIndex - 1 + _searchResults.Count) % _searchResults.Count;
-            HighlightSearchResults();
-            ScrollToCurrentSearchResult();
         }
 
         private bool CanExecuteFind()
@@ -491,15 +552,8 @@ namespace JsonConfigEditor.ViewModels
         {
             try
             {
-                // Create new DOM node based on edit value and schema
                 var newNode = CreateNodeFromValue(editValue, parentArray.Items.Count.ToString(), parentArray, itemSchema);
-                parentArray.AddItem(newNode);
-
-                // Update mappings
-                _domToSchemaMap[newNode] = itemSchema;
-                
-                IsDirty = true;
-                RefreshFlatList();
+                RecordEditOperation(new AddNodeOperation(parentArray, newNode, newNode.Name));
                 return true;
             }
             catch
@@ -513,13 +567,18 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         internal bool MaterializeSchemaOnlyNode(DataGridRowItemViewModel schemaOnlyItem, string editValue)
         {
-            // This is a complex operation that would need to:
-            // 1. Find the parent DOM node
-            // 2. Create the new DOM node with the edit value
-            // 3. Add it to the parent
-            // 4. Update mappings
-            // For now, return false (not implemented)
-            return false;
+            if (schemaOnlyItem.DomNode?.Parent == null || schemaOnlyItem.SchemaContextNode == null) return false;
+
+            try
+            {
+                var newNode = CreateNodeFromValue(editValue, schemaOnlyItem.NodeName, schemaOnlyItem.DomNode.Parent, schemaOnlyItem.SchemaContextNode);
+                RecordEditOperation(new AddNodeOperation(schemaOnlyItem.DomNode.Parent, newNode, schemaOnlyItem.NodeName));
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         // --- Private Methods ---
@@ -759,16 +818,16 @@ namespace JsonConfigEditor.ViewModels
         }
 
         private void ScrollToCurrentSearchResult()
-        {
-            if (_currentSearchIndex >= 0 && _currentSearchIndex < _searchResults.Count)
             {
+            if (_currentSearchIndex >= 0 && _currentSearchIndex < _searchResults.Count)
+                {
                 var vm = _searchResults[_currentSearchIndex].Item;
                 // Expand parents if needed
                 ExpandAncestors(vm);
                 // Scroll into view (if UI supports it)
                 // (You may need to raise an event or call a method in the view)
+                }
             }
-        }
 
         private void ExpandAncestors(DataGridRowItemViewModel vm)
         {
@@ -845,6 +904,65 @@ namespace JsonConfigEditor.ViewModels
                 Item = item;
                 Path = path;
                 IsSchemaOnly = isSchemaOnly;
+            }
+        }
+
+        // --- Undo/Redo Methods ---
+        private void RecordEditOperation(EditOperation op)
+        {
+            _undoStack.Push(op);
+            _redoStack.Clear();
+            IsDirty = true;
+            OnPropertyChanged(nameof(WindowTitle));
+        }
+
+        // --- Node Edit Methods (used by EditOperation) ---
+        private void SetNodeValue(DomNode node, System.Text.Json.JsonElement value)
+        {
+            if (node is ValueNode valueNode)
+            {
+                var oldValue = valueNode.Value;
+                valueNode.Value = value;
+                RecordEditOperation(new ValueEditOperation(node, oldValue, value));
+                OnNodeValueChanged(_persistentVmMap[node]);
+            }
+        }
+
+        private void AddNode(DomNode parent, DomNode newNode, string name)
+        {
+            if (parent is ObjectNode obj)
+            {
+                obj.AddChild(name, newNode);
+                _domToSchemaMap[newNode] = _schemaLoader.FindSchemaForPath(newNode.Path);
+                var vm = new DataGridRowItemViewModel(newNode, _domToSchemaMap[newNode], this);
+                _persistentVmMap[newNode] = vm;
+                RefreshFlatList();
+            }
+            else if (parent is ArrayNode arr)
+            {
+                arr.AddItem(newNode);
+                _domToSchemaMap[newNode] = _schemaLoader.FindSchemaForPath(newNode.Path);
+                var vm = new DataGridRowItemViewModel(newNode, _domToSchemaMap[newNode], this);
+                _persistentVmMap[newNode] = vm;
+                RefreshFlatList();
+            }
+        }
+
+        private void RemoveNode(DomNode node)
+        {
+            if (node.Parent is ObjectNode obj)
+            {
+                obj.RemoveChild(node.Name);
+                _persistentVmMap.Remove(node);
+                _domToSchemaMap.Remove(node);
+                RefreshFlatList();
+            }
+            else if (node.Parent is ArrayNode arr)
+            {
+                arr.RemoveItem(node);
+                _persistentVmMap.Remove(node);
+                _domToSchemaMap.Remove(node);
+                RefreshFlatList();
             }
         }
     }
