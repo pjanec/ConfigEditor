@@ -177,6 +177,11 @@
             <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="5,0" />
             <TextBox Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" 
                      Width="150" ToolTip="Filter nodes by name" />
+            <Button Command="{Binding ClearFilterCommand}" 
+                    IsEnabled="{Binding CanClearFilter}"
+                    ToolTip="Clear filter">
+                <TextBlock Text="❌" Foreground="Red" FontWeight="Bold" />
+            </Button>
             
             <Separator />
             

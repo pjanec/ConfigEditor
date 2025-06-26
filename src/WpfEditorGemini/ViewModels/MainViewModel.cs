@@ -85,6 +85,7 @@ namespace JsonConfigEditor.ViewModels
         public ICommand FindPreviousCommand { get; }
         public ICommand LoadSchemaCommand { get; }
         public ICommand OpenModalEditorCommand { get; }
+        public ICommand ClearFilterCommand { get; }
         public ICommand DeleteSelectedNodesCommand { get; }
         public ICommand ExpandSelectedRecursiveCommand { get; }
         public ICommand CollapseSelectedRecursiveCommand { get; }
@@ -113,9 +114,15 @@ namespace JsonConfigEditor.ViewModels
                 if (SetProperty(ref _filterText, value))
                 {
                     RefreshFlatList();
+                    OnPropertyChanged(nameof(CanClearFilter));
                 }
             }
         }
+
+        /// <summary>
+        /// Gets whether the filter can be cleared.
+        /// </summary>
+        public bool CanClearFilter => !string.IsNullOrEmpty(FilterText);
 
         /// <summary>
         /// Gets or sets whether to show only nodes with validation issues.
@@ -369,6 +376,7 @@ namespace JsonConfigEditor.ViewModels
             FindPreviousCommand = new RelayCommand(ExecuteFindPrevious, CanExecuteFind);
             LoadSchemaCommand = new RelayCommand(ExecuteLoadSchema);
             OpenModalEditorCommand = new RelayCommand(param => ExecuteOpenModalEditor(param as DataGridRowItemViewModel), param => CanExecuteOpenModalEditor(param as DataGridRowItemViewModel));
+            ClearFilterCommand = new RelayCommand(ExecuteClearFilter, () => CanClearFilter);
             DeleteSelectedNodesCommand = new RelayCommand(param => ExecuteDeleteSelectedNodes(param as DataGridRowItemViewModel), param => CanExecuteDeleteSelectedNodes(param as DataGridRowItemViewModel));
             ExpandSelectedRecursiveCommand = new RelayCommand(param => ExecuteExpandSelectedRecursive(param as DataGridRowItemViewModel), param => CanExecuteExpandCollapseSelectedRecursive(param as DataGridRowItemViewModel)); 
             CollapseSelectedRecursiveCommand = new RelayCommand(param => ExecuteCollapseSelectedRecursive(param as DataGridRowItemViewModel), param => CanExecuteExpandCollapseSelectedRecursive(param as DataGridRowItemViewModel));
@@ -735,6 +743,11 @@ namespace JsonConfigEditor.ViewModels
                         MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+        }
+
+        private void ExecuteClearFilter()
+        {
+            FilterText = string.Empty;
         }
 
         /// <summary>
