@@ -265,10 +265,11 @@
                             <Setter Property="Foreground" Value="DarkMagenta" />
                         </DataTrigger>
                         
-                        <!-- Validation error nodes (red border) -->
+                        <!-- Validation error nodes (red border and salmon background) -->
                         <DataTrigger Binding="{Binding IsValid}" Value="False">
                             <Setter Property="BorderBrush" Value="Red" />
                             <Setter Property="BorderThickness" Value="1" />
+                            <Setter Property="Background" Value="Salmon" />
                         </DataTrigger>
                         
                         <!-- Search highlighted nodes -->
