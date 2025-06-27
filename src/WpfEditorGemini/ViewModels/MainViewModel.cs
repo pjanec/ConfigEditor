@@ -81,6 +81,7 @@ namespace JsonConfigEditor.ViewModels
         public ICommand LoadSchemaCommand { get; }
         public ICommand OpenModalEditorCommand { get; }
         public ICommand ClearFilterCommand { get; }
+        public ICommand ClearSearchCommand { get; }
         public ICommand DeleteSelectedNodesCommand { get; }
         public ICommand ExpandSelectedRecursiveCommand { get; }
         public ICommand CollapseSelectedRecursiveCommand { get; }
@@ -91,6 +92,8 @@ namespace JsonConfigEditor.ViewModels
 
         public ObservableCollection<DataGridRowItemViewModel> FlatItemsSource { get; } = new();
 
+        private System.Threading.Timer? _filterDebounceTimer;
+
         public string FilterText
         {
             get => _filterText;
@@ -98,11 +101,22 @@ namespace JsonConfigEditor.ViewModels
             {
                 if (SetProperty(ref _filterText, value))
                 {
-                    RefreshFlatList();
+                    _filterDebounceTimer?.Dispose();
+                    _filterDebounceTimer = new System.Threading.Timer(DebouncedFilterAction, null, SearchDebounceMilliseconds, System.Threading.Timeout.Infinite);
                     OnPropertyChanged(nameof(CanClearFilter));
                 }
             }
         }
+
+        private void DebouncedFilterAction(object? state)
+        {
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                RefreshFlatList();
+            });
+        }
+
+        public bool CanClearSearch => !string.IsNullOrEmpty(SearchText);
 
         public bool CanClearFilter => !string.IsNullOrEmpty(FilterText);
 
@@ -139,6 +153,7 @@ namespace JsonConfigEditor.ViewModels
                 {
                     _searchDebounceTimer?.Dispose();
                     _searchDebounceTimer = new System.Threading.Timer(DebouncedSearchAction, null, SearchDebounceMilliseconds, System.Threading.Timeout.Infinite);
+                    OnPropertyChanged(nameof(CanClearSearch));
                 }
             }
         }
@@ -321,6 +336,7 @@ namespace JsonConfigEditor.ViewModels
             LoadSchemaCommand = new RelayCommand(ExecuteLoadSchema);
             OpenModalEditorCommand = new RelayCommand(param => ExecuteOpenModalEditor(param as DataGridRowItemViewModel), param => CanExecuteOpenModalEditor(param as DataGridRowItemViewModel));
             ClearFilterCommand = new RelayCommand(ExecuteClearFilter, () => CanClearFilter);
+            ClearSearchCommand = new RelayCommand(ExecuteClearSearch, () => CanClearSearch);
             DeleteSelectedNodesCommand = new RelayCommand(param => ExecuteDeleteSelectedNodes(param as DataGridRowItemViewModel), param => CanExecuteDeleteSelectedNodes(param as DataGridRowItemViewModel));
             ExpandSelectedRecursiveCommand = new RelayCommand(param => ExecuteExpandSelectedRecursive(param as DataGridRowItemViewModel), param => CanExecuteExpandCollapseSelectedRecursive(param as DataGridRowItemViewModel));
             CollapseSelectedRecursiveCommand = new RelayCommand(param => ExecuteCollapseSelectedRecursive(param as DataGridRowItemViewModel), param => CanExecuteExpandCollapseSelectedRecursive(param as DataGridRowItemViewModel));
@@ -640,6 +656,11 @@ namespace JsonConfigEditor.ViewModels
         private void ExecuteClearFilter()
         {
             FilterText = string.Empty;
+        }
+
+        private void ExecuteClearSearch()
+        {
+            SearchText = string.Empty;
         }
 
         private bool CheckUnsavedChanges()
