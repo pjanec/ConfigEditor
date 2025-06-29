@@ -24,43 +24,52 @@ namespace JsonConfigEditor
         {
             InitializeComponent();
 
-            if (DataContext is MainViewModel vmInstance)
+            // Ensure DataContext is available
+            // It's typically set in XAML like: <Window.DataContext> <vm:MainViewModel/> </Window.DataContext>
+            // Or it could be set here if not in XAML:
+            // if (DataContext == null) DataContext = new MainViewModel();
+
+
+            // Subscribe to PropertyChanged and set UiRegistry after DataContext is confirmed
+            Loaded += (sender, args) =>
             {
-                vmInstance.PropertyChanged += MainViewModel_PropertyChanged;
-                 // Set UiRegistry for the NodeValueTemplateSelector
-                if (this.Resources["NodeValueTemplateSelector"] is NodeValueTemplateSelector selector)
+                if (DataContext is MainViewModel vmInstance)
                 {
-                    selector.UiRegistry = vmInstance.UiRegistry;
+                    vmInstance.PropertyChanged += MainViewModel_PropertyChanged;
+                    if (this.Resources["NodeValueTemplateSelector"] is NodeValueTemplateSelector selector)
+                    {
+                        selector.UiRegistry = vmInstance.UiRegistry;
+                    }
+
+                    // Handle command-line startup file
+                    if (!string.IsNullOrEmpty(App.StartupFilePath))
+                    {
+                        // Fire and forget for async method from constructor/Loaded event
+                        _ = vmInstance.InitializeWithStartupFileAsync(App.StartupFilePath);
+                    }
+                    else
+                    {
+#if DEBUG
+                        // Auto-load sample JSON for testing if no command-line file
+                        string sampleJsonPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test-config.json"); // Corrected filename
+                        if (System.IO.File.Exists(sampleJsonPath))
+                        {
+                            _ = vmInstance.LoadFileAsync(sampleJsonPath);
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Sample JSON file not found: {sampleJsonPath}");
+                        }
+#endif
+                    }
                 }
-            }
-            else if (this.Resources["NodeValueTemplateSelector"] is NodeValueTemplateSelector selector && DataContext is MainViewModel vm)
-            { // Fallback for original logic, though DataContext should be vmInstance here
-                selector.UiRegistry = vm.UiRegistry;
-            }
+            };
             
             // Set up keyboard navigation
             SetupKeyboardNavigation();
             
             // Load schemas from current assembly on startup
             LoadDefaultSchemas();
-
-#if DEBUG
-            // Auto-load sample JSON for testing
-            string sampleJsonPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test_config.json");
-            if (System.IO.File.Exists(sampleJsonPath))
-            {
-                // Fire and forget is okay for this auto-load, or await if startup sequence allows
-                _ = ViewModel.LoadFileAsync(sampleJsonPath);
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine($"Sample JSON file not found: {sampleJsonPath}");
-                // Optionally, create the file if it doesn't exist for the very first run:
-                // string sampleJsonContent = "{\"hello\": \"world\"}"; // Replace with actual content or load from embedded resource
-                // System.IO.File.WriteAllText(sampleJsonPath, sampleJsonContent);
-                // _ = ViewModel.LoadFileAsync(sampleJsonPath); 
-            }
-#endif
         }
 
         /// <summary>
