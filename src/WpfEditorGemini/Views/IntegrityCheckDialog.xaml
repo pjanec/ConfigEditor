@@ -1,0 +1,56 @@
+<!-- WpfEditorGemini/Views/IntegrityCheckDialog.xaml -->
+<!-- This is a new file that defines the UI for the integrity check feature. -->
+<Window x:Class="JsonConfigEditor.Views.IntegrityCheckDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:JsonConfigEditor.ViewModels"
+        mc:Ignorable="d"
+        Title="Run Integrity Check" 
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        d:DataContext="{d:DesignInstance vm:IntegrityCheckViewModel}">
+
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Checkbox options for the user -->
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="Select checks to perform:" FontWeight="Bold" Margin="0,0,0,10" />
+
+            <CheckBox Margin="5" IsChecked="{Binding CheckFilePathConsistency}"
+                      Content="File Path Consistency" 
+                      ToolTip="Warns if a config section (e.g., '/database') is stored in differently named files across layers."/>
+
+            <CheckBox Margin="5" IsChecked="{Binding CheckOverlappingDefinitions}"
+                      Content="Overlapping Definitions Within a Layer"
+                      ToolTip="Warns if two files within the same layer define the same property."/>
+
+            <CheckBox Margin="5" IsChecked="{Binding CheckSchemaCompliance}"
+                      Content="Schema Compliance for All Layers"
+                      ToolTip="Validates each layer's content against the schema individually, finding errors that might be hidden in the merged view."/>
+
+            <CheckBox Margin="5" IsChecked="{Binding CheckPropertyNameCasing}"
+                      Content="Property Name Casing Mismatches"
+                      ToolTip="Warns about potential typos like 'timeout' vs 'timeOut'."/>
+
+            <CheckBox Margin="5" IsChecked="{Binding CheckEmptyFilesOrFolders}"
+                      Content="Empty Files or Folders"
+                      ToolTip="Finds and reports empty JSON files or empty layer directories."/>
+        </StackPanel>
+
+        <!-- Action buttons -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="Run Checks" Width="100" Margin="5" IsDefault="True"
+                    Command="{Binding RunChecksCommand}"/>
+            <Button Content="Cancel" Width="80" Margin="5" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>
+
+

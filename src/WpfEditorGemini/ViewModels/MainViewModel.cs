@@ -18,6 +18,8 @@ using System.Windows.Input;
 using JsonConfigEditor.Wpf.Services;
 using JsonConfigEditor.Contracts.Editors;
 using System.Threading; // Added for Timer
+using JsonConfigEditor.Core.Cascade;
+using JsonConfigEditor.Core.Services;
 
 namespace JsonConfigEditor.ViewModels
 {
@@ -1882,5 +1884,30 @@ namespace JsonConfigEditor.ViewModels
         {
             _schemaNodeExpansionState[pathKey] = isExpanded;
         }
+
+        /// <summary>
+        /// [Placeholder] Navigates the UI to the source of a given integrity issue.
+        /// </summary>
+        public void NavigateToIssue(IssueViewModel issue)
+        {
+            // Logic will be implemented in a later stage.
+        }
+
+        /// <summary>
+        /// [Placeholder] Sets the active editor layer by its index.
+        /// </summary>
+        public void SetSelectedEditorLayerByIndex(int layerIndex)
+        {
+            // Logic will be implemented in a later stage.
+        }
+
+        /// <summary>
+        /// [Placeholder] Runs the selected integrity checks.
+        /// </summary>
+        public void ExecuteIntegrityCheck(IntegrityCheckType checksToRun)
+        {
+            // Logic will be implemented in a later stage.
+        }
+
     }
 }
