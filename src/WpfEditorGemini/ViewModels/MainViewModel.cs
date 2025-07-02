@@ -31,6 +31,8 @@ namespace JsonConfigEditor.ViewModels
         private readonly ISchemaLoaderService _schemaLoader;
         private readonly ValidationService _validationService;
         private readonly CustomUIRegistryService _uiRegistry;
+        // ADD the new factory service
+        private readonly DomNodeFactory _nodeFactory;
 
         // --- Private Fields: Core Data State ---
         private DomNode? _rootDomNode;
@@ -324,6 +326,8 @@ namespace JsonConfigEditor.ViewModels
             _validationService = new ValidationService();
             _uiRegistry = new CustomUIRegistryService();
             _schemaLoader = new SchemaLoaderService(_uiRegistry);
+            // INSTANTIATE the new factory in the constructor
+            _nodeFactory = new DomNodeFactory(_schemaLoader, this);
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
@@ -771,7 +775,10 @@ namespace JsonConfigEditor.ViewModels
         {
             try
             {
-                var newNode = CreateNodeFromValue(editValue, parentArray.Items.Count.ToString(), parentArray, itemSchema);
+                // DELEGATE creation to the factory
+                var newNode = _nodeFactory.CreateFromValue(editValue, parentArray.Items.Count.ToString(), parentArray, itemSchema);
+                  
+                // The ViewModel remains responsible for the high-level operation
                 RecordEditOperation(new AddNodeOperation(parentArray, newNode, newNode.Name));
                 return true;
             }
@@ -791,7 +798,8 @@ namespace JsonConfigEditor.ViewModels
             var targetPathKey = schemaOnlyVm.SchemaNodePathKey;
             var targetSchemaNode = schemaOnlyVm.SchemaContextNode;
 
-            DomNode? materializedDomNode = MaterializeDomPathRecursive(targetPathKey, targetSchemaNode);
+            // DELEGATE materialization to the factory
+            DomNode? materializedDomNode = _nodeFactory.MaterializeDomPathRecursive(targetPathKey, targetSchemaNode);
 
             if (materializedDomNode == null)
             {
@@ -843,185 +851,17 @@ namespace JsonConfigEditor.ViewModels
             return true;
         }
 
-        private DomNode? MaterializeDomPathRecursive(string targetPathKey, SchemaNode? targetSchemaNodeContext)
-        {
-            if (string.IsNullOrEmpty(targetPathKey) || targetPathKey == "$root")
-            {
-                if (_rootDomNode != null) return _rootDomNode;
-
-                if (targetSchemaNodeContext == null)
-                {
-                    return null;
-                }
-
-                var oldRoot = _rootDomNode;
-                var newRoot = CreateNodeFromSchema(targetSchemaNodeContext, "$root", null);
-                if (newRoot != null)
-                {
-                    var op = new ReplaceRootOperation(oldRoot, newRoot);
-                    RecordEditOperation(op);
-                    op.Redo(this);
-                    return _rootDomNode;
-                }
-                return null;
-            }
-
-            DomNode? existingNode = FindDomNodeByPath(targetPathKey);
-            if (existingNode != null)
-            {
-                return existingNode;
-            }
-
-            string parentPathKey;
-            string currentNodeName;
-
-            string normalizedTargetPathKey = targetPathKey.StartsWith("$root/") ? targetPathKey.Substring("$root/".Length) : targetPathKey;
-
-            int lastSlash = normalizedTargetPathKey.LastIndexOf('/');
-            if (lastSlash == -1)
-            {
-                parentPathKey = "";
-                currentNodeName = normalizedTargetPathKey;
-            }
-            else
-            {
-                parentPathKey = normalizedTargetPathKey.Substring(0, lastSlash);
-                currentNodeName = normalizedTargetPathKey.Substring(lastSlash + 1);
-            }
-
-            SchemaNode? parentSchema = _schemaLoader.FindSchemaForPath(parentPathKey);
-
-            DomNode? parentDomNode = MaterializeDomPathRecursive(parentPathKey, parentSchema);
-
-            if (parentDomNode == null)
-            {
-                return null;
-            }
-
-            if (!(parentDomNode is ObjectNode parentAsObject))
-            {
-                return null;
-            }
-
-            SchemaNode? currentNodeSchema = null;
-            if (parentSchema?.Properties != null && parentSchema.Properties.TryGetValue(currentNodeName, out SchemaNode? foundSchemaFromParent))
-            {
-                currentNodeSchema = foundSchemaFromParent;
-            }
-            if (targetSchemaNodeContext != null && NormalizeSchemaName(targetSchemaNodeContext.Name) == NormalizeSchemaName(currentNodeName))
-            {
-                currentNodeSchema = targetSchemaNodeContext;
-            }
-            if (currentNodeSchema == null)
-            {
-                currentNodeSchema = _schemaLoader.FindSchemaForPath(targetPathKey);
-            }
-
-            if (currentNodeSchema == null)
-            {
-                return null;
-            }
-
-            var newNode = CreateNodeFromSchema(currentNodeSchema, currentNodeName, parentDomNode);
-            if (newNode == null)
-            {
-                return null;
-            }
-
-            var addOperation = new AddNodeOperation(parentAsObject, newNode, currentNodeName);
-            RecordEditOperation(addOperation);
-            addOperation.Redo(this);
-
-            return newNode;
-        }
-
-        private string NormalizeSchemaName(string schemaName)
-        {
-            return schemaName;
-        }
-
-        private DomNode? FindDomNodeByPath(string pathKey)
-        {
-            if (_rootDomNode == null) return null;
-
-            if (string.IsNullOrEmpty(pathKey) || pathKey == "$root") return _rootDomNode;
-
-            string normalizedPathKey = pathKey.StartsWith("$root/") ? pathKey.Substring("$root/".Length) : pathKey;
-            if (string.IsNullOrEmpty(normalizedPathKey)) return _rootDomNode;
 
 
-            string[] segments = normalizedPathKey.Split('/');
-            DomNode? current = _rootDomNode;
 
-            foreach (string segment in segments)
-            {
-                if (current == null) return null;
 
-                if (current is ObjectNode objNode)
-                {
-                    current = objNode.GetChild(segment);
-                    if (current == null) return null;
-                }
-                else if (current is ArrayNode arrNode)
-                {
-                    if (int.TryParse(segment, out int index))
-                    {
-                        current = arrNode.GetItem(index);
-                        if (current == null) return null;
-                    }
-                    else return null;
-                }
-                else return null;
-            }
-            return current;
-        }
 
-        private DomNode? CreateNodeFromSchema(SchemaNode schema, string name, DomNode? parent)
-        {
-            if (schema == null) return null;
 
-            JsonElement defaultValue = ConvertObjectToJsonElement(schema.DefaultValue);
 
-            switch (schema.NodeType)
-            {
-                case SchemaNodeType.Object:
-                    var objNode = new ObjectNode(name, parent);
-                    return objNode;
-                case SchemaNodeType.Array:
-                    var arrNode = new ArrayNode(name, parent);
-                    return arrNode;
-                case SchemaNodeType.Value:
-                    return new ValueNode(name, parent, defaultValue);
-                default:
-                    return null;
-            }
-        }
 
-        private void RecordAddNodeOperation(DomNode? parent, DomNode newNode, string nameInParent)
-        {
-            RecordEditOperation(new AddNodeOperation(parent ?? _rootDomNode!, newNode, nameInParent));
-        }
 
-        private JsonElement ConvertObjectToJsonElement(object? value)
-        {
-            if (value == null)
-            {
-                return JsonDocument.Parse("null").RootElement;
-            }
-            if (value is JsonElement element)
-            {
-                return element.Clone();
-            }
-            try
-            {
-                return JsonSerializer.SerializeToElement(value, _defaultSerializerOptions);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to serialize object of type {value.GetType()} to JsonElement: {ex.Message}");
-                return JsonDocument.Parse("null").RootElement;
-            }
-        }
+
+
 
         private void InitializeEmptyDocument()
         {
@@ -1603,20 +1443,7 @@ namespace JsonConfigEditor.ViewModels
             });
         }
 
-        private DomNode CreateNodeFromValue(string value, string name, DomNode parent, SchemaNode? schema)
-        {
-            try
-            {
-                var jsonDoc = System.Text.Json.JsonDocument.Parse(value);
-                return _jsonParser.ParseFromJsonElement(jsonDoc.RootElement, name, parent);
-            }
-            catch
-            {
-                var stringJson = $"\"{value}\"";
-                var jsonDoc = System.Text.Json.JsonDocument.Parse(stringJson);
-                return _jsonParser.ParseFromJsonElement(jsonDoc.RootElement, name, parent);
-            }
-        }
+
 
         private class SearchResult
         {
@@ -1909,5 +1736,55 @@ namespace JsonConfigEditor.ViewModels
             // Logic will be implemented in a later stage.
         }
 
+        // ADD helper methods for the factory to access MainViewModel state
+        public DomNode? GetRootDomNode() => _rootDomNode;
+        public DomNode? FindDomNodeByPath(string path)
+        {
+            if (_rootDomNode == null) return null;
+
+            if (string.IsNullOrEmpty(path) || path == "$root") return _rootDomNode;
+
+            string normalizedPathKey = path.StartsWith("$root/") ? path.Substring("$root/".Length) : path;
+            if (string.IsNullOrEmpty(normalizedPathKey)) return _rootDomNode;
+
+            string[] segments = normalizedPathKey.Split('/');
+            DomNode? current = _rootDomNode;
+
+            foreach (string segment in segments)
+            {
+                if (current == null) return null;
+
+                if (current is ObjectNode objNode)
+                {
+                    current = objNode.GetChild(segment);
+                    if (current == null) return null;
+                }
+                else if (current is ArrayNode arrNode)
+                {
+                    if (int.TryParse(segment, out int index))
+                    {
+                        current = arrNode.GetItem(index);
+                        if (current == null) return null;
+                    }
+                    else return null;
+                }
+                else return null;
+            }
+            return current;
+        }
+        public void AddNodeWithHistory(ObjectNode parent, DomNode newNode, string name)
+        {
+            var addOperation = new AddNodeOperation(parent, newNode, name);
+            RecordEditOperation(addOperation);
+            addOperation.Redo(this);
+        }
+        
+        public void ReplaceRootWithHistory(DomNode newRoot)
+        {
+            var oldRoot = _rootDomNode;
+            var op = new ReplaceRootOperation(oldRoot, newRoot);
+            RecordEditOperation(op);
+            op.Redo(this);
+        }
     }
 }
