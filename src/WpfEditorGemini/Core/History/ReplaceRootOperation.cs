@@ -15,6 +15,8 @@ namespace JsonConfigEditor.Core.History
             _newRoot = newRoot;
         }
 
+        public override bool RequiresFullRefresh => true;
+
         public override void Redo(MainViewModel vm)
         {
             vm.SetRootNode(_newRoot);

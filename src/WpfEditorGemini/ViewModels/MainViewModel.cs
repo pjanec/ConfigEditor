@@ -98,6 +98,7 @@ namespace JsonConfigEditor.ViewModels
 
         public CustomUIRegistryService UiRegistry => _uiRegistry;
         public ISchemaLoaderService SchemaLoader => _schemaLoader;
+        public EditHistoryService HistoryService => _historyService; // Expose the service
 
         public ObservableCollection<DataGridRowItemViewModel> FlatItemsSource { get; } = new();
 
@@ -319,14 +320,32 @@ namespace JsonConfigEditor.ViewModels
             Application.Current.Shutdown();
         }
 
-        // ADD a handler for the service's event
-        private void OnHistoryModelChanged()
+        // This is the new, intelligent event handler
+        private void OnHistoryModelChanged(EditOperation operation)
         {
+            // For simple value edits, we now execute the change *after* the commit has finished.
+            if (!operation.RequiresFullRefresh)
+            {
+                operation.Redo(this);
+            }
+
             IsDirty = true;
-            RefreshFlatList();
             OnPropertyChanged(nameof(WindowTitle));
-            // Trigger validation after history changes
-            _ = Task.Run(async () => await ValidateDocumentAsync());
+            _ = Task.Run(() => ValidateDocumentAsync());
+
+            // Only do a full, disruptive refresh if the operation requires it.
+            if (operation.RequiresFullRefresh)
+            {
+                RefreshFlatList();
+            }
+            else
+            {
+                // For a value change, just update the single item's display properties.
+                if (SelectedGridItem != null)
+                {
+                    SelectedGridItem.RefreshDisplayProperties();
+                }
+            }
         }
 
         // UPDATE command handlers to be simple delegations
@@ -879,13 +898,7 @@ namespace JsonConfigEditor.ViewModels
             else if (node is ArrayNode a) foreach (var item in a.GetItems()) BuildTemporaryDomToSchemaMap(item, map);
         }
 
-        // UPDATE methods that record history to use the service
-        internal void RecordValueEdit(ValueNode node, JsonElement oldValue, JsonElement newValue)
-        {
-            // For now, layer index is hardcoded to 0. This will be dynamic later.
-            var operation = new ValueEditOperation(0, node, oldValue, newValue);
-            _historyService.Record(operation);
-        }
+
 
         private void EnsurePathIsExpandedInFlatItemsSource(string path)
         {
@@ -977,6 +990,7 @@ namespace JsonConfigEditor.ViewModels
                         originalIndex = arrayParent.Items.ToList().IndexOf(nodeToRemove);
                     }
                     var operation = new RemoveNodeOperation(0, parent, nodeToRemove, nodeToRemove.Name, originalIndex);
+                    operation.Redo(this); // Execute immediately for structural changes
                     _historyService.Record(operation);
                 }
             }
@@ -1108,9 +1122,10 @@ namespace JsonConfigEditor.ViewModels
             }
             return current;
         }
-        public void AddNodeWithHistory(ObjectNode parent, DomNode newNode, string name)
+        internal void AddNodeWithHistory(ObjectNode parent, DomNode newNode, string name)
         {
             var addOperation = new AddNodeOperation(0, parent, newNode);
+            addOperation.Redo(this); // Execute immediately for structural changes
             _historyService.Record(addOperation);
         }
         
@@ -1118,6 +1133,7 @@ namespace JsonConfigEditor.ViewModels
         {
             var oldRoot = _rootDomNode;
             var op = new ReplaceRootOperation(0, oldRoot, newRoot);
+            op.Redo(this); // Execute immediately
             _historyService.Record(op);
         }
         

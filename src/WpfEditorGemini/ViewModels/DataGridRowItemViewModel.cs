@@ -1,5 +1,6 @@
 using JsonConfigEditor.Core.Dom;
 using JsonConfigEditor.Core.Schema;
+using JsonConfigEditor.Core.History;
 using System;
 using System.Windows;
 using System.Text.Json;      // For JsonElement
@@ -453,7 +454,9 @@ namespace JsonConfigEditor.ViewModels
                         var newValue = valueNode.Value;
                         if (oldValue.ValueKind != newValue.ValueKind || oldValue.GetRawText() != newValue.GetRawText())
                         {
-                            ParentViewModel.RecordValueEdit(valueNode, oldValue, newValue);
+                            var operation = new ValueEditOperation(0, valueNode, oldValue, newValue);
+                            // Use the public property on the ParentViewModel
+                            ParentViewModel.HistoryService.Record(operation);
                         }
                         SetValidationState(true, "");
                         IsInEditMode = false; // Set state on success

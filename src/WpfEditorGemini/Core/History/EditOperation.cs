@@ -15,6 +15,12 @@ namespace JsonConfigEditor.Core.History
         /// </summary>
         public int LayerIndex { get; }
 
+        /// <summary>
+        /// Gets a value indicating if this operation changes the structure of the tree (add/remove)
+        /// and thus requires a full refresh of the displayed list.
+        /// </summary>
+        public virtual bool RequiresFullRefresh => false;
+
         protected EditOperation(int layerIndex)
         {
             LayerIndex = layerIndex;

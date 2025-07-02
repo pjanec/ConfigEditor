@@ -19,7 +19,7 @@ namespace JsonConfigEditor.Core.Services
         /// This event is fired whenever the data model is changed by an undo or redo operation,
         /// signaling to the MainViewModel that it needs to refresh its views.
         /// </summary>
-        public event Action? ModelChanged;
+        public event Action<EditOperation>? ModelChanged;
 
         public bool CanUndo => _undoStack.Count > 0;
         public bool CanRedo => _redoStack.Count > 0;
@@ -34,14 +34,11 @@ namespace JsonConfigEditor.Core.Services
         /// </summary>
         public void Record(EditOperation operation)
         {
-            // Execute the operation immediately so changes take effect
-            operation.Redo(_mainViewModel);
-            
             _undoStack.Push(operation);
             _redoStack.Clear();
-            
-            // Notify that the model has changed
-            ModelChanged?.Invoke();
+            // The Redo call is now made by the MainViewModel after this returns.
+            // This ensures the model isn't changed until after the DataGrid commit completes.
+            ModelChanged?.Invoke(operation);
         }
 
         /// <summary>
@@ -55,7 +52,7 @@ namespace JsonConfigEditor.Core.Services
             operation.Undo(_mainViewModel); // The operation itself knows how to reverse
             _redoStack.Push(operation);
 
-            ModelChanged?.Invoke(); // Notify that the model has changed
+            ModelChanged?.Invoke(operation); // Notify that the model has changed
         }
 
         /// <summary>
@@ -69,7 +66,7 @@ namespace JsonConfigEditor.Core.Services
             operation.Redo(_mainViewModel); // The operation knows how to re-apply
             _undoStack.Push(operation);
 
-            ModelChanged?.Invoke(); // Notify that the model has changed
+            ModelChanged?.Invoke(operation); // Notify that the model has changed
         }
 
         /// <summary>

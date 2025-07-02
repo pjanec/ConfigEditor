@@ -14,6 +14,8 @@ namespace JsonConfigEditor.Core.History
             _newNode = newNode;
         }
 
+        public override bool RequiresFullRefresh => true;
+
         public override void Redo(MainViewModel vm) => vm.AddNodeToParent(_parent, _newNode);
         public override void Undo(MainViewModel vm) => vm.RemoveNodeFromParent(_newNode);
     }

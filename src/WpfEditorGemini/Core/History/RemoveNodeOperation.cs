@@ -19,6 +19,8 @@ namespace JsonConfigEditor.Core.History
             _originalIndexInArray = originalIndexInArray;
         }
 
+        public override bool RequiresFullRefresh => true;
+
         public override void Redo(MainViewModel vm) => vm.RemoveNodeFromParent(_removedNode);
 
         public override void Undo(MainViewModel vm)
