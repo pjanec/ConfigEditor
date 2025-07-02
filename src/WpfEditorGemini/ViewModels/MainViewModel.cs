@@ -38,6 +38,7 @@ namespace JsonConfigEditor.ViewModels
         private readonly EditHistoryService _historyService;
         private readonly DomFilterService _filterService;
         private readonly DomSearchService _searchService;
+        private readonly SchemaPlaceholderProvider _placeholderProvider;
 
         // --- Private Fields: Core Data State ---
         private DomNode? _rootDomNode;
@@ -200,6 +201,7 @@ namespace JsonConfigEditor.ViewModels
             _jsonParser = new JsonDomParser();
             _jsonSerializer = new DomNodeToJsonSerializer();
             _searchService = new DomSearchService();
+            _placeholderProvider = new SchemaPlaceholderProvider();
             _validationService = new ValidationService();
             _uiRegistry = new CustomUIRegistryService();
             _schemaLoader = new SchemaLoaderService(_uiRegistry);
@@ -812,9 +814,7 @@ namespace JsonConfigEditor.ViewModels
                 _domToSchemaMap.TryGetValue(node, out var schema);
                 viewModel = new DataGridRowItemViewModel(node, schema, this);
             }
-
             flatItems.Add(viewModel);
-
             if (viewModel.IsExpanded)
             {
                 if (viewModel.IsDomNodePresent && node != null)
@@ -826,32 +826,19 @@ namespace JsonConfigEditor.ViewModels
                             {
                                 BuildFlatListRecursive(childDomNode, flatItems);
                             }
-                            if (_showSchemaNodes && _domToSchemaMap.TryGetValue(objectNode, out var objectSchema) && objectSchema?.Properties != null)
-                            {
-                                foreach (var schemaProp in objectSchema.Properties)
+                                                if (_showSchemaNodes && _domToSchemaMap.TryGetValue(objectNode, out var objectSchema) && objectSchema?.NodeType == SchemaNodeType.Object)
+                    {
+                        var placeholders = _placeholderProvider.GetPlaceholders(objectNode, objectSchema, this);
+                                flatItems.AddRange(placeholders);
+                                foreach (var placeholder in placeholders)
                                 {
-                                    if (!objectNode.HasProperty(schemaProp.Key))
+                                    if (placeholder.IsExpanded && placeholder.IsExpandable)
                                     {
-                                        var childDepth = objectNode.Depth + 1;
-                                        var schemaPathKey = (string.IsNullOrEmpty(objectNode.Path) ? schemaProp.Key : $"{objectNode.Path}/{schemaProp.Key}").TrimStart('$');
-                                        var schemaOnlyChildVm = new DataGridRowItemViewModel(
-                                            schemaPropertyNode: schemaProp.Value,
-                                            propertyName: schemaProp.Key,
-                                            parentViewModel: this,
-                                            depth: childDepth,
-                                            pathKey: schemaPathKey
-                                        );
-                                        flatItems.Add(schemaOnlyChildVm);
-
-                                        if (schemaOnlyChildVm.IsExpanded && schemaOnlyChildVm.IsExpandable)
-                                        {
-                                            AddSchemaOnlyChildrenRecursive(schemaOnlyChildVm, flatItems, childDepth);
-                                        }
+                                        AddSchemaOnlyChildrenRecursive(placeholder, flatItems, placeholder.DomNode?.Depth ?? 0);
                                     }
                                 }
                             }
                             break;
-
                         case ArrayNode arrayNode:
                             foreach (var itemDomNode in arrayNode.GetItems())
                             {
@@ -884,26 +871,20 @@ namespace JsonConfigEditor.ViewModels
                     }
                 }
             }
-
             if (node == _rootDomNode && _showSchemaNodes)
             {
                 var rootSchema = _schemaLoader.GetRootSchema();
-                if (rootSchema?.Properties != null && node is ObjectNode rootObjectNode)
+                if (rootSchema?.NodeType == SchemaNodeType.Object && node is ObjectNode rootObjectNode)
                 {
-                    foreach (var schemaProp in rootSchema.Properties)
+                    var placeholders = _placeholderProvider.GetPlaceholders(rootObjectNode, rootSchema, this);
+                    foreach (var schemaOnlyVm in placeholders)
                     {
-                        if (!rootObjectNode.HasProperty(schemaProp.Key))
+                        if (!flatItems.Any(vm => vm.NodeName == schemaOnlyVm.NodeName && vm.SchemaContextNode == schemaOnlyVm.SchemaContextNode && vm.Indentation.Left == schemaOnlyVm.Indentation.Left && vm.IsSchemaOnlyNode))
                         {
-                            var schemaPathKey = schemaProp.Key.TrimStart('$');
-                            var schemaOnlyVm = new DataGridRowItemViewModel(schemaProp.Value, schemaProp.Key, this, 1, schemaPathKey);
-
-                            if (!flatItems.Any(vm => vm.NodeName == schemaProp.Key && vm.SchemaContextNode == schemaProp.Value && vm.Indentation.Left == (1 * 20) && vm.IsSchemaOnlyNode))
+                            flatItems.Add(schemaOnlyVm);
+                            if (schemaOnlyVm.IsExpanded && schemaOnlyVm.IsExpandable)
                             {
-                                flatItems.Add(schemaOnlyVm);
-                                if (schemaOnlyVm.IsExpanded && schemaOnlyVm.IsExpandable)
-                                {
-                                    AddSchemaOnlyChildrenRecursive(schemaOnlyVm, flatItems, 1);
-                                }
+                                AddSchemaOnlyChildrenRecursive(schemaOnlyVm, flatItems, 1);
                             }
                         }
                     }
