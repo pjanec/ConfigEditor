@@ -262,8 +262,10 @@ namespace JsonConfigEditor
         private void MainDataGrid_BeginningEdit(object sender, DataGridBeginningEditEventArgs e)
         {
             var item = e.Row.Item as DataGridRowItemViewModel;
+            System.Diagnostics.Debug.WriteLine($"--- MainDataGrid_BeginningEdit Fired for '{(item?.NodeName ?? "null")}' ---");
             if (item != null && !item.IsEditable)
             {
+                System.Diagnostics.Debug.WriteLine("-> Canceling edit because item is not editable.");
                 e.Cancel = true;
             }
         }
@@ -310,54 +312,46 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
             }
         }
 
-        // Handler for double-click on a value cell to start editing
-        private void ValueCell_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        private void StartEditingCell(DataGridRowItemViewModel? item)
         {
-            System.Diagnostics.Debug.WriteLine("ValueCell_MouseDoubleClick called.");
-            if (sender is DataGridCell cell && cell.DataContext is DataGridRowItemViewModel vm)
+            if (item == null || !item.IsEditable || item.IsInEditMode)
             {
-                System.Diagnostics.Debug.WriteLine($"ValueCell: Item '{vm.NodeName}', IsEditable: {vm.IsEditable}, IsInEditMode: {vm.IsInEditMode}");
-                // Ensure we are on the actual DataGrid, not a header or other element.
-                var dataGrid = FindVisualParent<DataGrid>(cell);
-                if (dataGrid == null) 
-                {
-                    System.Diagnostics.Debug.WriteLine("ValueCell: DataGrid parent not found.");
-                    return;
-                }
+                return;
+            }
 
-                if (vm.IsEditable && !vm.IsInEditMode)
-                {
-                    vm.IsInEditMode = true; 
-                    System.Diagnostics.Debug.WriteLine($"ValueCell: Set IsInEditMode to true for '{vm.NodeName}'.");
+            // Ensure the container for the row is generated, scrolling if necessary.
+            var row = (DataGridRow)MainDataGrid.ItemContainerGenerator.ContainerFromItem(item);
+            if (row == null)
+            {
+                MainDataGrid.ScrollIntoView(item);
+                row = (DataGridRow)MainDataGrid.ItemContainerGenerator.ContainerFromItem(item);
+                if (row == null) return; // Could not generate the row container.
+            }
 
-                    // Ensure the cell/row is selected and focused before calling BeginEdit
-                    dataGrid.SelectedItem = vm;
-                    // It's important that the CurrentCell is set to the cell that was double-clicked.
-                    // This column is the 'Value' column.
-                    DataGridColumn valueColumn = dataGrid.Columns.FirstOrDefault(c => c.Header?.ToString() == "Value");
-                    if (valueColumn != null) 
-                    {
-                         dataGrid.CurrentCell = new DataGridCellInfo(vm, valueColumn);
-                    }
-                    else
-                    {
-                        // Fallback if column not found by header, use the clicked cell's column.
-                        // This might be more robust if header names change.
-                        dataGrid.CurrentCell = new DataGridCellInfo(cell); 
-                    }
-                    
-                    dataGrid.BeginEdit(); 
-                    System.Diagnostics.Debug.WriteLine($"ValueCell: Called BeginEdit() for '{vm.NodeName}'.");
+            // Find the "Value" column
+            DataGridColumn? valueColumn = MainDataGrid.Columns.FirstOrDefault(c => c.Header?.ToString() == "Value");
+            if (valueColumn == null) return;
+
+            // This is the crucial part: we get the visual cell to ensure the DataGrid knows
+            // exactly what to edit.
+            MainDataGrid.CurrentCell = new DataGridCellInfo(item, valueColumn);
+
+            // Now, begin the edit.
+            item.IsInEditMode = true;
+            MainDataGrid.BeginEdit();
+        }
+
+        private void ValueCell_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            // We only care about the second click of a double-click.
+            if (e.ClickCount == 2)
+            {
+                if (sender is DataGridCell cell && cell.DataContext is DataGridRowItemViewModel vm)
+                {
+                    // Call the same, reliable logic as the Enter key.
+                    StartEditingCell(vm);
                     e.Handled = true;
                 }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"ValueCell: Edit condition not met for '{vm.NodeName}'. IsEditable: {vm.IsEditable}, IsInEditMode: {vm.IsInEditMode}");
-                }
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("ValueCell_MouseDoubleClick: Sender is not DataGridCell or DataContext is not DataGridRowItemViewModel.");
             }
         }
 
@@ -477,23 +471,15 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
         {
             if (e.PropertyName == nameof(MainViewModel.SelectedGridItem))
             {
+                System.Diagnostics.Debug.WriteLine("--- PropertyChanged for SelectedGridItem Fired ---");
                 var selectedVm = ViewModel.SelectedGridItem;
                 if (selectedVm != null)
                 {
-                    // Ensure the VM is not in edit mode if we are just changing selection
-                    if (selectedVm.IsInEditMode)
-                    {
-                        // This case should ideally not happen if selection change is programmatic
-                        // and not part of an edit commit/cancel.
-                        // For now, we'll assume that if SelectedGridItem changes, we are not in an active edit
-                        // or the edit has just concluded.
-                        // selectedVm.IsInEditMode = false; // Consider if this is safe or needed
-                    }
-
+                    System.Diagnostics.Debug.WriteLine($"-> New SelectedGridItem is '{selectedVm.NodeName}'. Queuing focus action.");
                     MainDataGrid.ScrollIntoView(selectedVm);
-                    
                     Action focusAction = () => 
                     {
+                        System.Diagnostics.Debug.WriteLine($">>> Dispatcher 'focusAction' starting for '{selectedVm.NodeName}'");
                         if (MainDataGrid.SelectedItem != selectedVm)
                         {
                             System.Diagnostics.Debug.WriteLine($"FocusAction: SelectedItem changed from '{selectedVm?.NodeName}' before action could run. Aborting focus attempt.");
@@ -562,19 +548,9 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
                         {
                             System.Diagnostics.Debug.WriteLine($"FocusAction: Row for '{selectedVm.NodeName}' still not found after layout/scroll. Cannot set focus.");
                         }
+                        System.Diagnostics.Debug.WriteLine($">>> Dispatcher 'focusAction' finished for '{selectedVm.NodeName}'");
                     };
-
-                    if (!MainDataGrid.IsKeyboardFocusWithin)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"FocusAction: MainDataGrid does not have focus. Focusing DataGrid first for '{selectedVm?.NodeName}'.");
-                        MainDataGrid.Focus(); 
-                        MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.DataBind);
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine($"FocusAction: MainDataGrid ALREADY has focus. Dispatching for '{selectedVm?.NodeName}'.");
-                        MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.DataBind);
-                    }
+                    MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.DataBind);
                 }
             }
         }
