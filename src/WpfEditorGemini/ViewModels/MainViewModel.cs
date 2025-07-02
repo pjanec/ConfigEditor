@@ -565,7 +565,7 @@ namespace JsonConfigEditor.ViewModels
                 try
                 {
                     JsonElement newJsonValue;
-                    SchemaNode? vnSchema = _domToSchemaMap.TryGetValue(valueNode.Path, out var s) ? s : null;
+                    SchemaNode? vnSchema = schemaOnlyVm.SchemaContextNode;
                     Type targetType = vnSchema?.ClrType ?? typeof(string);
 
                     if (targetType == typeof(bool) && bool.TryParse(initialEditValue, out bool bVal))

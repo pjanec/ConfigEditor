@@ -311,6 +311,7 @@ namespace JsonConfigEditor.ViewModels
                     // If entering edit mode, capture current value for potential revert
                     if (_isInEditMode)
                     {
+                        InitializeEditValue();
                         _originalValueBeforeEdit = EditValue; // Assuming EditValue holds current committed value
                     }
                     // If exiting edit mode, ParentViewModel might need to know.
