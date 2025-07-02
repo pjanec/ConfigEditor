@@ -23,6 +23,8 @@
         <KeyBinding Key="F3" Command="{Binding FindNextCommand}" />
         <KeyBinding Key="F3" Modifiers="Shift" Command="{Binding FindPreviousCommand}" />
         <KeyBinding Key="Delete" Command="{Binding DeleteSelectedNodesCommand}" CommandParameter="{Binding SelectedGridItem}"/>
+        <KeyBinding Key="Z" Modifiers="Ctrl" Command="{Binding UndoCommand}" />
+        <KeyBinding Key="Y" Modifiers="Ctrl" Command="{Binding RedoCommand}" />
     </Window.InputBindings>
 
     <Window.Resources>

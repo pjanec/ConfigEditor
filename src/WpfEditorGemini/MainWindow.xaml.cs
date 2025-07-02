@@ -175,10 +175,20 @@ namespace JsonConfigEditor
                     break;
 
                 case Key.Delete:
-                    // Delete key: Delete node (if supported)
                     if (!selectedItem.IsInEditMode && selectedItem.IsDomNodePresent)
                     {
-                        // TODO: Implement node deletion
+                        // Get the command and parameter from the ViewModel
+                        var command = ViewModel.DeleteSelectedNodesCommand;
+                        var parameter = selectedItem;
+
+                        // Check if the command can be executed for the selected item
+                        if (command.CanExecute(parameter))
+                        {
+                            // Execute the command
+                            command.Execute(parameter);
+                        }
+
+                        // Mark the event as handled to prevent any other controls from processing it.
                         e.Handled = true;
                     }
                     break;
