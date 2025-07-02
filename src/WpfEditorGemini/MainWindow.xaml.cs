@@ -90,75 +90,24 @@ namespace JsonConfigEditor
                     System.Diagnostics.Debug.WriteLine("Enter pressed on item: " + selectedItem.NodeName + ", IsEditable: " + selectedItem.IsEditable + ", IsInEditMode (before): " + selectedItem.IsInEditMode);
                     if (selectedItem.IsInEditMode)
                     {
-                        if (selectedItem.CommitEdit()) // ViewModel's commit logic
+                        // This part for COMMITTING the edit is fine, leave it as is.
+                        if (selectedItem.CommitEdit())
                         {
-                           selectedItem.IsInEditMode = false; // Update ViewModel state first
-                           dataGrid.CommitEdit(); // Tell DataGrid to finalize its edit state
+                           selectedItem.IsInEditMode = false;
+                           dataGrid.CommitEdit();
                            System.Diagnostics.Debug.WriteLine("Edit committed, IsInEditMode: " + selectedItem.IsInEditMode);
-                           e.Handled = true; // We've handled the commit
+                           e.Handled = true;
                         }
                         else
                         {
-                            // Commit failed (e.g., validation error in CommitEdit)
-                            // Keep edit mode active, DataGrid should show validation error if TextBox is set up for it.
-                            // Don't handle 'e' so DataGrid might show its own error indication if any.
                             System.Diagnostics.Debug.WriteLine("CommitEdit failed. Keeping edit mode.");
                         }
                     }
                     else if (selectedItem.IsEditable)
                     {
-                        // Ensure the current cell is the one we intend to edit.
-                        // This usually means the 'Value' column for the selectedItem.
-                        // Find the actual DataGridCell visual element for the target column.
-                        DataGridRow? row = dataGrid.ItemContainerGenerator.ContainerFromItem(selectedItem) as DataGridRow;
-                        DataGridCell? cellToEdit = null;
-                        DataGridColumn? valueColumn = dataGrid.Columns.FirstOrDefault(c => c.Header?.ToString() == "Value");
-
-                        if (row != null && valueColumn != null)
-                        {
-                            // Try to get the cell directly
-                            var cellContent = valueColumn.GetCellContent(row);
-                            if (cellContent != null)
-                            {
-                                cellToEdit = cellContent.Parent as DataGridCell;
-                            }
-                        }
-                        
-                        if (cellToEdit != null)
-                        {
-                            dataGrid.CurrentCell = new DataGridCellInfo(cellToEdit); // Set CurrentCell using DataGridCell
-                            // cellToEdit.Focus(); // Focusing the cell before BeginEdit can sometimes help
-                        }
-                        else if (valueColumn != null) // Fallback if visual cell not found immediately
-                        {
-                            dataGrid.CurrentCell = new DataGridCellInfo(selectedItem, valueColumn); 
-                        }
-
-                        selectedItem.IsInEditMode = true;
-                        System.Diagnostics.Debug.WriteLine("IsInEditMode (after): " + selectedItem.IsInEditMode);
-                        bool editStarted = dataGrid.BeginEdit(e); 
-                        System.Diagnostics.Debug.WriteLine($"dataGrid.BeginEdit() returned: {editStarted}");
-
-                        // Attempt to focus the editor after BeginEdit has been called
-                        // This needs to happen after the visual tree is updated with the editing element.
-                        // We dispatch it to a lower priority to allow the DataGrid to set up the editor.
-                        dataGrid.Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            var cellContent = dataGrid.CurrentCell.Column.GetCellContent(dataGrid.CurrentCell.Item);
-                            if (cellContent is ContentPresenter presenter) // Editing templates often use ContentPresenter
-                            {
-                                var editingElement = FindVisualChild<UIElement>(presenter);
-                                editingElement?.Focus();
-                                if (editingElement is CheckBox cb) // Special handling for checkbox spacebar toggle
-                                {
-                                     // Focus might be enough, spacebar should toggle if focused.
-                                }
-                            }
-                            else if (cellContent is UIElement uiElement) // Direct UIElement in cell
-                            {
-                                uiElement.Focus();
-                            }
-                        }), System.Windows.Threading.DispatcherPriority.Background);
+                        // Replace the old, complex logic with a single call
+                        // to our new shared method.
+                        StartEditingCell(selectedItem);
                         e.Handled = true;
                     }
                     break;
@@ -319,26 +268,27 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
                 return;
             }
 
+            // This logic is adapted from your working Enter key handler
+            var dataGrid = MainDataGrid; // Use the named DataGrid
+            
             // Ensure the container for the row is generated, scrolling if necessary.
-            var row = (DataGridRow)MainDataGrid.ItemContainerGenerator.ContainerFromItem(item);
+            var row = (DataGridRow)dataGrid.ItemContainerGenerator.ContainerFromItem(item);
             if (row == null)
             {
-                MainDataGrid.ScrollIntoView(item);
-                row = (DataGridRow)MainDataGrid.ItemContainerGenerator.ContainerFromItem(item);
-                if (row == null) return; // Could not generate the row container.
+                dataGrid.ScrollIntoView(item);
+                row = (DataGridRow)dataGrid.ItemContainerGenerator.ContainerFromItem(item);
+                if (row == null) return;
             }
 
-            // Find the "Value" column
-            DataGridColumn? valueColumn = MainDataGrid.Columns.FirstOrDefault(c => c.Header?.ToString() == "Value");
+            DataGridColumn? valueColumn = dataGrid.Columns.FirstOrDefault(c => c.Header?.ToString() == "Value");
             if (valueColumn == null) return;
+            
+            // Set the current cell to prepare for editing
+            dataGrid.CurrentCell = new DataGridCellInfo(item, valueColumn);
 
-            // This is the crucial part: we get the visual cell to ensure the DataGrid knows
-            // exactly what to edit.
-            MainDataGrid.CurrentCell = new DataGridCellInfo(item, valueColumn);
-
-            // Now, begin the edit.
+            // Set the ViewModel state and tell the DataGrid to show the editing template
             item.IsInEditMode = true;
-            MainDataGrid.BeginEdit();
+            dataGrid.BeginEdit();
         }
 
         private void ValueCell_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
