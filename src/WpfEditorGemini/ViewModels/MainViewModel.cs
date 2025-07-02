@@ -325,6 +325,8 @@ namespace JsonConfigEditor.ViewModels
             IsDirty = true;
             RefreshFlatList();
             OnPropertyChanged(nameof(WindowTitle));
+            // Trigger validation after history changes
+            _ = Task.Run(async () => await ValidateDocumentAsync());
         }
 
         // UPDATE command handlers to be simple delegations
@@ -532,7 +534,6 @@ namespace JsonConfigEditor.ViewModels
                 // The ViewModel remains responsible for the high-level operation
                 var operation = new AddNodeOperation(0, parentArray, newNode);
                 _historyService.Record(operation);
-                operation.Redo(this);
                 return true;
             }
             catch
@@ -581,7 +582,6 @@ namespace JsonConfigEditor.ViewModels
                         var oldValue = valueNode.Value;
                         var valueEditOp = new ValueEditOperation(0, valueNode, oldValue, newJsonValue.Clone());
                         _historyService.Record(valueEditOp);
-                        valueEditOp.Redo(this);
                     }
                 }
                 catch (JsonException ex)
@@ -713,10 +713,6 @@ namespace JsonConfigEditor.ViewModels
             SelectedGridItem = itemToReselect;
         }
 
-
-
-
-
         private List<DataGridRowItemViewModel> ApplyFiltering(List<DataGridRowItemViewModel> items)
         {
             if (!ShowOnlyInvalidNodes)
@@ -819,12 +815,31 @@ namespace JsonConfigEditor.ViewModels
                     // CHANGE: Store validation issues by path.
                     _validationIssuesMap[issueEntry.Key.Path] = issueEntry.Value;
                 }
+            });
 
-                Application.Current.Dispatcher.Invoke(() =>
+            // Update UI on the main thread
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                // Update validation state for all ViewModels in the persistent map
+                foreach (var vm in _persistentVmMap.Values)
                 {
-                    foreach (var vm in _persistentVmMap.Values)
+                    string? pathKey = vm.DomNode?.Path;
+                    if (pathKey != null && _validationIssuesMap.TryGetValue(pathKey, out var nodeIssues))
                     {
-                        string? pathKey = vm.DomNode?.Path;
+                        vm.SetValidationState(false, nodeIssues.FirstOrDefault()?.Message ?? "Validation failed");
+                    }
+                    else
+                    {
+                        vm.SetValidationState(true, "");
+                    }
+                }
+                
+                // Also update validation state for schema-only nodes
+                foreach (var vm in FlatItemsSource)
+                {
+                    if (vm.IsSchemaOnlyNode)
+                    {
+                        string? pathKey = vm.SchemaNodePathKey;
                         if (pathKey != null && _validationIssuesMap.TryGetValue(pathKey, out var nodeIssues))
                         {
                             vm.SetValidationState(false, nodeIssues.FirstOrDefault()?.Message ?? "Validation failed");
@@ -834,7 +849,7 @@ namespace JsonConfigEditor.ViewModels
                             vm.SetValidationState(true, "");
                         }
                     }
-                });
+                }
             });
         }
 
@@ -855,13 +870,7 @@ namespace JsonConfigEditor.ViewModels
             // For now, layer index is hardcoded to 0. This will be dynamic later.
             var operation = new ValueEditOperation(0, node, oldValue, newValue);
             _historyService.Record(operation);
-              
-            // The direct model manipulation is now part of the operation's Redo method.
-            // We can call it directly after recording to apply the change.
-            operation.Redo(this);
         }
-
-
 
         private void EnsurePathIsExpandedInFlatItemsSource(string path)
         {
@@ -954,7 +963,6 @@ namespace JsonConfigEditor.ViewModels
                     }
                     var operation = new RemoveNodeOperation(0, parent, nodeToRemove, nodeToRemove.Name, originalIndex);
                     _historyService.Record(operation);
-                    operation.Redo(this);
                 }
             }
         }
@@ -1089,7 +1097,6 @@ namespace JsonConfigEditor.ViewModels
         {
             var addOperation = new AddNodeOperation(0, parent, newNode);
             _historyService.Record(addOperation);
-            addOperation.Redo(this);
         }
         
         public void ReplaceRootWithHistory(DomNode newRoot)
@@ -1097,7 +1104,6 @@ namespace JsonConfigEditor.ViewModels
             var oldRoot = _rootDomNode;
             var op = new ReplaceRootOperation(0, oldRoot, newRoot);
             _historyService.Record(op);
-            op.Redo(this);
         }
         
         // This helper method is now needed for operations to call back into the ViewModel

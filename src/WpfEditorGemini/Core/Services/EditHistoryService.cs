@@ -34,8 +34,14 @@ namespace JsonConfigEditor.Core.Services
         /// </summary>
         public void Record(EditOperation operation)
         {
+            // Execute the operation immediately so changes take effect
+            operation.Redo(_mainViewModel);
+            
             _undoStack.Push(operation);
             _redoStack.Clear();
+            
+            // Notify that the model has changed
+            ModelChanged?.Invoke();
         }
 
         /// <summary>
