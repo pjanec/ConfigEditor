@@ -464,6 +464,22 @@ namespace JsonConfigEditor.Core.SchemaLoading
             {
                 var defaultValueAttr = propertyInfo.GetCustomAttribute<DefaultValueAttribute>();
                 if (defaultValueAttr != null) return defaultValueAttr.Value;
+
+                // Try to get the value from the property initializer by creating a new instance
+                // of the declaring type. This requires the class to have a parameterless constructor.
+                var declaringType = propertyInfo.DeclaringType;
+                if (declaringType != null && declaringType.GetConstructor(Type.EmptyTypes) != null)
+                {
+                    try
+                    {
+                        var instance = Activator.CreateInstance(declaringType);
+                        return propertyInfo.GetValue(instance);
+                    }
+                    catch 
+                    { 
+                        // Instantiation or getting the value might fail, so we fall through.
+                    }
+                }
             }
             try
             {
