@@ -555,6 +555,14 @@ namespace JsonConfigEditor.ViewModels
                 //    This will trigger the ModelChanged event, which will correctly refresh the UI.
                 _historyService.Record(operation);
 
+                // After the list has been refreshed, find the ViewModel for the node we just added.
+                if (_persistentVmMap.TryGetValue(newNode.Path, out var newVm))
+                {
+                    // Set it as the selected item. This will trigger the PropertyChanged event handler,
+                    // which contains all the logic to scroll to and focus the new row.
+                    SelectedGridItem = newVm;
+                }
+
                 return true;
             }
             catch
