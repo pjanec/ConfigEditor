@@ -10,6 +10,8 @@ namespace JsonConfigEditor.Core.History
         private readonly string _nameOrIndexAtTimeOfRemoval;
         private readonly int _originalIndexInArray;
 
+        public override string? NodePath => _removedNode.Path;
+
         public RemoveNodeOperation(int layerIndex, DomNode parent, DomNode removedNode, string nameOrIndexAtTimeOfRemoval, int originalIndexInArray)
             : base(layerIndex)
         {

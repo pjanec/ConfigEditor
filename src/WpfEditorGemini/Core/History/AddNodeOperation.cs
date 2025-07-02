@@ -8,6 +8,8 @@ namespace JsonConfigEditor.Core.History
         private readonly DomNode _parent;
         private readonly DomNode _newNode;
 
+        public override string? NodePath => _newNode.Path;
+
         public AddNodeOperation(int layerIndex, DomNode parent, DomNode newNode) : base(layerIndex)
         {
             _parent = parent;

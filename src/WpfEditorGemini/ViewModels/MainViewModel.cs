@@ -323,27 +323,21 @@ namespace JsonConfigEditor.ViewModels
         // This is the new, intelligent event handler
         private void OnHistoryModelChanged(EditOperation operation)
         {
-            // For simple value edits, we now execute the change *after* the commit has finished.
-            if (!operation.RequiresFullRefresh)
-            {
-                operation.Redo(this);
-            }
-
             IsDirty = true;
             OnPropertyChanged(nameof(WindowTitle));
             _ = Task.Run(() => ValidateDocumentAsync());
 
-            // Only do a full, disruptive refresh if the operation requires it.
             if (operation.RequiresFullRefresh)
             {
                 RefreshFlatList();
             }
-            else
+            else if (operation.NodePath != null)
             {
-                // For a value change, just update the single item's display properties.
-                if (SelectedGridItem != null)
+                // Find the specific ViewModel for the node that changed
+                // and tell it to refresh its display properties from the updated model.
+                if (_persistentVmMap.TryGetValue(operation.NodePath, out var vmToUpdate))
                 {
-                    SelectedGridItem.RefreshDisplayProperties();
+                    vmToUpdate.RefreshDisplayProperties();
                 }
             }
         }
@@ -547,12 +541,20 @@ namespace JsonConfigEditor.ViewModels
         {
             try
             {
-                // DELEGATE creation to the factory
+                // 1. Create the new node from the user's value.
                 var newNode = _nodeFactory.CreateFromValue(editValue, parentArray.Items.Count.ToString(), parentArray, itemSchema);
-                  
-                // The ViewModel remains responsible for the high-level operation
+                if (newNode == null) return false;
+
+                // 2. Create the operation that knows how to add the node.
                 var operation = new AddNodeOperation(0, parentArray, newNode);
+
+                // 3. (This is the fix) Execute the operation to modify the data model NOW.
+                operation.Redo(this);
+
+                // 4. Now that the model is updated, record the operation for undo/redo.
+                //    This will trigger the ModelChanged event, which will correctly refresh the UI.
                 _historyService.Record(operation);
+
                 return true;
             }
             catch

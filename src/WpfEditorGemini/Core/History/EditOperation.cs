@@ -21,6 +21,12 @@ namespace JsonConfigEditor.Core.History
         /// </summary>
         public virtual bool RequiresFullRefresh => false;
 
+        /// <summary>
+        /// Gets the unique path of the primary DomNode affected by this operation.
+        /// Can be null if the operation is not node-specific (e.g., global changes).
+        /// </summary>
+        public abstract string? NodePath { get; }
+
         protected EditOperation(int layerIndex)
         {
             LayerIndex = layerIndex;

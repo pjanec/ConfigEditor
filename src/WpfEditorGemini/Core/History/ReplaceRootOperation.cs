@@ -8,6 +8,8 @@ namespace JsonConfigEditor.Core.History
         private readonly DomNode? _oldRoot;
         private readonly DomNode _newRoot;
 
+        public override string? NodePath => _newRoot.Path;
+
         public ReplaceRootOperation(int layerIndex, DomNode? oldRoot, DomNode newRoot)
             : base(layerIndex)
         {
