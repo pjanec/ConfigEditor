@@ -36,6 +36,7 @@ namespace JsonConfigEditor.ViewModels
         private readonly DomNodeFactory _nodeFactory;
         // ADD the new history service
         private readonly EditHistoryService _historyService;
+        private readonly DomFilterService _filterService;
 
         // --- Private Fields: Core Data State ---
         private DomNode? _rootDomNode;
@@ -205,6 +206,7 @@ namespace JsonConfigEditor.ViewModels
             // INSTANTIATE the new history service in the constructor
             _historyService = new EditHistoryService(this);
             _historyService.ModelChanged += OnHistoryModelChanged; // Subscribe to the event
+            _filterService = new DomFilterService();
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
@@ -795,8 +797,9 @@ namespace JsonConfigEditor.ViewModels
 
             if (!string.IsNullOrEmpty(FilterText))
             {
-                var nodesToShow = GetFilteredNodeSet(FilterText);
-                BuildFilteredFlatListRecursive(_rootDomNode, tempFlatList, nodesToShow);
+                // DELEGATE filtering to the new service
+                var visiblePaths = _filterService.GetVisibleNodePaths(_rootDomNode, FilterText);
+                BuildFilteredFlatListRecursive(_rootDomNode, tempFlatList, visiblePaths);
             }
             else
             {
@@ -877,63 +880,10 @@ namespace JsonConfigEditor.ViewModels
             SelectedGridItem = itemToReselect;
         }
 
-        private HashSet<DomNode> GetFilteredNodeSet(string filterText)
+        private void BuildFilteredFlatListRecursive(DomNode node, List<DataGridRowItemViewModel> flatItems, HashSet<string> visiblePaths)
         {
-            var directlyMatchingNodes = new List<DomNode>();
-            if (_rootDomNode != null)
-            {
-                FindMatchingNodesRecursive(_rootDomNode, filterText.ToLowerInvariant(), directlyMatchingNodes);
-            }
-
-            var nodesToShow = new HashSet<DomNode>();
-            foreach (var node in directlyMatchingNodes)
-            {
-                var current = node;
-                while (current != null)
-                {
-                    nodesToShow.Add(current);
-                    current = current.Parent;
-                }
-            }
-            return nodesToShow;
-        }
-
-        private void FindMatchingNodesRecursive(DomNode node, string lowerCaseFilter, List<DomNode> matchingNodes)
-        {
-            bool isMatch = false;
-            if (node.Name.ToLowerInvariant().Contains(lowerCaseFilter))
-            {
-                isMatch = true;
-            }
-            else if (node is ValueNode valueNode && valueNode.Value.ToString().ToLowerInvariant().Contains(lowerCaseFilter))
-            {
-                isMatch = true;
-            }
-
-            if (isMatch)
-            {
-                matchingNodes.Add(node);
-            }
-
-            if (node is ObjectNode objectNode)
-            {
-                foreach (var child in objectNode.GetChildren())
-                {
-                    FindMatchingNodesRecursive(child, lowerCaseFilter, matchingNodes);
-                }
-            }
-            else if (node is ArrayNode arrayNode)
-            {
-                foreach (var item in arrayNode.GetItems())
-                {
-                    FindMatchingNodesRecursive(item, lowerCaseFilter, matchingNodes);
-                }
-            }
-        }
-
-        private void BuildFilteredFlatListRecursive(DomNode node, List<DataGridRowItemViewModel> flatItems, HashSet<DomNode> nodesToShow)
-        {
-            if (!nodesToShow.Contains(node))
+            // If the set of visible paths does not contain this node's path, skip it.
+            if (!visiblePaths.Contains(node.Path))
             {
                 return;
             }
@@ -944,6 +894,7 @@ namespace JsonConfigEditor.ViewModels
                 viewModel = new DataGridRowItemViewModel(node, schema, this);
             }
 
+            // Force expansion for all nodes that are part of the revealed path
             viewModel.SetExpansionStateInternal(true);
 
             flatItems.Add(viewModel);
@@ -952,14 +903,14 @@ namespace JsonConfigEditor.ViewModels
             {
                 foreach (var child in objectNode.GetChildren().OrderBy(c => c.Name))
                 {
-                    BuildFilteredFlatListRecursive(child, flatItems, nodesToShow);
+                    BuildFilteredFlatListRecursive(child, flatItems, visiblePaths);
                 }
             }
             else if (node is ArrayNode arrayNode)
             {
                 foreach (var item in arrayNode.GetItems())
                 {
-                    BuildFilteredFlatListRecursive(item, flatItems, nodesToShow);
+                    BuildFilteredFlatListRecursive(item, flatItems, visiblePaths);
                 }
             }
         }
