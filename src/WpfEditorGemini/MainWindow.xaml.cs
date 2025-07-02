@@ -271,27 +271,41 @@ namespace JsonConfigEditor
         /// <summary>
         /// Handles the end of cell editing.
         /// </summary>
-        private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
+private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
         {
             var item = e.Row.Item as DataGridRowItemViewModel;
-            if (item == null)
+            if (item == null || !item.IsInEditMode)
+            {
                 return;
+            }
 
             if (e.EditAction == DataGridEditAction.Commit)
             {
-                // Commit the edit
-                if (!item.CommitEdit())
+                // Commit the data in the ViewModel. This method now also sets
+                // item.IsInEditMode = false upon its own success.
+                if (item.CommitEdit())
                 {
-                    e.Cancel = true; // Cancel if commit failed
+                    // The data is committed. To force the UI to update, we post an action
+                    // to the dispatcher to move focus away from the cell's content.
+                    // This reliably forces the DataGrid to exit the cell's editing state.
+                    var dataGrid = (DataGrid)sender;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        dataGrid.Focus();
+                        var rowContainer = (DataGridRow)dataGrid.ItemContainerGenerator.ContainerFromItem(item);
+                        rowContainer?.Focus();
+
+                    }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 }
                 else
                 {
-                    item.IsInEditMode = false;
+                    // The ViewModel's commit logic failed (e.g., validation).
+                    // Explicitly cancel the DataGrid's commit action to keep the editor open.
+                    e.Cancel = true;
                 }
             }
-            else
+            else // EditAction is Cancel
             {
-                // Cancel the edit
                 item.CancelEdit();
             }
         }

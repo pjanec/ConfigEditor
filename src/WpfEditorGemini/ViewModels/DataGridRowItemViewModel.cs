@@ -435,55 +435,49 @@ namespace JsonConfigEditor.ViewModels
             {
                 if (_isAddItemPlaceholder)
                 {
-                    // TODO: Implement Undo/Redo for AddArrayItem
                     bool success = ParentViewModel.AddArrayItem(_parentArrayNodeForPlaceholder!, EditValue, _itemSchemaForPlaceholder);
-                    if (success) IsInEditMode = false; // Exit edit mode on success
+                    if (success) IsInEditMode = false;
                     return success;
                 }
                 else if (IsSchemaOnlyNode)
                 {
                     bool success = _parentViewModel.MaterializeSchemaNodeAndBeginEdit(this, EditValue);
-                    // IsInEditMode is set to false by the caller (MaterializeSchemaNodeAndBeginEdit) or by this VM if materialization starts from CommitEdit
-                    // The line below was in DataGridRowItemViewModel already.
-                    IsInEditMode = false; 
-                    return success; 
+                    if (success) IsInEditMode = false;
+                    return success;
                 }
                 else if (_domNode is ValueNode valueNode)
                 {
-                    JsonElement oldValue = valueNode.Value.Clone(); // Clone to ensure it's a snapshot
-                    
+                    JsonElement oldValue = valueNode.Value.Clone();
                     if (valueNode.TryUpdateFromString(EditValue))
                     {
-                        JsonElement newValue = valueNode.Value; // Get the new value (already a new element from TryUpdateFromString)
-                        ParentViewModel.RecordValueEdit(valueNode, oldValue, newValue); 
+                        var newValue = valueNode.Value;
+                        if (oldValue.ValueKind != newValue.ValueKind || oldValue.GetRawText() != newValue.GetRawText())
+                        {
+                            ParentViewModel.RecordValueEdit(valueNode, oldValue, newValue);
+                        }
                         SetValidationState(true, "");
-                        IsInEditMode = false; // Exit edit mode on successful commit
+                        IsInEditMode = false; // Set state on success
                         return true;
                     }
                     else
                     {
                         SetValidationState(false, "Invalid value format");
-                        // Do not exit edit mode if update failed due to invalid format
                         return false;
                     }
                 }
                 else if (_domNode is RefNode refNode)
                 {
                     string oldPath = refNode.ReferencePath;
-                    if (oldPath != EditValue) 
+                    if (oldPath != EditValue)
                     {
-                        // TODO: Refactor RefNode to have a TryUpdatePath that returns bool and sets new path internally
-                        // For now, assume direct assignment and record an operation.
-                        refNode.ReferencePath = EditValue; 
-                        // ParentViewModel.RecordRefPathEdit(refNode, oldPath, EditValue); // Needs RefPathEditOperation
-                        ParentViewModel.OnNodeValueChanged(this); // General notification for now
+                        refNode.ReferencePath = EditValue;
+                        ParentViewModel.OnNodeValueChanged(this);
                     }
-                    SetValidationState(true, ""); 
-                    IsInEditMode = false; // Exit edit mode on successful commit
+                    SetValidationState(true, "");
+                    IsInEditMode = false; // Set state on success
                     return true;
                 }
 
-                IsInEditMode = false; // Default to exit edit mode if no specific path handled it
                 return false;
             }
             catch (Exception ex)
