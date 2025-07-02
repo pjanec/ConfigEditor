@@ -345,17 +345,13 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         public bool IsHighlightedInSearch
         {
-            // This is now a getter that queries the MainViewModel's global search results
+            // This is now a getter that queries the MainViewModel's search results
             get 
             {
                 if (_parentViewModel == null) return false;
                 if (DomNode != null)
                 {
-                    return _parentViewModel.IsDomNodeGloballyMatched(DomNode);
-                }
-                else if (IsSchemaOnlyNode && !string.IsNullOrEmpty(SchemaNodePathKey))
-                {
-                    return _parentViewModel.IsSchemaPathGloballyMatched(SchemaNodePathKey);
+                    return _parentViewModel.IsDomNodeInSearchResults(DomNode);
                 }
                 return false; // Default if no context
             }
