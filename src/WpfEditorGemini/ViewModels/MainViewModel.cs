@@ -42,9 +42,10 @@ namespace JsonConfigEditor.ViewModels
 
         // --- Private Fields: Core Data State ---
         private DomNode? _rootDomNode;
-        private readonly Dictionary<DomNode, SchemaNode?> _domToSchemaMap = new();
-        private readonly Dictionary<DomNode, List<ValidationIssue>> _validationIssuesMap = new();
-        private readonly Dictionary<DomNode, DataGridRowItemViewModel> _persistentVmMap = new();
+        // Dictionaries are now keyed by the node's unique string path for stability
+        private readonly Dictionary<string, SchemaNode?> _domToSchemaMap = new();
+        private readonly Dictionary<string, List<ValidationIssue>> _validationIssuesMap = new();
+        private readonly Dictionary<string, DataGridRowItemViewModel> _persistentVmMap = new();
         private readonly Dictionary<string, bool> _schemaNodeExpansionState = new(); // For schema-only node states
 
         // --- Private Fields: UI State & Filters/Search ---
@@ -60,8 +61,6 @@ namespace JsonConfigEditor.ViewModels
 
         // --- Private Fields: Search Session State ---
         private List<DomNode> _searchResultNodes = new();
-
-
 
         // --- Private Fields: Search ---
         private System.Threading.Timer? _searchDebounceTimer;
@@ -193,8 +192,6 @@ namespace JsonConfigEditor.ViewModels
                 return $"JSON Configuration Editor - {fileName}{dirtyIndicator}";
             }
         }
-
-
 
         public MainViewModel()
         {
@@ -342,7 +339,7 @@ namespace JsonConfigEditor.ViewModels
 
             // Use existing logic to expand the tree and select the item
             EnsurePathIsExpandedInFlatItemsSource(nodeToFind.Path);
-            if (_persistentVmMap.TryGetValue(nodeToFind, out var vmToSelect))
+            if (_persistentVmMap.TryGetValue(nodeToFind.Path, out var vmToSelect))
             {
                 SelectedGridItem = vmToSelect;
             }
@@ -357,7 +354,7 @@ namespace JsonConfigEditor.ViewModels
 
             // Use existing logic to expand the tree and select the item
             EnsurePathIsExpandedInFlatItemsSource(nodeToFind.Path);
-            if (_persistentVmMap.TryGetValue(nodeToFind, out var vmToSelect))
+            if (_persistentVmMap.TryGetValue(nodeToFind.Path, out var vmToSelect))
             {
                 SelectedGridItem = vmToSelect;
             }
@@ -564,7 +561,7 @@ namespace JsonConfigEditor.ViewModels
                 try
                 {
                     JsonElement newJsonValue;
-                    SchemaNode? vnSchema = _domToSchemaMap.TryGetValue(valueNode, out var s) ? s : null;
+                    SchemaNode? vnSchema = _domToSchemaMap.TryGetValue(valueNode.Path, out var s) ? s : null;
                     Type targetType = vnSchema?.ClrType ?? typeof(string);
 
                     if (targetType == typeof(bool) && bool.TryParse(initialEditValue, out bool bVal))
@@ -592,7 +589,7 @@ namespace JsonConfigEditor.ViewModels
 
             RefreshFlatList();
 
-            if (_persistentVmMap.TryGetValue(materializedDomNode, out var newVm))
+            if (_persistentVmMap.TryGetValue(materializedDomNode.Path, out var newVm))
             {
                 SelectedGridItem = newVm;
                 if (materializedDomNode is ValueNode || materializedDomNode is RefNode)
@@ -603,18 +600,6 @@ namespace JsonConfigEditor.ViewModels
             }
             return true;
         }
-
-
-
-
-
-
-
-
-
-
-
-
 
         private void InitializeEmptyDocument()
         {
@@ -637,7 +622,7 @@ namespace JsonConfigEditor.ViewModels
         public void MapDomNodeToSchemaRecursive(DomNode node)
         {
             var schema = _schemaLoader.FindSchemaForPath(node.Path);
-            _domToSchemaMap[node] = schema;
+            _domToSchemaMap[node.Path] = schema;
 
             switch (node)
             {
@@ -666,24 +651,8 @@ namespace JsonConfigEditor.ViewModels
                 return;
             }
 
-            object? selectedIdentifier = null;
-            bool wasSchemaOnlySelected = false;
-            if (SelectedGridItem != null)
-            {
-                if (SelectedGridItem.IsDomNodePresent && SelectedGridItem.DomNode != null)
-                {
-                    selectedIdentifier = SelectedGridItem.DomNode.Path;
-                }
-                else if (SelectedGridItem.IsSchemaOnlyNode && !string.IsNullOrEmpty(SelectedGridItem.SchemaNodePathKey))
-                {
-                    selectedIdentifier = SelectedGridItem.SchemaNodePathKey;
-                    wasSchemaOnlySelected = true;
-                }
-                else
-                {
-                    selectedIdentifier = SelectedGridItem.NodeName;
-                }
-            }
+            // CHANGE: The selected identifier is now always a string path.
+            string? selectedPathIdentifier = SelectedGridItem?.DomNode?.Path ?? (SelectedGridItem?.IsSchemaOnlyNode == true ? SelectedGridItem.SchemaNodePathKey : null);
 
             var tempFlatList = new List<DataGridRowItemViewModel>();
 
@@ -737,30 +706,22 @@ namespace JsonConfigEditor.ViewModels
             var processedList = ApplyFiltering(tempFlatList);
 
             FlatItemsSource.Clear();
-            var newPersistentMap = new Dictionary<DomNode, DataGridRowItemViewModel>();
+            var newPersistentMap = new Dictionary<string, DataGridRowItemViewModel>();
             DataGridRowItemViewModel? itemToReselect = null;
 
             foreach (var itemVm in processedList)
             {
                 FlatItemsSource.Add(itemVm);
-                if (itemVm.DomNode != null)
+                string itemPathKey = itemVm.DomNode?.Path ?? itemVm.SchemaNodePathKey;
+
+                if (!string.IsNullOrEmpty(itemPathKey))
                 {
-                    newPersistentMap[itemVm.DomNode] = itemVm;
-                    if (!wasSchemaOnlySelected && selectedIdentifier is string selectedDomPath && itemVm.DomNode.Path == selectedDomPath)
+                    // CHANGE: Use the path as the key for the persistent map.
+                    newPersistentMap[itemPathKey] = itemVm;
+                    if (itemPathKey == selectedPathIdentifier)
                     {
                         itemToReselect = itemVm;
                     }
-                }
-                else if (itemVm.IsSchemaOnlyNode && !string.IsNullOrEmpty(itemVm.SchemaNodePathKey))
-                {
-                    if (wasSchemaOnlySelected && selectedIdentifier is string selectedSchemaPath && itemVm.SchemaNodePathKey == selectedSchemaPath)
-                    {
-                        itemToReselect = itemVm;
-                    }
-                }
-                else if (selectedIdentifier is string selectedName && itemVm.NodeName == selectedName)
-                {
-                    itemToReselect = itemVm;
                 }
             }
 
@@ -780,9 +741,9 @@ namespace JsonConfigEditor.ViewModels
                 return;
             }
 
-            if (!_persistentVmMap.TryGetValue(node, out var viewModel))
+            if (!_persistentVmMap.TryGetValue(node.Path, out var viewModel))
             {
-                _domToSchemaMap.TryGetValue(node, out var schema);
+                _domToSchemaMap.TryGetValue(node.Path, out var schema);
                 viewModel = new DataGridRowItemViewModel(node, schema, this);
             }
 
@@ -809,9 +770,9 @@ namespace JsonConfigEditor.ViewModels
 
         private void BuildFlatListRecursive(DomNode node, List<DataGridRowItemViewModel> flatItems)
         {
-            if (!_persistentVmMap.TryGetValue(node, out var viewModel))
+            if (!_persistentVmMap.TryGetValue(node.Path, out var viewModel))
             {
-                _domToSchemaMap.TryGetValue(node, out var schema);
+                _domToSchemaMap.TryGetValue(node.Path, out var schema);
                 viewModel = new DataGridRowItemViewModel(node, schema, this);
             }
             flatItems.Add(viewModel);
@@ -826,7 +787,7 @@ namespace JsonConfigEditor.ViewModels
                             {
                                 BuildFlatListRecursive(childDomNode, flatItems);
                             }
-                                                if (_showSchemaNodes && _domToSchemaMap.TryGetValue(objectNode, out var objectSchema) && objectSchema?.NodeType == SchemaNodeType.Object)
+                                                if (_showSchemaNodes && _domToSchemaMap.TryGetValue(objectNode.Path, out var objectSchema) && objectSchema?.NodeType == SchemaNodeType.Object)
                     {
                         var placeholders = _placeholderProvider.GetPlaceholders(objectNode, objectSchema, this);
                                 flatItems.AddRange(placeholders);
@@ -844,7 +805,7 @@ namespace JsonConfigEditor.ViewModels
                             {
                                 BuildFlatListRecursive(itemDomNode, flatItems);
                             }
-                            if (_domToSchemaMap.TryGetValue(arrayNode, out var arraySchema))
+                            if (_domToSchemaMap.TryGetValue(arrayNode.Path, out var arraySchema))
                             {
                                 var placeholderVm = new DataGridRowItemViewModel(arrayNode, arraySchema?.ItemSchema, this, arrayNode.Depth + 1);
                                 flatItems.Add(placeholderVm);
@@ -951,10 +912,6 @@ namespace JsonConfigEditor.ViewModels
             // ... logic to clear highlights ...
         }
 
-
-
-
-
         private string _searchStatusText = string.Empty;
         public string SearchStatusText
         {
@@ -982,41 +939,51 @@ namespace JsonConfigEditor.ViewModels
 
         private async Task ValidateDocumentAsync()
         {
-            if (_rootDomNode == null)
-                return;
+            if (_rootDomNode == null) return;
 
             await Task.Run(() =>
             {
                 _validationIssuesMap.Clear();
-                var issues = _validationService.ValidateTree(_rootDomNode, _domToSchemaMap);
+                // CHANGE: This now uses a temporary DomNode-keyed dictionary for the service call.
+                var tempDomToSchemaMap = new Dictionary<DomNode, SchemaNode?>();
+                // This helper function would need to be created or adapted to build the temp map.
+                BuildTemporaryDomToSchemaMap(_rootDomNode, tempDomToSchemaMap);
+                var issuesByNode = _validationService.ValidateTree(_rootDomNode, tempDomToSchemaMap);
 
-                foreach (var issue in issues)
+                foreach (var issueEntry in issuesByNode)
                 {
-                    _validationIssuesMap[issue.Key] = issue.Value;
+                    // CHANGE: Store validation issues by path.
+                    _validationIssuesMap[issueEntry.Key.Path] = issueEntry.Value;
                 }
 
-                foreach (var vm in _persistentVmMap.Values)
+                Application.Current.Dispatcher.Invoke(() =>
                 {
-                    if (vm.DomNode != null && _validationIssuesMap.TryGetValue(vm.DomNode, out var nodeIssues))
+                    foreach (var vm in _persistentVmMap.Values)
                     {
-                        var firstIssue = nodeIssues.FirstOrDefault();
-                        vm.SetValidationState(false, firstIssue?.Message ?? "Validation failed");
+                        string? pathKey = vm.DomNode?.Path;
+                        if (pathKey != null && _validationIssuesMap.TryGetValue(pathKey, out var nodeIssues))
+                        {
+                            vm.SetValidationState(false, nodeIssues.FirstOrDefault()?.Message ?? "Validation failed");
+                        }
+                        else
+                        {
+                            vm.SetValidationState(true, "");
+                        }
                     }
-                    else
-                    {
-                        vm.SetValidationState(true, "");
-                    }
-                }
+                });
             });
         }
 
-
-
-
-
-
-
-
+        // Helper to create the temporary map needed by the existing validation service
+        private void BuildTemporaryDomToSchemaMap(DomNode node, Dictionary<DomNode, SchemaNode?> map)
+        {
+            if (_domToSchemaMap.TryGetValue(node.Path, out var schema))
+            {
+                map[node] = schema;
+            }
+            if (node is ObjectNode o) foreach (var child in o.GetChildren()) BuildTemporaryDomToSchemaMap(child, map);
+            else if (node is ArrayNode a) foreach (var item in a.GetItems()) BuildTemporaryDomToSchemaMap(item, map);
+        }
 
         // UPDATE methods that record history to use the service
         internal void RecordValueEdit(ValueNode node, JsonElement oldValue, JsonElement newValue)
@@ -1056,7 +1023,7 @@ namespace JsonConfigEditor.ViewModels
             DomNode? currentNode = _rootDomNode;
             DataGridRowItemViewModel? currentVm = null;
 
-            if (_rootDomNode != null && _persistentVmMap.TryGetValue(_rootDomNode, out var rootVm))
+            if (_rootDomNode != null && _persistentVmMap.TryGetValue(_rootDomNode.Path, out var rootVm))
             {
                 currentVm = rootVm;
             }
@@ -1091,7 +1058,7 @@ namespace JsonConfigEditor.ViewModels
                     currentNode = null;
                 }
 
-                if (currentNode != null && _persistentVmMap.TryGetValue(currentNode, out var childVm))
+                if (currentNode != null && _persistentVmMap.TryGetValue(currentNode.Path, out var childVm))
                 {
                     if (!childVm.IsExpanded)
                     {
@@ -1104,9 +1071,9 @@ namespace JsonConfigEditor.ViewModels
 
         private void ClearMappingsRecursive(DomNode node)
         {
-            _domToSchemaMap.Remove(node);
-            _validationIssuesMap.Remove(node);
-            _persistentVmMap.Remove(node);
+            _domToSchemaMap.Remove(node.Path);
+            _validationIssuesMap.Remove(node.Path);
+            _persistentVmMap.Remove(node.Path);
 
             if (node is ObjectNode objectNode)
             {
@@ -1177,7 +1144,7 @@ namespace JsonConfigEditor.ViewModels
             {
                 foreach (var childNode in objectNode.GetChildren())
                 {
-                    if (_persistentVmMap.TryGetValue(childNode, out var childVm))
+                    if (_persistentVmMap.TryGetValue(childNode.Path, out var childVm))
                     {
                         SetExpansionRecursive(childVm, expand);
                     }
@@ -1187,7 +1154,7 @@ namespace JsonConfigEditor.ViewModels
             {
                 foreach (var childNode in arrayNode.GetItems())
                 {
-                    if (_persistentVmMap.TryGetValue(childNode, out var childVm))
+                    if (_persistentVmMap.TryGetValue(childNode.Path, out var childVm))
                     {
                         SetExpansionRecursive(childVm, expand);
                     }
@@ -1289,7 +1256,7 @@ namespace JsonConfigEditor.ViewModels
         public void SetNodeValue(ValueNode node, JsonElement value)
         {
             node.Value = value;
-            if (_persistentVmMap.TryGetValue(node, out var vm))
+            if (_persistentVmMap.TryGetValue(node.Path, out var vm))
             {
                 OnNodeValueChanged(vm);
             }
@@ -1337,7 +1304,7 @@ namespace JsonConfigEditor.ViewModels
             IsDirty = true;
             RebuildDomToSchemaMapping();
             RefreshFlatList();
-            if (_rootDomNode != null && _persistentVmMap.TryGetValue(_rootDomNode, out var newRootVm))
+            if (_rootDomNode != null && _persistentVmMap.TryGetValue(_rootDomNode.Path, out var newRootVm))
             {
                 SelectedGridItem = newRootVm;
             }
