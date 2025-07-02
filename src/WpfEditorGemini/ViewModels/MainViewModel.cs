@@ -20,6 +20,7 @@ using JsonConfigEditor.Contracts.Editors;
 using System.Threading; // Added for Timer
 using JsonConfigEditor.Core.Cascade;
 using JsonConfigEditor.Core.Services;
+using JsonConfigEditor.Core.History;
 
 namespace JsonConfigEditor.ViewModels
 {
@@ -33,6 +34,8 @@ namespace JsonConfigEditor.ViewModels
         private readonly CustomUIRegistryService _uiRegistry;
         // ADD the new factory service
         private readonly DomNodeFactory _nodeFactory;
+        // ADD the new history service
+        private readonly EditHistoryService _historyService;
 
         // --- Private Fields: Core Data State ---
         private DomNode? _rootDomNode;
@@ -53,9 +56,7 @@ namespace JsonConfigEditor.ViewModels
         private List<SearchResult> _searchResults = new(); // For F3 navigation (visible/filtered items)
         private int _currentSearchIndex = -1;
 
-        // --- Private Fields: Undo/Redo ---
-        private readonly Stack<EditOperation> _undoStack = new();
-        private readonly Stack<EditOperation> _redoStack = new();
+
 
         // --- Private Fields: Search ---
         private System.Threading.Timer? _searchDebounceTimer;
@@ -190,134 +191,7 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
-        private abstract class EditOperation
-        {
-            public abstract DomNode? TargetNode { get; }
-            public abstract void Undo(MainViewModel vm);
-            public abstract void Redo(MainViewModel vm);
-        }
 
-        private sealed class ValueEditOperation : EditOperation
-        {
-            private readonly DomNode _node;
-            private readonly System.Text.Json.JsonElement _oldValue;
-            private readonly System.Text.Json.JsonElement _newValue;
-
-            public override DomNode? TargetNode => _node;
-
-            public ValueEditOperation(DomNode node, System.Text.Json.JsonElement oldValue, System.Text.Json.JsonElement newValue)
-            {
-                _node = node;
-                _oldValue = oldValue;
-                _newValue = newValue;
-            }
-
-            public override void Undo(MainViewModel vm) => vm.SetNodeValue(_node, _oldValue);
-            public override void Redo(MainViewModel vm) => vm.SetNodeValue(_node, _newValue);
-        }
-
-        private sealed class AddNodeOperation : EditOperation
-        {
-            private readonly DomNode _parent;
-            private readonly DomNode _newNode;
-            private readonly string _name;
-
-            public override DomNode? TargetNode => _newNode;
-
-            public AddNodeOperation(DomNode parent, DomNode newNode, string name)
-            {
-                _parent = parent;
-                _newNode = newNode;
-                _name = name;
-            }
-
-            public override void Undo(MainViewModel vm) => vm.RemoveNode(_newNode);
-            public override void Redo(MainViewModel vm) => vm.AddNode(_parent, _newNode, _name);
-        }
-
-        private sealed class RemoveNodeOperation : EditOperation
-        {
-            private readonly DomNode _parent;
-            private readonly DomNode _removedNode;
-            private readonly string _nameOrIndexAtTimeOfRemoval;
-            private readonly int _originalIndexInArray;
-
-            public override DomNode? TargetNode => _originalIndexInArray != -1 ? _removedNode : _parent;
-
-            public RemoveNodeOperation(DomNode parent, DomNode removedNode, string nameOrIndexAtTimeOfRemoval, int originalIndexInArray)
-            {
-                _parent = parent;
-                _removedNode = removedNode;
-                _nameOrIndexAtTimeOfRemoval = nameOrIndexAtTimeOfRemoval;
-                _originalIndexInArray = originalIndexInArray;
-            }
-
-            public override void Undo(MainViewModel vm)
-            {
-                if (_parent is ArrayNode arrayParent)
-                {
-                    arrayParent.InsertItem(_originalIndexInArray, _removedNode);
-                }
-                else if (_parent is ObjectNode objectParent)
-                {
-                    objectParent.AddChild(_removedNode.Name, _removedNode);
-                }
-                vm.MapDomNodeToSchemaRecursive(_removedNode);
-                vm.IsDirty = true;
-                vm.RefreshFlatList();
-            }
-
-            public override void Redo(MainViewModel vm)
-            {
-                vm.RemoveNode(_removedNode);
-            }
-        }
-
-        private sealed class ReplaceRootOperation : EditOperation
-        {
-            private readonly DomNode? _oldRoot;
-            private DomNode _newRoot;
-
-            public override DomNode? TargetNode => _newRoot;
-
-            public ReplaceRootOperation(DomNode? oldRoot, DomNode newRoot)
-            {
-                _oldRoot = oldRoot;
-                _newRoot = newRoot;
-            }
-
-            public override void Undo(MainViewModel vm)
-            {
-                vm._rootDomNode = _oldRoot;
-                vm.IsDirty = true;
-                vm.RebuildDomToSchemaMapping();
-                vm.RefreshFlatList();
-                if (vm._rootDomNode != null && vm._persistentVmMap.TryGetValue(vm._rootDomNode, out var oldRootVm))
-                {
-                    vm.SelectedGridItem = oldRootVm;
-                }
-                else
-                {
-                    vm.SelectedGridItem = vm.FlatItemsSource.FirstOrDefault();
-                }
-            }
-
-            public override void Redo(MainViewModel vm)
-            {
-                vm._rootDomNode = _newRoot;
-                vm.IsDirty = true;
-                vm.RebuildDomToSchemaMapping();
-                vm.RefreshFlatList();
-                if (vm._persistentVmMap.TryGetValue(vm._rootDomNode, out var newRootVm))
-                {
-                    vm.SelectedGridItem = newRootVm;
-                }
-                else
-                {
-                    vm.SelectedGridItem = vm.FlatItemsSource.FirstOrDefault();
-                }
-            }
-        }
 
         public MainViewModel()
         {
@@ -328,14 +202,18 @@ namespace JsonConfigEditor.ViewModels
             _schemaLoader = new SchemaLoaderService(_uiRegistry);
             // INSTANTIATE the new factory in the constructor
             _nodeFactory = new DomNodeFactory(_schemaLoader, this);
+            // INSTANTIATE the new history service in the constructor
+            _historyService = new EditHistoryService(this);
+            _historyService.ModelChanged += OnHistoryModelChanged; // Subscribe to the event
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
             SaveFileCommand = new RelayCommand(ExecuteSaveFile, CanExecuteSaveFile);
             SaveAsFileCommand = new RelayCommand(ExecuteSaveAsFile);
             ExitCommand = new RelayCommand(ExecuteExit);
-            UndoCommand = new RelayCommand(ExecuteUndo, CanExecuteUndo);
-            RedoCommand = new RelayCommand(ExecuteRedo, CanExecuteRedo);
+            // UPDATE ICommand properties to use the service
+            UndoCommand = new RelayCommand(ExecuteUndo, () => _historyService.CanUndo);
+            RedoCommand = new RelayCommand(ExecuteRedo, () => _historyService.CanRedo);
             FocusSearchCommand = new RelayCommand(ExecuteFocusSearch);
             FindNextCommand = new RelayCommand(ExecuteFindNext, CanExecuteFind);
             FindPreviousCommand = new RelayCommand(ExecuteFindPrevious, CanExecuteFind);
@@ -435,39 +313,17 @@ namespace JsonConfigEditor.ViewModels
             Application.Current.Shutdown();
         }
 
-        private void ExecuteUndo()
+        // ADD a handler for the service's event
+        private void OnHistoryModelChanged()
         {
-            if (_undoStack.Count == 0) return;
-            var op = _undoStack.Pop();
-            DomNode? targetNodeForSelection = op.TargetNode;
-            op.Undo(this);
-            _redoStack.Push(op);
+            IsDirty = true;
             RefreshFlatList();
-            if (targetNodeForSelection != null && _persistentVmMap.TryGetValue(targetNodeForSelection, out var vmToSelect))
-            {
-                SelectedGridItem = vmToSelect;
-            }
             OnPropertyChanged(nameof(WindowTitle));
         }
 
-        private bool CanExecuteUndo() => _undoStack.Count > 0;
-
-        private void ExecuteRedo()
-        {
-            if (_redoStack.Count == 0) return;
-            var op = _redoStack.Pop();
-            DomNode? targetNodeForSelection = op.TargetNode;
-            op.Redo(this);
-            _undoStack.Push(op);
-            RefreshFlatList();
-            if (targetNodeForSelection != null && _persistentVmMap.TryGetValue(targetNodeForSelection, out var vmToSelect))
-            {
-                SelectedGridItem = vmToSelect;
-            }
-            OnPropertyChanged(nameof(WindowTitle));
-        }
-
-        private bool CanExecuteRedo() => _redoStack.Count > 0;
+        // UPDATE command handlers to be simple delegations
+        private void ExecuteUndo() => _historyService.Undo();
+        private void ExecuteRedo() => _historyService.Redo();
 
         private void ExecuteFocusSearch() { }
 
@@ -692,6 +548,7 @@ namespace JsonConfigEditor.ViewModels
 
         public async Task LoadFileAsync(string filePath)
         {
+            _historyService.Clear();
             try
             {
                 _rootDomNode = await _jsonParser.ParseFromFileAsync(filePath);
@@ -779,7 +636,9 @@ namespace JsonConfigEditor.ViewModels
                 var newNode = _nodeFactory.CreateFromValue(editValue, parentArray.Items.Count.ToString(), parentArray, itemSchema);
                   
                 // The ViewModel remains responsible for the high-level operation
-                RecordEditOperation(new AddNodeOperation(parentArray, newNode, newNode.Name));
+                var operation = new AddNodeOperation(0, parentArray, newNode);
+                _historyService.Record(operation);
+                operation.Redo(this);
                 return true;
             }
             catch
@@ -826,8 +685,8 @@ namespace JsonConfigEditor.ViewModels
                     if (valueNode.Value.ValueKind != newJsonValue.ValueKind || valueNode.Value.ToString() != newJsonValue.ToString())
                     {
                         var oldValue = valueNode.Value;
-                        var valueEditOp = new ValueEditOperation(valueNode, oldValue, newJsonValue.Clone());
-                        RecordEditOperation(valueEditOp);
+                        var valueEditOp = new ValueEditOperation(0, valueNode, oldValue, newJsonValue.Clone());
+                        _historyService.Record(valueEditOp);
                         valueEditOp.Redo(this);
                     }
                 }
@@ -881,7 +740,7 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
-        private void MapDomNodeToSchemaRecursive(DomNode node)
+        public void MapDomNodeToSchemaRecursive(DomNode node)
         {
             var schema = _schemaLoader.FindSchemaForPath(node.Path);
             _domToSchemaMap[node] = schema;
@@ -1458,79 +1317,20 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
-        private void RecordEditOperation(EditOperation op)
-        {
-            _undoStack.Push(op);
-            _redoStack.Clear();
-            IsDirty = true;
-            OnPropertyChanged(nameof(WindowTitle));
-        }
 
-        private void SetNodeValue(DomNode node, System.Text.Json.JsonElement value)
-        {
-            if (node is ValueNode valueNode)
-            {
-                valueNode.Value = value;
-                if (_persistentVmMap.TryGetValue(node, out var vm))
-                {
-                    OnNodeValueChanged(vm);
-                }
-                else
-                {
-                    IsDirty = true;
-                    OnPropertyChanged(nameof(WindowTitle));
-                    _ = ValidateDocumentAsync();
-                }
-            }
-        }
 
-        private void AddNode(DomNode parent, DomNode newNode, string name)
-        {
-            if (parent is ObjectNode objectParent)
-            {
-                objectParent.AddChild(name, newNode);
-            }
-            else if (parent is ArrayNode arrayParent)
-            {
-                arrayParent.InsertItem(arrayParent.Items.Count, newNode);
-            }
-            else
-            {
-                return;
-            }
-        }
 
-        private void RemoveNode(DomNode nodeToRemove)
-        {
-            if (nodeToRemove == null) return;
 
-            var parent = nodeToRemove.Parent;
-
-            ClearMappingsRecursive(nodeToRemove);
-
-            if (parent is ObjectNode objectParent)
-            {
-                objectParent.RemoveChild(nodeToRemove.Name);
-            }
-            else if (parent is ArrayNode arrayParent)
-            {
-                arrayParent.RemoveItem(nodeToRemove);
-            }
-            else if (nodeToRemove == _rootDomNode)
-            {
-                if (_rootDomNode == nodeToRemove) _rootDomNode = null;
-            }
-
-            IsDirty = true;
-            RefreshFlatList();
-        }
-
+        // UPDATE methods that record history to use the service
         internal void RecordValueEdit(ValueNode node, JsonElement oldValue, JsonElement newValue)
         {
-            RecordEditOperation(new ValueEditOperation(node, oldValue, newValue));
-
-            IsDirty = true;
-            OnPropertyChanged(nameof(WindowTitle));
+            // For now, layer index is hardcoded to 0. This will be dynamic later.
+            var operation = new ValueEditOperation(0, node, oldValue, newValue);
+            _historyService.Record(operation);
+              
+            // The direct model manipulation is now part of the operation's Redo method.
+            // We can call it directly after recording to apply the change.
+            operation.Redo(this);
         }
 
         private void AddSchemaOnlyChildrenRecursive(DataGridRowItemViewModel parentVm, List<DataGridRowItemViewModel> flatItems, int parentDepth)
@@ -1640,8 +1440,9 @@ namespace JsonConfigEditor.ViewModels
                     {
                         originalIndex = arrayParent.Items.ToList().IndexOf(nodeToRemove);
                     }
-                    RecordEditOperation(new RemoveNodeOperation(parent, nodeToRemove, nodeToRemove.Name, originalIndex));
-                    RemoveNode(nodeToRemove);
+                    var operation = new RemoveNodeOperation(0, parent, nodeToRemove, nodeToRemove.Name, originalIndex);
+                    _historyService.Record(operation);
+                    operation.Redo(this);
                 }
             }
         }
@@ -1774,17 +1575,79 @@ namespace JsonConfigEditor.ViewModels
         }
         public void AddNodeWithHistory(ObjectNode parent, DomNode newNode, string name)
         {
-            var addOperation = new AddNodeOperation(parent, newNode, name);
-            RecordEditOperation(addOperation);
+            var addOperation = new AddNodeOperation(0, parent, newNode);
+            _historyService.Record(addOperation);
             addOperation.Redo(this);
         }
         
         public void ReplaceRootWithHistory(DomNode newRoot)
         {
             var oldRoot = _rootDomNode;
-            var op = new ReplaceRootOperation(oldRoot, newRoot);
-            RecordEditOperation(op);
+            var op = new ReplaceRootOperation(0, oldRoot, newRoot);
+            _historyService.Record(op);
             op.Redo(this);
+        }
+        
+        // This helper method is now needed for operations to call back into the ViewModel
+        public void SetNodeValue(ValueNode node, JsonElement value)
+        {
+            node.Value = value;
+            if (_persistentVmMap.TryGetValue(node, out var vm))
+            {
+                OnNodeValueChanged(vm);
+            }
+            else
+            {
+                IsDirty = true;
+                OnPropertyChanged(nameof(WindowTitle));
+                _ = ValidateDocumentAsync();
+            }
+        }
+          
+        // This helper method is now needed for operations to call back into the ViewModel
+        public void AddNodeToParent(DomNode parent, DomNode child)
+        {
+             if (parent is ObjectNode obj) obj.AddChild(child.Name, child);
+             else if (parent is ArrayNode arr) arr.InsertItem(arr.Items.Count, child);
+        }
+          
+        // This helper method is now needed for operations to call back into the ViewModel
+        public void RemoveNodeFromParent(DomNode child)
+        {
+            if (child == null) return;
+
+            var parent = child.Parent;
+            ClearMappingsRecursive(child);
+
+            if (parent is ObjectNode objectParent)
+            {
+                objectParent.RemoveChild(child.Name);
+            }
+            else if (parent is ArrayNode arrayParent)
+            {
+                arrayParent.RemoveItem(child);
+            }
+            else if (child == _rootDomNode)
+            {
+                if (_rootDomNode == child) _rootDomNode = null;
+            }
+        }
+        
+        // This helper method is now needed for operations to call back into the ViewModel
+        public void SetRootNode(DomNode? newRoot)
+        {
+            _rootDomNode = newRoot;
+            IsDirty = true;
+            RebuildDomToSchemaMapping();
+            RefreshFlatList();
+            if (_rootDomNode != null && _persistentVmMap.TryGetValue(_rootDomNode, out var newRootVm))
+            {
+                SelectedGridItem = newRootVm;
+            }
+            else
+            {
+                SelectedGridItem = FlatItemsSource.FirstOrDefault();
+            }
         }
     }
 }
