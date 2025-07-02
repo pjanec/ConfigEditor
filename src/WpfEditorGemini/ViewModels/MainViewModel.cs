@@ -39,6 +39,7 @@ namespace JsonConfigEditor.ViewModels
         private readonly DomFilterService _filterService;
         private readonly DomSearchService _searchService;
         private readonly SchemaPlaceholderProvider _placeholderProvider;
+        private readonly ViewModelBuilderService _viewModelBuilder;
 
         // --- Private Fields: Core Data State ---
         private DomNode? _rootDomNode;
@@ -96,6 +97,7 @@ namespace JsonConfigEditor.ViewModels
         // --- Public Properties ---
 
         public CustomUIRegistryService UiRegistry => _uiRegistry;
+        public ISchemaLoaderService SchemaLoader => _schemaLoader;
 
         public ObservableCollection<DataGridRowItemViewModel> FlatItemsSource { get; } = new();
 
@@ -208,6 +210,7 @@ namespace JsonConfigEditor.ViewModels
             _historyService = new EditHistoryService(this);
             _historyService.ModelChanged += OnHistoryModelChanged; // Subscribe to the event
             _filterService = new DomFilterService();
+            _viewModelBuilder = new ViewModelBuilderService(_placeholderProvider, this);
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
@@ -651,60 +654,38 @@ namespace JsonConfigEditor.ViewModels
                 return;
             }
 
-            // CHANGE: The selected identifier is now always a string path.
+            // 1. Preserve selection
             string? selectedPathIdentifier = SelectedGridItem?.DomNode?.Path ?? (SelectedGridItem?.IsSchemaOnlyNode == true ? SelectedGridItem.SchemaNodePathKey : null);
-
-            var tempFlatList = new List<DataGridRowItemViewModel>();
-
+              
+            // 2. DELEGATE list building to the new service
+            List<DataGridRowItemViewModel> tempFlatList;
+            
             if (!string.IsNullOrEmpty(FilterText))
             {
-                // DELEGATE filtering to the new service
+                // Use filtering service to get visible paths
                 var visiblePaths = _filterService.GetVisibleNodePaths(_rootDomNode, FilterText);
-                BuildFilteredFlatListRecursive(_rootDomNode, tempFlatList, visiblePaths);
+                tempFlatList = _viewModelBuilder.BuildList(
+                    _rootDomNode, 
+                    _persistentVmMap, 
+                    _domToSchemaMap, 
+                    ShowSchemaNodes,
+                    visiblePaths
+                );
             }
             else
             {
-                BuildFlatListRecursive(_rootDomNode, tempFlatList);
-                if (_showSchemaNodes && _schemaLoader?.RootSchemas != null)
-                {
-                    var primaryRootSchema = _schemaLoader.GetRootSchema();
-
-                    foreach (var schemaEntry in _schemaLoader.RootSchemas)
-                    {
-                        string mountPath = schemaEntry.Key;
-                        SchemaNode schemaRoot = schemaEntry.Value;
-
-                        if (schemaRoot == primaryRootSchema && string.IsNullOrEmpty(mountPath))
-                        {
-                            continue;
-                        }
-
-                        DomNode? existingDomForMountPath = FindDomNodeByPath(mountPath);
-                        if (existingDomForMountPath != null)
-                        {
-                            continue;
-                        }
-
-                        if (tempFlatList.Any(vm => vm.IsSchemaOnlyNode && vm.SchemaNodePathKey == mountPath && vm.Indentation.Left == 20))
-                        {
-                            continue;
-                        }
-
-                        int depth = 1;
-                        string propertyName = schemaRoot.Name;
-
-                        var rootSchemaVm = new DataGridRowItemViewModel(schemaRoot, propertyName, this, depth, mountPath);
-                        tempFlatList.Add(rootSchemaVm);
-                        if (rootSchemaVm.IsExpanded && rootSchemaVm.IsExpandable)
-                        {
-                            AddSchemaOnlyChildrenRecursive(rootSchemaVm, tempFlatList, depth);
-                        }
-                    }
-                }
+                tempFlatList = _viewModelBuilder.BuildList(
+                    _rootDomNode, 
+                    _persistentVmMap, 
+                    _domToSchemaMap, 
+                    ShowSchemaNodes
+                );
             }
 
+            // 3. Apply view filters (like "Show Only Invalid")
             var processedList = ApplyFiltering(tempFlatList);
-
+              
+            // 4. Update the UI collection and the persistent map
             FlatItemsSource.Clear();
             var newPersistentMap = new Dictionary<string, DataGridRowItemViewModel>();
             DataGridRowItemViewModel? itemToReselect = null;
@@ -716,7 +697,6 @@ namespace JsonConfigEditor.ViewModels
 
                 if (!string.IsNullOrEmpty(itemPathKey))
                 {
-                    // CHANGE: Use the path as the key for the persistent map.
                     newPersistentMap[itemPathKey] = itemVm;
                     if (itemPathKey == selectedPathIdentifier)
                     {
@@ -728,130 +708,14 @@ namespace JsonConfigEditor.ViewModels
             _persistentVmMap.Clear();
             foreach (var entry in newPersistentMap) _persistentVmMap.Add(entry.Key, entry.Value);
 
+            // 5. Finalize UI state
             HighlightSearchResults();
-
             SelectedGridItem = itemToReselect;
         }
 
-        private void BuildFilteredFlatListRecursive(DomNode node, List<DataGridRowItemViewModel> flatItems, HashSet<string> visiblePaths)
-        {
-            // If the set of visible paths does not contain this node's path, skip it.
-            if (!visiblePaths.Contains(node.Path))
-            {
-                return;
-            }
 
-            if (!_persistentVmMap.TryGetValue(node.Path, out var viewModel))
-            {
-                _domToSchemaMap.TryGetValue(node.Path, out var schema);
-                viewModel = new DataGridRowItemViewModel(node, schema, this);
-            }
 
-            // Force expansion for all nodes that are part of the revealed path
-            viewModel.SetExpansionStateInternal(true);
 
-            flatItems.Add(viewModel);
-
-            if (node is ObjectNode objectNode)
-            {
-                foreach (var child in objectNode.GetChildren().OrderBy(c => c.Name))
-                {
-                    BuildFilteredFlatListRecursive(child, flatItems, visiblePaths);
-                }
-            }
-            else if (node is ArrayNode arrayNode)
-            {
-                foreach (var item in arrayNode.GetItems())
-                {
-                    BuildFilteredFlatListRecursive(item, flatItems, visiblePaths);
-                }
-            }
-        }
-
-        private void BuildFlatListRecursive(DomNode node, List<DataGridRowItemViewModel> flatItems)
-        {
-            if (!_persistentVmMap.TryGetValue(node.Path, out var viewModel))
-            {
-                _domToSchemaMap.TryGetValue(node.Path, out var schema);
-                viewModel = new DataGridRowItemViewModel(node, schema, this);
-            }
-            flatItems.Add(viewModel);
-            if (viewModel.IsExpanded)
-            {
-                if (viewModel.IsDomNodePresent && node != null)
-                {
-                    switch (node)
-                    {
-                        case ObjectNode objectNode:
-                            foreach (var childDomNode in objectNode.GetChildren())
-                            {
-                                BuildFlatListRecursive(childDomNode, flatItems);
-                            }
-                                                if (_showSchemaNodes && _domToSchemaMap.TryGetValue(objectNode.Path, out var objectSchema) && objectSchema?.NodeType == SchemaNodeType.Object)
-                    {
-                        var placeholders = _placeholderProvider.GetPlaceholders(objectNode, objectSchema, this);
-                                flatItems.AddRange(placeholders);
-                                foreach (var placeholder in placeholders)
-                                {
-                                    if (placeholder.IsExpanded && placeholder.IsExpandable)
-                                    {
-                                        AddSchemaOnlyChildrenRecursive(placeholder, flatItems, placeholder.DomNode?.Depth ?? 0);
-                                    }
-                                }
-                            }
-                            break;
-                        case ArrayNode arrayNode:
-                            foreach (var itemDomNode in arrayNode.GetItems())
-                            {
-                                BuildFlatListRecursive(itemDomNode, flatItems);
-                            }
-                            if (_domToSchemaMap.TryGetValue(arrayNode.Path, out var arraySchema))
-                            {
-                                var placeholderVm = new DataGridRowItemViewModel(arrayNode, arraySchema?.ItemSchema, this, arrayNode.Depth + 1);
-                                flatItems.Add(placeholderVm);
-                            }
-                            break;
-                    }
-                }
-                else if (viewModel.IsSchemaOnlyNode && viewModel.SchemaContextNode != null)
-                {
-                    SchemaNode schemaContext = viewModel.SchemaContextNode;
-                    if (schemaContext.Properties != null && schemaContext.NodeType == SchemaNodeType.Object)
-                    {
-                        foreach (var propEntry in schemaContext.Properties)
-                        {
-                            var childDepth = (int)(viewModel.Indentation.Left / 20) + 1;
-                            var childSchemaPathKey = $"{viewModel.SchemaNodePathKey}/{propEntry.Key}";
-                            var childSchemaVm = new DataGridRowItemViewModel(propEntry.Value, propEntry.Key, this, childDepth, childSchemaPathKey);
-                            flatItems.Add(childSchemaVm);
-                            if (childSchemaVm.IsExpanded && childSchemaVm.IsExpandable)
-                            {
-                                AddSchemaOnlyChildrenRecursive(childSchemaVm, flatItems, childDepth);
-                            }
-                        }
-                    }
-                }
-            }
-            if (node == _rootDomNode && _showSchemaNodes)
-            {
-                var rootSchema = _schemaLoader.GetRootSchema();
-                if (rootSchema?.NodeType == SchemaNodeType.Object && node is ObjectNode rootObjectNode)
-                {
-                    var placeholders = _placeholderProvider.GetPlaceholders(rootObjectNode, rootSchema, this);
-                    foreach (var schemaOnlyVm in placeholders)
-                    {
-                        if (!flatItems.Any(vm => vm.NodeName == schemaOnlyVm.NodeName && vm.SchemaContextNode == schemaOnlyVm.SchemaContextNode && vm.Indentation.Left == schemaOnlyVm.Indentation.Left && vm.IsSchemaOnlyNode))
-                        {
-                            flatItems.Add(schemaOnlyVm);
-                            if (schemaOnlyVm.IsExpanded && schemaOnlyVm.IsExpandable)
-                            {
-                                AddSchemaOnlyChildrenRecursive(schemaOnlyVm, flatItems, 1);
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
         private List<DataGridRowItemViewModel> ApplyFiltering(List<DataGridRowItemViewModel> items)
         {
@@ -997,23 +861,7 @@ namespace JsonConfigEditor.ViewModels
             operation.Redo(this);
         }
 
-        private void AddSchemaOnlyChildrenRecursive(DataGridRowItemViewModel parentVm, List<DataGridRowItemViewModel> flatItems, int parentDepth)
-        {
-            if (parentVm.SchemaContextNode?.Properties != null)
-            {
-                foreach (var propEntry in parentVm.SchemaContextNode.Properties)
-                {
-                    var childDepth = parentDepth + 1;
-                    var childSchemaPathKey = $"{parentVm.SchemaNodePathKey}/{propEntry.Key}";
-                    var childSchemaVm = new DataGridRowItemViewModel(propEntry.Value, propEntry.Key, this, childDepth, childSchemaPathKey);
-                    flatItems.Add(childSchemaVm);
-                    if (childSchemaVm.IsExpanded && childSchemaVm.IsExpandable)
-                    {
-                        AddSchemaOnlyChildrenRecursive(childSchemaVm, flatItems, childDepth);
-                    }
-                }
-            }
-        }
+
 
         private void EnsurePathIsExpandedInFlatItemsSource(string path)
         {
