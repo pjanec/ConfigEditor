@@ -602,6 +602,10 @@ namespace JsonConfigEditor.ViewModels
                     {
                         var oldValue = valueNode.Value;
                         var valueEditOp = new ValueEditOperation(0, valueNode, oldValue, newJsonValue.Clone());
+
+                        // 1. Execute the operation now to update the model from the default value to the new value.
+                        valueEditOp.Redo(this);
+
                         _historyService.Record(valueEditOp);
                     }
                 }
