@@ -76,143 +76,154 @@ namespace JsonConfigEditor.Views
             // Fallback to existing logic if no custom UI component found or UiRegistry not set
             if (!vm.IsInEditMode || !vm.IsEditable)
             {
-                if (vm.IsAddItemPlaceholder)
-                    return DisplayAddItemTemplate ?? DisplayStringTemplate;
-
-                if (vm.IsSchemaOnlyNode)
-                {
-                    if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
-                        return DisplayEnumTemplate ?? DisplayStringTemplate;
-                    if (vm.SchemaContextNode?.ClrType == typeof(bool))
-                        return DisplayBooleanTemplate ?? DisplayStringTemplate;
-                    if (vm.SchemaContextNode?.ClrType == typeof(int) || vm.SchemaContextNode?.ClrType == typeof(long) ||
-                        vm.SchemaContextNode?.ClrType == typeof(double) || vm.SchemaContextNode?.ClrType == typeof(float) ||
-                        vm.SchemaContextNode?.ClrType == typeof(decimal))
-                        return DisplayNumberTemplate ?? DisplayStringTemplate;
-                    // fallback
-                    return DisplaySchemaOnlyTemplate ?? DisplayStringTemplate;
-                }
-
-                if (vm.DomNode is ValueNode valueNode)
-                {
-                    // Debug output
-                    System.Diagnostics.Debug.WriteLine($"Template Selector - DOM Node: {valueNode.Path}, JSON Type: {valueNode.Value.ValueKind}, Schema Type: {vm.SchemaContextNode?.ClrType?.Name}, Schema Allowed Values: {vm.SchemaContextNode?.AllowedValues?.Count ?? 0}");
-                    System.Diagnostics.Debug.WriteLine($"Template Selector - SchemaContextNode is null: {vm.SchemaContextNode == null}, SchemaContextNode Name: {vm.SchemaContextNode?.Name}");
-                    
-                    // First check if schema has allowed values (enum)
-                    if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
-                        return DisplayEnumTemplate ?? DisplayStringTemplate;
-                    
-                    // Then check JSON value type
-                    var template = valueNode.Value.ValueKind switch
-                    {
-                        JsonValueKind.True or JsonValueKind.False => DisplayBooleanTemplate ?? DisplayStringTemplate,
-                        JsonValueKind.Number => DisplayNumberTemplate ?? DisplayStringTemplate,
-                        _ => null
-                    };
-                    
-                    // If JSON type matched, use that template
-                    if (template != null)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Template Selector - Using JSON type template for {valueNode.Path}");
-                        return template;
-                    }
-                    
-                    // Otherwise, fall back to schema type
-                    if (vm.SchemaContextNode?.ClrType == typeof(bool))
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Template Selector - Using schema boolean template for {valueNode.Path}");
-                        return DisplayBooleanTemplate ?? DisplayStringTemplate;
-                    }
-                    if (vm.SchemaContextNode?.ClrType == typeof(int) || vm.SchemaContextNode?.ClrType == typeof(long) ||
-                        vm.SchemaContextNode?.ClrType == typeof(double) || vm.SchemaContextNode?.ClrType == typeof(float) ||
-                        vm.SchemaContextNode?.ClrType == typeof(decimal))
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Template Selector - Using schema number template for {valueNode.Path}");
-                        return DisplayNumberTemplate ?? DisplayStringTemplate;
-                    }
-                    
-                    System.Diagnostics.Debug.WriteLine($"Template Selector - Using default string template for {valueNode.Path}");
-                    return DisplayStringTemplate;
-                }
-
-                if (vm.DomNode is RefNode)
-                    return DisplayRefTemplate ?? DisplayStringTemplate;
-
-                if (vm.DomNode is ArrayNode)
-                    return DisplayArrayTemplate ?? DisplayStringTemplate;
-
-                if (vm.DomNode is ObjectNode)
-                    return DisplayObjectTemplate ?? DisplayStringTemplate;
-
-                return DisplayStringTemplate;
+                return SelectDisplayTemplate(vm);
             }
             else
             {
-                if (vm.IsAddItemPlaceholder)
-                    return EditAddItemTemplate ?? EditStringTemplate;
-
-                if (vm.IsSchemaOnlyNode)
-                {
-                    if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
-                        return EditEnumTemplate ?? EditStringTemplate;
-                    if (vm.SchemaContextNode?.ClrType == typeof(bool))
-                        return EditBooleanTemplate ?? EditStringTemplate;
-                    if (vm.SchemaContextNode?.ClrType == typeof(int) || vm.SchemaContextNode?.ClrType == typeof(long) ||
-                        vm.SchemaContextNode?.ClrType == typeof(double) || vm.SchemaContextNode?.ClrType == typeof(float) ||
-                        vm.SchemaContextNode?.ClrType == typeof(decimal))
-                        return EditNumberTemplate ?? EditStringTemplate;
-                    // fallback
-                    return EditStringTemplate;
-                }
-
-                if (vm.DomNode is ValueNode valueNode)
-                {
-                    // Debug output
-                    System.Diagnostics.Debug.WriteLine($"Template Selector (EDIT) - DOM Node: {valueNode.Path}, JSON Type: {valueNode.Value.ValueKind}, Schema Type: {vm.SchemaContextNode?.ClrType?.Name}, Schema Allowed Values: {vm.SchemaContextNode?.AllowedValues?.Count ?? 0}");
-                    
-                    // First check if schema has allowed values (enum)
-                    if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
-                        return EditEnumTemplate ?? EditStringTemplate;
-
-                    // Then check JSON value type
-                    var template = valueNode.Value.ValueKind switch
-                    {
-                        JsonValueKind.True or JsonValueKind.False => EditBooleanTemplate ?? EditStringTemplate,
-                        JsonValueKind.Number => EditNumberTemplate ?? EditStringTemplate,
-                        _ => null
-                    };
-                    
-                    // If JSON type matched, use that template
-                    if (template != null)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Template Selector (EDIT) - Using JSON type template for {valueNode.Path}");
-                        return template;
-                    }
-                    
-                    // Otherwise, fall back to schema type
-                    if (vm.SchemaContextNode?.ClrType == typeof(bool))
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Template Selector (EDIT) - Using schema boolean template for {valueNode.Path}");
-                        return EditBooleanTemplate ?? EditStringTemplate;
-                    }
-                    if (vm.SchemaContextNode?.ClrType == typeof(int) || vm.SchemaContextNode?.ClrType == typeof(long) ||
-                        vm.SchemaContextNode?.ClrType == typeof(double) || vm.SchemaContextNode?.ClrType == typeof(float) ||
-                        vm.SchemaContextNode?.ClrType == typeof(decimal))
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Template Selector (EDIT) - Using schema number template for {valueNode.Path}");
-                        return EditNumberTemplate ?? EditStringTemplate;
-                    }
-                    
-                    System.Diagnostics.Debug.WriteLine($"Template Selector (EDIT) - Using default string template for {valueNode.Path}");
-                    return EditStringTemplate;
-                }
-
-                if (vm.DomNode is RefNode)
-                    return EditRefTemplate ?? EditStringTemplate;
-
-                return EditStringTemplate;
+                return SelectEditTemplate(vm);
             }
+        }
+
+        private DataTemplate? SelectDisplayTemplate(DataGridRowItemViewModel vm)
+        {
+            if (vm.IsAddItemPlaceholder)
+                return DisplayAddItemTemplate ?? DisplayStringTemplate;
+
+            if (vm.IsSchemaOnlyNode)
+                return SelectSchemaOnlyDisplayTemplate(vm);
+
+            if (vm.DomNode is ValueNode valueNode)
+                return SelectValueNodeDisplayTemplate(vm, valueNode);
+
+            if (vm.DomNode is RefNode)
+                return DisplayRefTemplate ?? DisplayStringTemplate;
+
+            if (vm.DomNode is ArrayNode)
+                return DisplayArrayTemplate ?? DisplayStringTemplate;
+
+            if (vm.DomNode is ObjectNode)
+                return DisplayObjectTemplate ?? DisplayStringTemplate;
+
+            return DisplayStringTemplate;
+        }
+
+        private DataTemplate? SelectEditTemplate(DataGridRowItemViewModel vm)
+        {
+            if (vm.IsAddItemPlaceholder)
+                return EditAddItemTemplate ?? EditStringTemplate;
+
+            if (vm.IsSchemaOnlyNode)
+                return SelectSchemaOnlyEditTemplate(vm);
+
+            if (vm.DomNode is ValueNode valueNode)
+                return SelectValueNodeEditTemplate(vm, valueNode);
+
+            if (vm.DomNode is RefNode)
+                return EditRefTemplate ?? EditStringTemplate;
+
+            return EditStringTemplate;
+        }
+
+        private DataTemplate? SelectSchemaOnlyDisplayTemplate(DataGridRowItemViewModel vm)
+        {
+            if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
+                return DisplayEnumTemplate ?? DisplayStringTemplate;
+            
+            return SelectTemplateBySchemaType(vm.SchemaContextNode?.ClrType, DisplayBooleanTemplate, DisplayNumberTemplate, DisplaySchemaOnlyTemplate, DisplayStringTemplate);
+        }
+
+        private DataTemplate? SelectSchemaOnlyEditTemplate(DataGridRowItemViewModel vm)
+        {
+            if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
+                return EditEnumTemplate ?? EditStringTemplate;
+            
+            return SelectTemplateBySchemaType(vm.SchemaContextNode?.ClrType, EditBooleanTemplate, EditNumberTemplate, EditSchemaOnlyTemplate, EditStringTemplate);
+        }
+
+        private DataTemplate? SelectValueNodeDisplayTemplate(DataGridRowItemViewModel vm, ValueNode valueNode)
+        {
+            // Debug output
+            System.Diagnostics.Debug.WriteLine($"Template Selector - DOM Node: {valueNode.Path}, JSON Type: {valueNode.Value.ValueKind}, Schema Type: {vm.SchemaContextNode?.ClrType?.Name}, Schema Allowed Values: {vm.SchemaContextNode?.AllowedValues?.Count ?? 0}");
+            System.Diagnostics.Debug.WriteLine($"Template Selector - SchemaContextNode is null: {vm.SchemaContextNode == null}, SchemaContextNode Name: {vm.SchemaContextNode?.Name}");
+            
+            // First check if schema has allowed values (enum)
+            if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
+                return DisplayEnumTemplate ?? DisplayStringTemplate;
+            
+            // Then check JSON value type
+            var template = SelectTemplateByJsonType(valueNode.Value.ValueKind, DisplayBooleanTemplate, DisplayNumberTemplate, DisplayStringTemplate);
+            
+            // If JSON type matched, use that template
+            if (template != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"Template Selector - Using JSON type template for {valueNode.Path}");
+                return template;
+            }
+            
+            // Otherwise, fall back to schema type
+            template = SelectTemplateBySchemaType(vm.SchemaContextNode?.ClrType, DisplayBooleanTemplate, DisplayNumberTemplate, null, DisplayStringTemplate);
+            
+            System.Diagnostics.Debug.WriteLine($"Template Selector - Using schema type template for {valueNode.Path}");
+            return template;
+        }
+
+        private DataTemplate? SelectValueNodeEditTemplate(DataGridRowItemViewModel vm, ValueNode valueNode)
+        {
+            // Debug output
+            System.Diagnostics.Debug.WriteLine($"Template Selector (EDIT) - DOM Node: {valueNode.Path}, JSON Type: {valueNode.Value.ValueKind}, Schema Type: {vm.SchemaContextNode?.ClrType?.Name}, Schema Allowed Values: {vm.SchemaContextNode?.AllowedValues?.Count ?? 0}");
+            
+            // First check if schema has allowed values (enum)
+            if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
+                return EditEnumTemplate ?? EditStringTemplate;
+
+            // Then check JSON value type
+            var template = SelectTemplateByJsonType(valueNode.Value.ValueKind, EditBooleanTemplate, EditNumberTemplate, EditStringTemplate);
+            
+            // If JSON type matched, use that template
+            if (template != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"Template Selector (EDIT) - Using JSON type template for {valueNode.Path}");
+                return template;
+            }
+            
+            // Otherwise, fall back to schema type
+            template = SelectTemplateBySchemaType(vm.SchemaContextNode?.ClrType, EditBooleanTemplate, EditNumberTemplate, null, EditStringTemplate);
+            
+            System.Diagnostics.Debug.WriteLine($"Template Selector (EDIT) - Using schema type template for {valueNode.Path}");
+            return template;
+        }
+
+        private DataTemplate? SelectTemplateByJsonType(JsonValueKind jsonType, DataTemplate? booleanTemplate, DataTemplate? numberTemplate, DataTemplate? stringTemplate)
+        {
+            return jsonType switch
+            {
+                JsonValueKind.True or JsonValueKind.False => booleanTemplate ?? stringTemplate,
+                JsonValueKind.Number => numberTemplate ?? stringTemplate,
+                _ => null
+            };
+        }
+
+        private DataTemplate? SelectTemplateBySchemaType(Type? schemaType, DataTemplate? booleanTemplate, DataTemplate? numberTemplate, DataTemplate? schemaOnlyTemplate, DataTemplate? stringTemplate)
+        {
+            if (schemaType == typeof(bool))
+                return booleanTemplate ?? stringTemplate;
+            
+            if (IsNumericType(schemaType))
+                return numberTemplate ?? stringTemplate;
+            
+            if (schemaOnlyTemplate != null)
+                return schemaOnlyTemplate ?? stringTemplate;
+            
+            return stringTemplate;
+        }
+
+        private bool IsNumericType(Type? type)
+        {
+            if (type == null) return false;
+            
+            return type == typeof(int) || type == typeof(long) ||
+                   type == typeof(double) || type == typeof(float) ||
+                   type == typeof(decimal);
         }
     }
 } 
