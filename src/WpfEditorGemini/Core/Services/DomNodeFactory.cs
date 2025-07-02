@@ -36,7 +36,7 @@ namespace JsonConfigEditor.Core.Services
             if (schema == null) return null;
 
             // Convert the schema's default value to a JsonElement for the ValueNode constructor.
-            JsonElement defaultValue = ConvertObjectToJsonElement(schema.DefaultValue);
+            JsonElement defaultValue = ConvertObjectToJsonElement(schema.DefaultValue, schema.ClrType);
 
             switch (schema.NodeType)
             {
@@ -168,7 +168,7 @@ namespace JsonConfigEditor.Core.Services
             return newNode;
         }
 
-        private JsonElement ConvertObjectToJsonElement(object? value)
+        private JsonElement ConvertObjectToJsonElement(object? value, Type? clrType)
         {
             // This helper method is moved directly from MainViewModel
             if (value == null)
@@ -179,6 +179,53 @@ namespace JsonConfigEditor.Core.Services
             {
                 return element.Clone();
             }
+
+            // If we have a target type, try to convert the value to that type first
+            if (clrType != null)
+            {
+                try
+                {
+                    // Handle common type conversions
+                    if (clrType == typeof(bool))
+                    {
+                        if (value is bool boolValue)
+                            return JsonSerializer.SerializeToElement(boolValue);
+                        if (value is string stringValue && bool.TryParse(stringValue, out bool parsedBool))
+                            return JsonSerializer.SerializeToElement(parsedBool);
+                        // Default to false for boolean types
+                        return JsonSerializer.SerializeToElement(false);
+                    }
+                    else if (clrType == typeof(int) || clrType == typeof(long))
+                    {
+                        if (value is int intValue)
+                            return JsonSerializer.SerializeToElement(intValue);
+                        if (value is long longValue)
+                            return JsonSerializer.SerializeToElement(longValue);
+                        if (value is string stringValue && long.TryParse(stringValue, out long parsedLong))
+                            return JsonSerializer.SerializeToElement(parsedLong);
+                        // Default to 0 for integer types
+                        return JsonSerializer.SerializeToElement(0);
+                    }
+                    else if (clrType == typeof(double) || clrType == typeof(float) || clrType == typeof(decimal))
+                    {
+                        if (value is double doubleValue)
+                            return JsonSerializer.SerializeToElement(doubleValue);
+                        if (value is float floatValue)
+                            return JsonSerializer.SerializeToElement(floatValue);
+                        if (value is decimal decimalValue)
+                            return JsonSerializer.SerializeToElement(decimalValue);
+                        if (value is string stringValue && double.TryParse(stringValue, out double parsedDouble))
+                            return JsonSerializer.SerializeToElement(parsedDouble);
+                        // Default to 0.0 for floating point types
+                        return JsonSerializer.SerializeToElement(0.0);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Fall through to default handling
+                }
+            }
+
             try
             {
                 return JsonSerializer.SerializeToElement(value);

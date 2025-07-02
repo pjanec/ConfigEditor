@@ -107,6 +107,20 @@ namespace JsonConfigEditor.Core.Services
             {
                 // If none exists or it's not a DOM node ViewModel, create a new one.
                 domToSchemaMap.TryGetValue(node.Path, out var schema);
+                
+                // Debug output
+                System.Diagnostics.Debug.WriteLine($"ViewModelBuilder - Creating VM for node: {node.Path}, Schema found: {schema?.Name}, Schema Type: {schema?.ClrType?.Name}");
+                
+                // FALLBACK: If schema not found in domToSchemaMap, try to find it from the schema loader
+                if (schema == null && !string.IsNullOrEmpty(node.Path))
+                {
+                    schema = _mainViewModel.SchemaLoader?.FindSchemaForPath(node.Path);
+                    if (schema != null)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"ViewModelBuilder - FALLBACK: Found schema for {node.Path}: {schema.Name}, Type: {schema.ClrType?.Name}");
+                    }
+                }
+                
                 viewModel = new DataGridRowItemViewModel(node, schema, _mainViewModel);
             }
             flatItems.Add(viewModel);

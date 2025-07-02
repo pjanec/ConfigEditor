@@ -590,6 +590,21 @@ namespace JsonConfigEditor.ViewModels
                 }
             }
 
+            // Ensure the newly materialized node is mapped to its schema
+            MapDomNodeToSchemaRecursive(materializedDomNode);
+            
+            // Debug output
+            if (materializedDomNode is ValueNode debugValueNode)
+            {
+                System.Diagnostics.Debug.WriteLine($"Materialization - Created node: {debugValueNode.Path}, JSON Type: {debugValueNode.Value.ValueKind}, JSON Value: {debugValueNode.Value}");
+                var schema = _domToSchemaMap.TryGetValue(debugValueNode.Path, out var s) ? s : null;
+                System.Diagnostics.Debug.WriteLine($"Materialization - Schema mapping: {schema?.Name}, Schema Type: {schema?.ClrType?.Name}");
+                
+                // Debug: Check if the schema mapping is actually in the map
+                System.Diagnostics.Debug.WriteLine($"Materialization - domToSchemaMap contains key '{debugValueNode.Path}': {_domToSchemaMap.ContainsKey(debugValueNode.Path)}");
+                System.Diagnostics.Debug.WriteLine($"Materialization - All keys in domToSchemaMap: {string.Join(", ", _domToSchemaMap.Keys)}");
+            }
+
             RefreshFlatList();
 
             if (_persistentVmMap.TryGetValue(materializedDomNode.Path, out var newVm))
