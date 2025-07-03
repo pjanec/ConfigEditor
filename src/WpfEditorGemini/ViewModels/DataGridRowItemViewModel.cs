@@ -454,7 +454,9 @@ namespace JsonConfigEditor.ViewModels
                         var newValue = valueNode.Value;
                         if (oldValue.ValueKind != newValue.ValueKind || oldValue.GetRawText() != newValue.GetRawText())
                         {
-                            var operation = new ValueEditOperation(0, valueNode, oldValue, newValue);
+                            // FIX: Get the active layer index from the parent ViewModel.
+                            var activeLayerIndex = ParentViewModel.ActiveEditorLayer?.LayerIndex ?? 0;
+                            var operation = new ValueEditOperation(activeLayerIndex, valueNode, oldValue, newValue);
                             // Use the public property on the ParentViewModel
                             ParentViewModel.HistoryService.Record(operation);
                         }

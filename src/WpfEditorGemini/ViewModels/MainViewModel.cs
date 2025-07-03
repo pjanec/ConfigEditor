@@ -48,6 +48,7 @@ namespace JsonConfigEditor.ViewModels
         // private DomNode? _rootDomNode;
         // ADD the new list for cascade layers:
         private List<CascadeLayer> _cascadeLayers = new();
+        public CascadeLayer? ActiveEditorLayer { get; private set; } // Add this property
         // Dictionaries are now keyed by the node's unique string path for stability
         private readonly Dictionary<string, SchemaNode?> _domToSchemaMap = new();
         private readonly Dictionary<string, List<ValidationIssue>> _validationIssuesMap = new();
@@ -485,6 +486,7 @@ namespace JsonConfigEditor.ViewModels
 
                 // Set the new data model.
                 _cascadeLayers = new List<CascadeLayer> { singleLayer };
+                ActiveEditorLayer = _cascadeLayers.FirstOrDefault(); // Set the active layer
                 // --- END NEW LOGIC ---
 
                 CurrentFilePath = filePath;
@@ -573,7 +575,9 @@ namespace JsonConfigEditor.ViewModels
                 if (newNode == null) return false;
 
                 // 2. Create the operation that knows how to add the node.
-                var operation = new AddNodeOperation(0, parentArray, newNode);
+                // FIX: Pass the active layer index to the operation.
+                var activeLayerIndex = ActiveEditorLayer?.LayerIndex ?? 0;
+                var operation = new AddNodeOperation(activeLayerIndex, parentArray, newNode);
 
                 // 3. (This is the fix) Execute the operation to modify the data model NOW.
                 operation.Redo(this);
@@ -636,7 +640,9 @@ namespace JsonConfigEditor.ViewModels
                     if (valueNode.Value.ValueKind != newJsonValue.ValueKind || valueNode.Value.ToString() != newJsonValue.ToString())
                     {
                         var oldValue = valueNode.Value;
-                        var valueEditOp = new ValueEditOperation(0, valueNode, oldValue, newJsonValue.Clone());
+                        // FIX: Get the active layer index from the parent ViewModel.
+                        var activeLayerIndex = ActiveEditorLayer?.LayerIndex ?? 0;
+                        var valueEditOp = new ValueEditOperation(activeLayerIndex, valueNode, oldValue, newJsonValue.Clone());
 
                         // 1. Execute the operation now to update the model from the default value to the new value.
                         valueEditOp.Redo(this);
@@ -684,6 +690,7 @@ namespace JsonConfigEditor.ViewModels
             var root = new ObjectNode("$root", null);
             var layer = new CascadeLayer(0, "Default", "", new List<SourceFileInfo>(), root, new Dictionary<string, string>());
             _cascadeLayers = new List<CascadeLayer> { layer };
+            ActiveEditorLayer = _cascadeLayers.FirstOrDefault(); // Set the active layer
 
             _domToSchemaMap.Clear();
             _validationIssuesMap.Clear();
@@ -1038,7 +1045,9 @@ namespace JsonConfigEditor.ViewModels
                     {
                         originalIndex = arrayParent.Items.ToList().IndexOf(nodeToRemove);
                     }
-                    var operation = new RemoveNodeOperation(0, parent, nodeToRemove, nodeToRemove.Name, originalIndex);
+                    // FIX: Pass the active layer index to the operation.
+                    var activeLayerIndex = ActiveEditorLayer?.LayerIndex ?? 0;
+                    var operation = new RemoveNodeOperation(activeLayerIndex, parent, nodeToRemove, nodeToRemove.Name, originalIndex);
                     operation.Redo(this); // Execute immediately for structural changes
                     _historyService.Record(operation);
                 }
@@ -1179,7 +1188,9 @@ namespace JsonConfigEditor.ViewModels
         }
         internal void AddNodeWithHistory(ObjectNode parent, DomNode newNode, string name)
         {
-            var addOperation = new AddNodeOperation(0, parent, newNode);
+            // FIX: Pass the active layer index to the operation.
+            var activeLayerIndex = ActiveEditorLayer?.LayerIndex ?? 0;
+            var addOperation = new AddNodeOperation(activeLayerIndex, parent, newNode);
             addOperation.Redo(this); // Execute immediately for structural changes
             _historyService.Record(addOperation);
         }
@@ -1187,7 +1198,9 @@ namespace JsonConfigEditor.ViewModels
         public void ReplaceRootWithHistory(DomNode newRoot)
         {
             var oldRoot = GetRootDomNode();
-            var op = new ReplaceRootOperation(0, oldRoot, newRoot);
+            // FIX: Pass the active layer index to the operation.
+            var activeLayerIndex = ActiveEditorLayer?.LayerIndex ?? 0;
+            var op = new ReplaceRootOperation(activeLayerIndex, oldRoot, newRoot);
             op.Redo(this); // Execute immediately
             _historyService.Record(op);
         }
