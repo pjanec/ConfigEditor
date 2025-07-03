@@ -91,8 +91,9 @@ namespace JsonConfigEditor.Core.Services
             {
                 if (layer.LayerConfigRootNode.GetChild(propertyName) is DomNode nodeToSave)
                 {
-                    // Clone the node to avoid modifying the main tree or causing parentage issues.
-                    fileContentRoot.AddChild(nodeToSave.Name, CloneNode(nodeToSave));
+                    // FIX: Use the shared cloning utility. The parent is null because this
+                    // is a temporary root for serialization.
+                    fileContentRoot.AddChild(nodeToSave.Name, DomCloning.CloneNode(nodeToSave, null));
                 }
             }
             
@@ -119,40 +120,7 @@ namespace JsonConfigEditor.Core.Services
             }
         }
         
-        /// <summary>
-        /// Performs a deep clone of a DomNode. This is essential to isolate the file-specific
-        /// content from the layer's main unified tree before serialization.
-        /// </summary>
-        private DomNode CloneNode(DomNode node)
-        {
-            if (node is ValueNode valueNode)
-            {
-                return new ValueNode(valueNode.Name, null, valueNode.Value);
-            }
-            if (node is RefNode refNode)
-            {
-                return new RefNode(refNode.Name, null, refNode.ReferencePath, refNode.OriginalValue);
-            }
-            if (node is ArrayNode arrayNode)
-            {
-                var newArray = new ArrayNode(arrayNode.Name, null);
-                foreach (var item in arrayNode.Items)
-                {
-                    newArray.AddItem(CloneNode(item));
-                }
-                return newArray;
-            }
-            if (node is ObjectNode objectNode)
-            {
-                var newObject = new ObjectNode(objectNode.Name, null);
-                foreach (var child in objectNode.GetChildren())
-                {
-                    newObject.AddChild(child.Name, CloneNode(child));
-                }
-                return newObject;
-            }
-            throw new NotSupportedException($"Unsupported node type for cloning: {node.GetType().Name}");
-        }
+
     }
 }
 

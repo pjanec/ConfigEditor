@@ -82,11 +82,10 @@ namespace JsonConfigEditor.Core.Services
                 else
                 {
                     // No conflict. This is a new property for the unified tree.
-                    // We must clone the node to avoid shared instances and ensure it gets a new parent.
-                    var clonedNode = CloneNode(childNode);
-                    targetParent.AddChild(clonedNode.Name, clonedNode); // AddChild now correctly sets parent and updates paths
+                    // FIX: Use the shared cloning utility and pass the correct new parent.
+                    var clonedNode = DomCloning.CloneNode(childNode, targetParent);
+                    targetParent.AddChild(clonedNode.Name, clonedNode);
 
-                    // Now that the node is part of the tree and has a correct path, track its origin.
                     TrackOriginsRecursive(clonedNode, sourceFile.RelativePath, origins);
                 }
             }
@@ -116,40 +115,6 @@ namespace JsonConfigEditor.Core.Services
             }
         }
 
-        /// <summary>
-        /// Performs a deep clone of a DomNode.
-        /// This is essential to ensure that nodes added to the merged tree are new instances,
-        /// preventing issues with multiple parents or shared state.
-        /// </summary>
-        private DomNode CloneNode(DomNode node)
-        {
-            if (node is ValueNode valueNode)
-            {
-                return new ValueNode(valueNode.Name, null, valueNode.Value);
-            }
-            if (node is RefNode refNode)
-            {
-                return new RefNode(refNode.Name, null, refNode.ReferencePath, refNode.OriginalValue);
-            }
-            if (node is ArrayNode arrayNode)
-            {
-                var newArray = new ArrayNode(arrayNode.Name, null);
-                foreach (var item in arrayNode.Items)
-                {
-                    newArray.AddItem(CloneNode(item));
-                }
-                return newArray;
-            }
-            if (node is ObjectNode objectNode)
-            {
-                var newObject = new ObjectNode(objectNode.Name, null);
-                foreach (var child in objectNode.GetChildren())
-                {
-                    newObject.AddChild(child.Name, CloneNode(child));
-                }
-                return newObject;
-            }
-            throw new NotSupportedException($"Unsupported node type for cloning: {node.GetType().Name}");
-        }
+
     }
 }

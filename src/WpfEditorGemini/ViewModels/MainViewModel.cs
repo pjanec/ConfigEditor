@@ -40,9 +40,14 @@ namespace JsonConfigEditor.ViewModels
         private readonly DomSearchService _searchService;
         private readonly SchemaPlaceholderProvider _placeholderProvider;
         private readonly ViewModelBuilderService _viewModelBuilder;
+        // ADD the new intra-layer merger service
+        private readonly IntraLayerMerger _intraLayerMerger;
 
         // --- Private Fields: Core Data State ---
-        private DomNode? _rootDomNode;
+        // REMOVE the old root node field:
+        // private DomNode? _rootDomNode;
+        // ADD the new list for cascade layers:
+        private List<CascadeLayer> _cascadeLayers = new();
         // Dictionaries are now keyed by the node's unique string path for stability
         private readonly Dictionary<string, SchemaNode?> _domToSchemaMap = new();
         private readonly Dictionary<string, List<ValidationIssue>> _validationIssuesMap = new();
@@ -211,6 +216,7 @@ namespace JsonConfigEditor.ViewModels
             _historyService = new EditHistoryService(this);
             _historyService.ModelChanged += OnHistoryModelChanged; // Subscribe to the event
             _filterService = new DomFilterService();
+            _intraLayerMerger = new IntraLayerMerger();
             _viewModelBuilder = new ViewModelBuilderService(_placeholderProvider, this);
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
@@ -290,7 +296,7 @@ namespace JsonConfigEditor.ViewModels
 
         private bool CanExecuteSaveFile()
         {
-            return _rootDomNode != null;
+            return _cascadeLayers.Count > 0;
         }
 
         private async void ExecuteSaveAsFile()
@@ -460,7 +466,27 @@ namespace JsonConfigEditor.ViewModels
             _historyService.Clear();
             try
             {
-                _rootDomNode = await _jsonParser.ParseFromFileAsync(filePath);
+                // --- NEW LOGIC ---
+                // Treat the single file as a project with one layer.
+                var fileContent = await File.ReadAllTextAsync(filePath);
+                var domRoot = _jsonParser.ParseFromString(fileContent);
+
+                // Create the necessary info objects.
+                var sourceFile = new SourceFileInfo(filePath, Path.GetFileName(filePath), domRoot, fileContent);
+                var layerDef = new LayerDefinitionModel("Default", Path.GetDirectoryName(filePath)!);
+                var layerLoadResult = new LayerLoadResult(layerDef, new List<SourceFileInfo> { sourceFile });
+
+                // Perform the intra-layer merge (which is trivial for one file).
+                var mergeResult = _intraLayerMerger.Merge(layerLoadResult);
+                  
+                // Create the single CascadeLayer.
+                var singleLayer = new CascadeLayer(0, "Default", Path.GetDirectoryName(filePath)!, 
+                    layerLoadResult.SourceFiles, mergeResult.LayerConfigRootNode, mergeResult.IntraLayerValueOrigins);
+
+                // Set the new data model.
+                _cascadeLayers = new List<CascadeLayer> { singleLayer };
+                // --- END NEW LOGIC ---
+
                 CurrentFilePath = filePath;
                 IsDirty = false;
 
@@ -478,8 +504,9 @@ namespace JsonConfigEditor.ViewModels
 
         public async Task SaveFileAsync(string? filePath = null)
         {
-            if (_rootDomNode == null)
-                return;
+            // Get the root node from the first layer to save it.
+            var rootNodeToSave = _cascadeLayers.FirstOrDefault()?.LayerConfigRootNode;
+            if (rootNodeToSave == null) return;
 
             var targetPath = filePath ?? CurrentFilePath;
             if (string.IsNullOrEmpty(targetPath))
@@ -487,7 +514,7 @@ namespace JsonConfigEditor.ViewModels
 
             try
             {
-                await _jsonSerializer.SerializeToFileAsync(_rootDomNode, targetPath);
+                await _jsonSerializer.SerializeToFileAsync(rootNodeToSave, targetPath);
                 CurrentFilePath = targetPath;
                 IsDirty = false;
                 OnPropertyChanged(nameof(WindowTitle));
@@ -654,7 +681,10 @@ namespace JsonConfigEditor.ViewModels
 
         private void InitializeEmptyDocument()
         {
-            _rootDomNode = new ObjectNode("$root", null);
+            var root = new ObjectNode("$root", null);
+            var layer = new CascadeLayer(0, "Default", "", new List<SourceFileInfo>(), root, new Dictionary<string, string>());
+            _cascadeLayers = new List<CascadeLayer> { layer };
+
             _domToSchemaMap.Clear();
             _validationIssuesMap.Clear();
             _persistentVmMap.Clear();
@@ -664,9 +694,10 @@ namespace JsonConfigEditor.ViewModels
         private void RebuildDomToSchemaMapping()
         {
             _domToSchemaMap.Clear();
-            if (_rootDomNode != null)
+            var rootNode = GetRootDomNode();
+            if (rootNode != null)
             {
-                MapDomNodeToSchemaRecursive(_rootDomNode);
+                MapDomNodeToSchemaRecursive(rootNode);
             }
         }
 
@@ -694,7 +725,8 @@ namespace JsonConfigEditor.ViewModels
 
         private void RefreshFlatList()
         {
-            if (_rootDomNode == null)
+            var rootNode = GetRootDomNode();
+            if (rootNode == null)
             {
                 FlatItemsSource.Clear();
                 _persistentVmMap.Clear();
@@ -711,9 +743,9 @@ namespace JsonConfigEditor.ViewModels
             if (!string.IsNullOrEmpty(FilterText))
             {
                 // Use filtering service to get visible paths
-                var visiblePaths = _filterService.GetVisibleNodePaths(_rootDomNode, FilterText);
+                var visiblePaths = _filterService.GetVisibleNodePaths(rootNode, FilterText);
                 tempFlatList = _viewModelBuilder.BuildList(
-                    _rootDomNode, 
+                    rootNode, 
                     _persistentVmMap, 
                     _domToSchemaMap, 
                     ShowSchemaNodes,
@@ -723,7 +755,7 @@ namespace JsonConfigEditor.ViewModels
             else
             {
                 tempFlatList = _viewModelBuilder.BuildList(
-                    _rootDomNode, 
+                    rootNode, 
                     _persistentVmMap, 
                     _domToSchemaMap, 
                     ShowSchemaNodes
@@ -785,14 +817,15 @@ namespace JsonConfigEditor.ViewModels
             {
                 Application.Current?.Dispatcher.Invoke(() =>
                 {
-                    if (string.IsNullOrEmpty(SearchText) || _rootDomNode == null)
+                    var rootNode = GetRootDomNode();
+                    if (string.IsNullOrEmpty(SearchText) || rootNode == null)
                     {
                         ResetSearchState();
                         return;
                     }
 
                     // DELEGATE the search to the new service
-                    _searchResultNodes = _searchService.FindAllMatches(_rootDomNode, SearchText);
+                    _searchResultNodes = _searchService.FindAllMatches(rootNode, SearchText);
                     _currentSearchIndex = -1;
 
                     // Update UI state based on results
@@ -847,7 +880,8 @@ namespace JsonConfigEditor.ViewModels
 
         private async Task ValidateDocumentAsync()
         {
-            if (_rootDomNode == null) return;
+            var rootNode = GetRootDomNode();
+            if (rootNode == null) return;
 
             await Task.Run(() =>
             {
@@ -855,8 +889,8 @@ namespace JsonConfigEditor.ViewModels
                 // CHANGE: This now uses a temporary DomNode-keyed dictionary for the service call.
                 var tempDomToSchemaMap = new Dictionary<DomNode, SchemaNode?>();
                 // This helper function would need to be created or adapted to build the temp map.
-                BuildTemporaryDomToSchemaMap(_rootDomNode, tempDomToSchemaMap);
-                var issuesByNode = _validationService.ValidateTree(_rootDomNode, tempDomToSchemaMap);
+                BuildTemporaryDomToSchemaMap(rootNode, tempDomToSchemaMap);
+                var issuesByNode = _validationService.ValidateTree(rootNode, tempDomToSchemaMap);
 
                 foreach (var issueEntry in issuesByNode)
                 {
@@ -919,10 +953,11 @@ namespace JsonConfigEditor.ViewModels
             if (string.IsNullOrEmpty(path)) return;
 
             var segments = path.Split('/');
-            DomNode? currentNode = _rootDomNode;
+            var rootNode = GetRootDomNode();
+            DomNode? currentNode = rootNode;
             DataGridRowItemViewModel? currentVm = null;
 
-            if (_rootDomNode != null && _persistentVmMap.TryGetValue(_rootDomNode.Path, out var rootVm))
+            if (rootNode != null && _persistentVmMap.TryGetValue(rootNode.Path, out var rootVm))
             {
                 currentVm = rootVm;
             }
@@ -1100,19 +1135,25 @@ namespace JsonConfigEditor.ViewModels
             // Logic will be implemented in a later stage.
         }
 
-        // ADD helper methods for the factory to access MainViewModel state
-        public DomNode? GetRootDomNode() => _rootDomNode;
+        // This method replaces direct access to the old _rootDomNode field.
+        public DomNode? GetRootDomNode()
+        {
+            // For now, in single-file mode, always return the root of the first and only layer.
+            return _cascadeLayers.FirstOrDefault()?.LayerConfigRootNode;
+        }
+
         public DomNode? FindDomNodeByPath(string path)
         {
-            if (_rootDomNode == null) return null;
+            var rootNode = GetRootDomNode();
+            if (rootNode == null) return null;
 
-            if (string.IsNullOrEmpty(path) || path == "$root") return _rootDomNode;
+            if (string.IsNullOrEmpty(path) || path == "$root") return rootNode;
 
             string normalizedPathKey = path.StartsWith("$root/") ? path.Substring("$root/".Length) : path;
-            if (string.IsNullOrEmpty(normalizedPathKey)) return _rootDomNode;
+            if (string.IsNullOrEmpty(normalizedPathKey)) return rootNode;
 
             string[] segments = normalizedPathKey.Split('/');
-            DomNode? current = _rootDomNode;
+            DomNode? current = rootNode;
 
             foreach (string segment in segments)
             {
@@ -1145,7 +1186,7 @@ namespace JsonConfigEditor.ViewModels
         
         public void ReplaceRootWithHistory(DomNode newRoot)
         {
-            var oldRoot = _rootDomNode;
+            var oldRoot = GetRootDomNode();
             var op = new ReplaceRootOperation(0, oldRoot, newRoot);
             op.Redo(this); // Execute immediately
             _historyService.Record(op);
@@ -1190,27 +1231,56 @@ namespace JsonConfigEditor.ViewModels
             {
                 arrayParent.RemoveItem(child);
             }
-            else if (child == _rootDomNode)
+            else if (child == GetRootDomNode())
             {
-                if (_rootDomNode == child) _rootDomNode = null;
+                // This case should not happen in normal operation, but handle it gracefully
+                var rootNode = GetRootDomNode();
+                if (rootNode == child) 
+                {
+                    // Clear the cascade layers if we're removing the root
+                    _cascadeLayers.Clear();
+                }
             }
         }
         
-        // This helper method is now needed for operations to call back into the ViewModel
-        public void SetRootNode(DomNode? newRoot)
-        {
-            _rootDomNode = newRoot;
-            IsDirty = true;
-            RebuildDomToSchemaMapping();
-            RefreshFlatList();
-            if (_rootDomNode != null && _persistentVmMap.TryGetValue(_rootDomNode.Path, out var newRootVm))
-            {
-                SelectedGridItem = newRootVm;
-            }
-            else
-            {
-                SelectedGridItem = FlatItemsSource.FirstOrDefault();
-            }
-        }
+		/// <summary>
+		/// This helper method is now needed for operations to call back into the ViewModel.
+		/// It replaces the root node of the currently active layer (in this stage, always the first layer).
+		/// </summary>
+		public void SetRootNode(DomNode? newRoot)
+		{
+		    // Ensure we have a valid ObjectNode. If the new root is null or not an object,
+		    // create a new empty root. This handles the "New File" scenario.
+		    var newObjectRoot = newRoot as ObjectNode ?? new ObjectNode("$root", null);
+
+		    // Get the currently active layer. In later stages, this will use `ActiveEditorLayer`.
+		    // For now, we assume a single-file context, so we operate on the first layer.
+		    var activeLayer = _cascadeLayers.FirstOrDefault();
+		    if (activeLayer != null)
+		    {
+		        // Replace the root node of the specific layer.
+		        activeLayer.LayerConfigRootNode = newObjectRoot;
+		    }
+		    else
+		    {
+		        // If no layers exist, create a new one to hold the new root.
+		        var newLayer = new CascadeLayer(0, "Default", "", new List<SourceFileInfo>(), newObjectRoot, new Dictionary<string, string>());
+		        _cascadeLayers = new List<CascadeLayer> { newLayer };
+		    }
+
+		    IsDirty = true;
+		    RebuildDomToSchemaMapping();
+		    RefreshFlatList();
+    
+		    // After refresh, find the ViewModel for the new root to select it in the UI
+		    if (_persistentVmMap.TryGetValue(newObjectRoot.Path, out var newRootVm))
+		    {
+		        SelectedGridItem = newRootVm;
+		    }
+		    else
+		    {
+		        SelectedGridItem = FlatItemsSource.FirstOrDefault();
+		    }
+		}
     }
 }

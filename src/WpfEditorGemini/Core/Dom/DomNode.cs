@@ -51,7 +51,7 @@ namespace JsonConfigEditor.Core.Dom
         {
             if (Parent == null)
             {
-                return Name == "$root" ? "" : Name;
+                return Name;
             }
 
             var parentPath = Parent.Path;

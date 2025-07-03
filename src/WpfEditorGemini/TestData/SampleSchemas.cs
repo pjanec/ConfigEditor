@@ -7,7 +7,7 @@ namespace JsonConfigEditor.TestData
     /// <summary>
     /// Sample schema class for testing the root configuration.
     /// </summary>
-    [ConfigSchema("", typeof(AppConfiguration))]
+    [ConfigSchema("$root", typeof(AppConfiguration))]
     public class AppConfiguration
     {
         public string ApplicationName { get; set; } = "Default App";
