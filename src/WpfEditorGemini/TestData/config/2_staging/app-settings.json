@@ -1,0 +1,7 @@
+{
+  "Port": 8080,
+  "AllowedHosts": [
+    "localhost",
+    "staging.server.com"
+  ]
+} 

@@ -132,6 +132,7 @@
             <MenuItem Header="_File">
                 <MenuItem Header="_New" Command="{Binding NewFileCommand}" InputGestureText="Ctrl+N" />
                 <MenuItem Header="_Open..." Command="{Binding OpenFileCommand}" InputGestureText="Ctrl+O" />
+                <MenuItem Header="Open _Cascade Project..." Command="{Binding LoadCascadeProjectCommand}" />
                 <Separator />
                 <MenuItem Header="_Save" Command="{Binding SaveFileCommand}" InputGestureText="Ctrl+S" />
                 <MenuItem Header="Save _As..." Command="{Binding SaveAsFileCommand}" />
@@ -162,6 +163,9 @@
             </Button>
             <Button Command="{Binding OpenFileCommand}" ToolTip="Open (Ctrl+O)">
                 <TextBlock Text="📂" FontSize="16" />
+            </Button>
+            <Button Command="{Binding LoadCascadeProjectCommand}" ToolTip="Open Cascade Project">
+                <TextBlock Text="🗂️" FontSize="16" />
             </Button>
             <Button Command="{Binding SaveFileCommand}" ToolTip="Save (Ctrl+S)">
                 <TextBlock Text="💾" FontSize="16" />
@@ -198,6 +202,26 @@
             <Button Command="{Binding FindPreviousCommand}" ToolTip="Find Previous (Shift+F3)">
                 <TextBlock Text="⬆" FontSize="12" />
             </Button>
+            
+            <Separator />
+            
+            <!-- NEW: Cascade Controls -->
+            <StackPanel Orientation="Horizontal" 
+                        Visibility="{Binding IsCascadeModeActive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="Layer:" VerticalAlignment="Center" Margin="5,0" FontWeight="Bold" />
+                <ComboBox ItemsSource="{Binding AllLayers}"
+                          SelectedItem="{Binding ActiveEditorLayer, Mode=TwoWay}"
+                          DisplayMemberPath="Name"
+                          Width="120"
+                          VerticalContentAlignment="Center"
+                          ToolTip="Select the active layer for editing."/>
+
+                <CheckBox IsChecked="{Binding IsMergedViewActive, Mode=TwoWay}"
+                          Content="Show Merged Result"
+                          VerticalAlignment="Center"
+                          Margin="10,0,0,0"
+                          ToolTip="Toggle between viewing the final merged configuration and only the selected layer's overrides."/>
+            </StackPanel>
             
             <Separator />
             

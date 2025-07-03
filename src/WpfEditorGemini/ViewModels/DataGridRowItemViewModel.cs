@@ -46,7 +46,11 @@ namespace JsonConfigEditor.ViewModels
             _schemaContextNode = schemaContextNode;
             _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
             _isAddItemPlaceholder = false;
-            _isExpandedInternal = (_domNode is ObjectNode || _domNode is ArrayNode) && (_domNode.Depth < 2); // Default expand first few levels
+
+            // Restore the persisted expansion state for this node if it exists,
+            // otherwise, use the default logic (expand the first few levels).
+            _isExpandedInternal = parentViewModel.GetSchemaNodeExpansionState(domNode.Path) ??
+                                  ((_domNode is ObjectNode || _domNode is ArrayNode) && (_domNode.Depth < 2));
 
             if (_schemaContextNode != null)
             {

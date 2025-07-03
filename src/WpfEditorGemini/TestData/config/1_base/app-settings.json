@@ -1,0 +1,8 @@
+{
+  "ApplicationName": "My Awesome App (Base)",
+  "Port": 80,
+  "EnableLogging": true,
+  "AllowedHosts": [
+    "localhost"
+  ]
+} 

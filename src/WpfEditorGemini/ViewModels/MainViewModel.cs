@@ -42,13 +42,64 @@ namespace JsonConfigEditor.ViewModels
         private readonly ViewModelBuilderService _viewModelBuilder;
         // ADD the new intra-layer merger service
         private readonly IntraLayerMerger _intraLayerMerger;
+        private readonly ProjectLoader _projectLoader;
+        private readonly CascadedDomDisplayMerger _displayMerger;
 
         // --- Private Fields: Core Data State ---
         // REMOVE the old root node field:
         // private DomNode? _rootDomNode;
         // ADD the new list for cascade layers:
         private List<CascadeLayer> _cascadeLayers = new();
-        public CascadeLayer? ActiveEditorLayer { get; private set; } // Add this property
+
+        // NEW: Add fields to store the full result of a display merge
+        private ObjectNode? _displayRoot;
+        private Dictionary<string, int> _valueOrigins = new();
+        private Dictionary<string, List<int>> _overrideSources = new();
+
+        // --- Add a new region for Cascade State ---
+        #region Cascade State
+        private CascadeLayer? _activeEditorLayer;
+        public CascadeLayer? ActiveEditorLayer
+        {
+            get => _activeEditorLayer;
+            set
+            {
+                if (SetProperty(ref _activeEditorLayer, value))
+                {
+                    // When the active layer changes, dispatch a refresh to the UI thread.
+                    // This ensures the data binding for the ComboBox's SelectedItem has completed
+                    // before we try to re-read the value and rebuild the list.
+                    Application.Current?.Dispatcher.BeginInvoke(
+                        new Action(() => RefreshDisplay()), 
+                        System.Windows.Threading.DispatcherPriority.DataBind
+                    );
+                }
+            }
+        }
+
+        private bool _isMergedViewActive = true;
+        public bool IsMergedViewActive
+        {
+            get => _isMergedViewActive;
+            set
+            {
+                if (SetProperty(ref _isMergedViewActive, value))
+                {
+                    // When the view mode changes, refresh the display
+                    Application.Current?.Dispatcher.BeginInvoke(
+                        new Action(() => RefreshDisplay()), 
+                        System.Windows.Threading.DispatcherPriority.DataBind
+                    );
+                }
+            }
+        }
+
+        // This will be bound to the new ComboBox
+        public ObservableCollection<CascadeLayer> AllLayers { get; } = new();
+
+        // A helper to determine if cascade UI should be visible
+        public bool IsCascadeModeActive => AllLayers.Count > 1;
+        #endregion
         // Dictionaries are now keyed by the node's unique string path for stability
         private readonly Dictionary<string, SchemaNode?> _domToSchemaMap = new();
         private readonly Dictionary<string, List<ValidationIssue>> _validationIssuesMap = new();
@@ -99,6 +150,7 @@ namespace JsonConfigEditor.ViewModels
         public ICommand DeleteSelectedNodesCommand { get; }
         public ICommand ExpandSelectedRecursiveCommand { get; }
         public ICommand CollapseSelectedRecursiveCommand { get; }
+        public ICommand LoadCascadeProjectCommand { get; }
 
         // --- Public Properties ---
 
@@ -218,10 +270,13 @@ namespace JsonConfigEditor.ViewModels
             _historyService.ModelChanged += OnHistoryModelChanged; // Subscribe to the event
             _filterService = new DomFilterService();
             _intraLayerMerger = new IntraLayerMerger();
+            _projectLoader = new ProjectLoader(_jsonParser); // Add this
+            _displayMerger = new CascadedDomDisplayMerger(); // Add this
             _viewModelBuilder = new ViewModelBuilderService(_placeholderProvider, this);
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
+            LoadCascadeProjectCommand = new RelayCommand(ExecuteLoadCascadeProject);
             SaveFileCommand = new RelayCommand(ExecuteSaveFile, CanExecuteSaveFile);
             SaveAsFileCommand = new RelayCommand(ExecuteSaveAsFile);
             ExitCommand = new RelayCommand(ExecuteExit);
@@ -336,7 +391,7 @@ namespace JsonConfigEditor.ViewModels
 
             if (operation.RequiresFullRefresh)
             {
-                RefreshFlatList();
+                RefreshDisplay();
             }
             else if (operation.NodePath != null)
             {
@@ -441,6 +496,58 @@ namespace JsonConfigEditor.ViewModels
             SearchText = string.Empty;
         }
 
+        private async void ExecuteLoadCascadeProject()
+        {
+            if (!CheckUnsavedChanges()) return;
+
+            var openDialog = new OpenFileDialog
+            {
+                Filter = "Cascade Project files (*.cascade.jsonc)|*.cascade.jsonc|All files (*.*)|*.*",
+                DefaultExt = "cascade.jsonc"
+            };
+
+            if (openDialog.ShowDialog() == true)
+            {
+                try
+                {
+                    // Use the ProjectLoader service
+                    var loadedLayersData = await _projectLoader.LoadProjectAsync(openDialog.FileName);
+                      
+                    _cascadeLayers.Clear();
+                    AllLayers.Clear();
+
+                    int layerIndex = 0;
+                    foreach (var layerData in loadedLayersData)
+                    {
+                        var mergeResult = _intraLayerMerger.Merge(layerData);
+                        // Handle errors from intra-layer merge if necessary
+                        var cascadeLayer = new CascadeLayer(
+                            layerIndex++,
+                            layerData.Definition.Name,
+                            layerData.Definition.FolderPath,
+                            layerData.SourceFiles,
+                            mergeResult.LayerConfigRootNode,
+                            mergeResult.IntraLayerValueOrigins
+                        );
+                        _cascadeLayers.Add(cascadeLayer);
+                        AllLayers.Add(cascadeLayer);
+                    }
+
+                    // Set initial state
+                    CurrentFilePath = openDialog.FileName;
+                    IsDirty = false;
+                    ActiveEditorLayer = _cascadeLayers.LastOrDefault(); // Default to highest priority layer
+                    OnPropertyChanged(nameof(IsCascadeModeActive)); // Notify UI to show cascade controls
+                      
+                    RefreshDisplay(); // This will handle schema mapping, validation, and list building
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to open cascade project: {ex.Message}", "Open Project Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
         private bool CheckUnsavedChanges()
         {
             if (!IsDirty)
@@ -486,7 +593,10 @@ namespace JsonConfigEditor.ViewModels
 
                 // Set the new data model.
                 _cascadeLayers = new List<CascadeLayer> { singleLayer };
+                AllLayers.Clear();
+                AllLayers.Add(singleLayer);
                 ActiveEditorLayer = _cascadeLayers.FirstOrDefault(); // Set the active layer
+                OnPropertyChanged(nameof(IsCascadeModeActive)); // Notify UI to show cascade controls
                 // --- END NEW LOGIC ---
 
                 CurrentFilePath = filePath;
@@ -690,7 +800,10 @@ namespace JsonConfigEditor.ViewModels
             var root = new ObjectNode("$root", null);
             var layer = new CascadeLayer(0, "Default", "", new List<SourceFileInfo>(), root, new Dictionary<string, string>());
             _cascadeLayers = new List<CascadeLayer> { layer };
+            AllLayers.Clear();
+            AllLayers.Add(layer);
             ActiveEditorLayer = _cascadeLayers.FirstOrDefault(); // Set the active layer
+            OnPropertyChanged(nameof(IsCascadeModeActive)); // Notify UI to show cascade controls
 
             _domToSchemaMap.Clear();
             _validationIssuesMap.Clear();
@@ -730,13 +843,62 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
+        private void RefreshDisplay()
+        {
+            // Determine the current root node for display
+            if (IsMergedViewActive && IsCascadeModeActive && ActiveEditorLayer != null)
+            {
+                // MERGED VIEW
+                // Get all layers that should be part of the merge
+                var layersToMerge = _cascadeLayers.Where(l => l.LayerIndex <= ActiveEditorLayer.LayerIndex).ToList();
+        
+                // For now, we create an empty schema defaults node (Layer 0).
+                // This will be replaced by a real implementation later.
+                var schemaDefaultsRoot = new ObjectNode("$root", null);
+
+                // Use the merger to get the complete result
+                var mergeResult = _displayMerger.MergeForDisplay(layersToMerge, schemaDefaultsRoot);
+
+                _displayRoot = mergeResult.MergedRoot;
+                _valueOrigins = mergeResult.ValueOrigins;
+                _overrideSources = mergeResult.OverrideSources;
+            }
+            else
+            {
+                // SINGLE LAYER VIEW
+                _displayRoot = ActiveEditorLayer?.LayerConfigRootNode;
+                // Clear the origin maps as they don't apply in single-layer view
+                _valueOrigins.Clear();
+                _overrideSources.Clear();
+            }
+    
+            // Now that the display tree is set, update the rest of the UI
+            RebuildDomToSchemaMapping();
+            RefreshFlatList();
+            _ = ValidateDocumentAsync();
+            OnPropertyChanged(nameof(WindowTitle));
+        }
+
         private void RefreshFlatList()
         {
+            // Persist the expansion state from the current ViewModels into the state dictionary.
+            foreach (var vm in _persistentVmMap.Values)
+            {
+                string pathKey = vm.DomNode?.Path ?? vm.SchemaNodePathKey;
+                if (!string.IsNullOrEmpty(pathKey))
+                {
+                    _schemaNodeExpansionState[pathKey] = vm.IsExpanded;
+                }
+            }
+
+            // Now, we can safely clear the ViewModel instances. New ones will be created
+            // and will read their state from the dictionary we just populated.
+            _persistentVmMap.Clear();
+
             var rootNode = GetRootDomNode();
             if (rootNode == null)
             {
                 FlatItemsSource.Clear();
-                _persistentVmMap.Clear();
                 SelectedGridItem = null;
                 return;
             }
@@ -1133,7 +1295,10 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         public void SetSelectedEditorLayerByIndex(int layerIndex)
         {
-            // Logic will be implemented in a later stage.
+            if (layerIndex >= 0 && layerIndex < _cascadeLayers.Count)
+            {
+                ActiveEditorLayer = _cascadeLayers[layerIndex];
+            }
         }
 
         /// <summary>
@@ -1144,11 +1309,9 @@ namespace JsonConfigEditor.ViewModels
             // Logic will be implemented in a later stage.
         }
 
-        // This method replaces direct access to the old _rootDomNode field.
         public DomNode? GetRootDomNode()
         {
-            // For now, in single-file mode, always return the root of the first and only layer.
-            return _cascadeLayers.FirstOrDefault()?.LayerConfigRootNode;
+            return _displayRoot;
         }
 
         public DomNode? FindDomNodeByPath(string path)

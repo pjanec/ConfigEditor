@@ -1,0 +1,16 @@
+{
+  "layers": [
+    {
+      "name": "Base",
+      "folderPath": "config/1_base"
+    },
+    {
+      "name": "Staging",
+      "folderPath": "config/2_staging"
+    },
+    {
+      "name": "Production",
+      "folderPath": "config/3_production"
+    }
+  ]
+} 

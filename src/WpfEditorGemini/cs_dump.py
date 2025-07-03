@@ -4,7 +4,7 @@ import re
 
 # Define the file extensions and folders to include/exclude.
 # This makes it easy to configure the script's behavior.
-ALLOWED_EXTENSIONS = ('.cs', '.xaml', '.csproj', '.sln', '.json')
+ALLOWED_EXTENSIONS = ('.cs', '.xaml', '.csproj', '.sln', '.json', '.jsonc')
 EXCLUDED_FOLDERS = ('bin', 'obj')
 
 

@@ -1,5 +1,4 @@
-﻿
-using JsonConfigEditor.Core.Cascade;
+﻿using JsonConfigEditor.Core.Cascade;
 using JsonConfigEditor.Core.Dom;
 using System;
 using System.Collections.Generic;
@@ -18,7 +17,7 @@ namespace JsonConfigEditor.Core.Services
         Dictionary<string, int> ValueOrigins,
         Dictionary<string, List<int>> OverrideSources
     );
-
+    
     /// <summary>
     /// Merges multiple cascade layers into a single DOM tree for display purposes.
     /// It also generates the origin tracking maps required by the UI.
@@ -37,11 +36,9 @@ namespace JsonConfigEditor.Core.Services
             var overrideSources = new Dictionary<string, List<int>>();
 
             // 1. Start with a clone of the schema defaults as our base
-            var mergedRoot = (ObjectNode)CloneNode(schemaDefaultsRoot);
-            
+            var mergedRoot = (ObjectNode)DomCloning.CloneNode(schemaDefaultsRoot, null);
             // 2. Initialize origin maps with Layer 0 (Schema Defaults)
             TrackOriginsRecursive(mergedRoot, 0, valueOrigins, overrideSources);
-
             // 3. Merge each subsequent layer on top of the result
             foreach (var layer in layersToMerge)
             {
@@ -71,16 +68,15 @@ namespace JsonConfigEditor.Core.Services
                     else
                     {
                         // Conflict or replacement. The source node wins and replaces the target.
-                        // Example: Base has an object, Override has a value. The value replaces the object.
-                        var clonedSourceChild = CloneNode(sourceChild);
-                        targetParent.AddChild(clonedSourceChild.Name, clonedSourceChild); // This sets the new parent and path
+                        var clonedSourceChild = DomCloning.CloneNode(sourceChild, targetParent);
+                        targetParent.ReplaceChild(clonedSourceChild.Name, clonedSourceChild);
                         TrackOriginsRecursive(clonedSourceChild, layerIndex, valueOrigins, overrideSources);
                     }
                 }
                 else
                 {
                     // Node doesn't exist in the target, so we add it.
-                    var clonedSourceChild = CloneNode(sourceChild);
+                    var clonedSourceChild = DomCloning.CloneNode(sourceChild, targetParent);
                     targetParent.AddChild(clonedSourceChild.Name, clonedSourceChild);
                     TrackOriginsRecursive(clonedSourceChild, layerIndex, valueOrigins, overrideSources);
                 }
@@ -121,40 +117,6 @@ namespace JsonConfigEditor.Core.Services
                     TrackOriginsRecursive(item, layerIndex, valueOrigins, overrideSources);
                 }
             }
-        }
-        
-        /// <summary>
-        /// Performs a deep clone of a DomNode.
-        /// </summary>
-        private DomNode CloneNode(DomNode node)
-        {
-            if (node is ValueNode valueNode)
-            {
-                return new ValueNode(valueNode.Name, null, valueNode.Value);
-            }
-            if (node is RefNode refNode)
-            {
-                return new RefNode(refNode.Name, null, refNode.ReferencePath, refNode.OriginalValue);
-            }
-            if (node is ArrayNode arrayNode)
-            {
-                var newArray = new ArrayNode(arrayNode.Name, null);
-                foreach (var item in arrayNode.Items)
-                {
-                    newArray.AddItem(CloneNode(item));
-                }
-                return newArray;
-            }
-            if (node is ObjectNode objectNode)
-            {
-                var newObject = new ObjectNode(objectNode.Name, null);
-                foreach (var child in objectNode.GetChildren())
-                {
-                    newObject.AddChild(child.Name, CloneNode(child));
-                }
-                return newObject;
-            }
-            throw new NotSupportedException($"Unsupported node type for cloning: {node.GetType().Name}");
         }
     }
 }
