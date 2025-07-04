@@ -619,5 +619,21 @@ namespace JsonConfigEditor.ViewModels
                 return _parentViewModel.IsCascadeModeActive && (OriginLayerIndex == _parentViewModel.ActiveEditorLayer?.LayerIndex);
             }
         }
+
+/// <summary>
+        /// Forces the ViewModel to synchronize its state with a new value from the data model.
+        /// This is called after an Undo/Redo of a value change to update the UI without a full refresh.
+        /// </summary>
+        public void SyncValueFromModel(JsonElement newValue)
+        {
+            // Update the display clone's value. This is the crucial step.
+            if (_domNode is ValueNode clonedNode)
+            {
+                clonedNode.Value = newValue;
+            }
+
+            // Trigger a refresh of all data-bound properties on the ViewModel.
+            RefreshDisplayProperties();
+        }
     }
 } 

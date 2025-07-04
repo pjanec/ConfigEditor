@@ -10,6 +10,8 @@ namespace JsonConfigEditor.Core.History
         private readonly JsonElement _oldValue;
         private readonly JsonElement _newValue;
 
+        public ValueNode Node => _node;
+
         public override string? NodePath => _node.Path;
 
         public ValueEditOperation(int layerIndex, ValueNode node, JsonElement oldValue, JsonElement newValue)

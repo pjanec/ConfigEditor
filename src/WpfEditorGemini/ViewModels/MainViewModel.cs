@@ -382,52 +382,51 @@ namespace JsonConfigEditor.ViewModels
             Application.Current.Shutdown();
         }
 
-        // This is the new, intelligent event handler
         private void OnHistoryModelChanged(EditOperation operation)
         {
             IsDirty = true;
             OnPropertyChanged(nameof(WindowTitle));
             _ = Task.Run(() => ValidateDocumentAsync());
 
-            string? pathToSelect = null;
-
-            // Determine which path to select AFTER the refresh.
-            if (operation is RemoveNodeOperation)
-            {
-                // For a delete, we find the next logical item based on the current UI state.
-                var itemToSelect = FindNextItemToSelectForDeletion(SelectedGridItem);
-                // We get its path BEFORE the refresh so we can find the new VM after the refresh.
-                pathToSelect = itemToSelect?.DomNode?.Path ?? itemToSelect?.SchemaNodePathKey;
-            }
-            else
-            {
-                // For Add, Edit, or other operations, we want to select the node the operation affected.
-                pathToSelect = operation.NodePath;
-            }
-
-            // Now, perform the required UI refresh.
+            // --- Handle Structural Changes (Add/Remove) ---
             if (operation.RequiresFullRefresh)
             {
-                RefreshDisplay();
-            }
-            else if (operation.NodePath != null && _persistentVmMap.TryGetValue(operation.NodePath, out var vmToUpdate))
-            {
-                // This lightweight update works for simple value changes.
-                vmToUpdate.RefreshDisplayProperties();
-            }
+                string? pathToSelect = null;
+                if (operation is RemoveNodeOperation)
+                {
+                    var itemToSelect = FindNextItemToSelectForDeletion(SelectedGridItem);
+                    pathToSelect = itemToSelect?.DomNode?.Path ?? itemToSelect?.SchemaNodePathKey;
+                }
+                else
+                {
+                    pathToSelect = operation.NodePath;
+                }
 
-            // Finally, apply the focus to the determined item.
-            if (pathToSelect != null && _persistentVmMap.TryGetValue(pathToSelect, out var vmToSelect))
-            {
-                SelectedGridItem = vmToSelect;
+                RefreshDisplay(); // Full refresh is necessary here.
+
+                if (pathToSelect != null && _persistentVmMap.TryGetValue(pathToSelect, out var vmToSelect))
+                {
+                    SelectedGridItem = vmToSelect;
+                }
             }
-            else
+            // --- Handle Lightweight Value Changes (Edit/Undo Edit) ---
+            else if (operation is ValueEditOperation valueOp && valueOp.NodePath != null)
             {
-                SelectedGridItem = null;
+                // Find the ViewModel for the node that changed.
+                if (_persistentVmMap.TryGetValue(valueOp.NodePath, out var vmToUpdate))
+                {
+                    // Get the new, correct value from the operation's node.
+                    var newValue = valueOp.Node.Value;
+                    
+                    // Push the new state into the ViewModel, updating its display clone and properties.
+                    vmToUpdate.SyncValueFromModel(newValue);
+
+                    // Ensure the item remains selected.
+                    SelectedGridItem = vmToUpdate;
+                }
             }
         }
 
-        // UPDATE command handlers to be simple delegations
         private void ExecuteUndo() => _historyService.Undo();
         private void ExecuteRedo() => _historyService.Redo();
 
