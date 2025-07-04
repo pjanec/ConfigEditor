@@ -699,40 +699,29 @@ namespace JsonConfigEditor.ViewModels
             return !string.IsNullOrEmpty(referencePath) && !referencePath.Contains("://");
         }
 
-        internal bool AddArrayItem(ArrayNode parentArray, string editValue, SchemaNode? itemSchema)
+        internal bool AddArrayItem(ArrayNode parentArrayFromClone, string editValue, SchemaNode? itemSchema)
         {
-            try
+            if (ActiveEditorLayer == null) return false;
+
+            var realParentArray = FindNodeInSourceLayer(parentArrayFromClone.Path, ActiveEditorLayer.LayerIndex) as ArrayNode;
+            
+            // Case 1: The array already exists in the active layer. Add the item directly.
+            if (realParentArray != null)
             {
-                if (ActiveEditorLayer == null) return false;
-
-                // Find the "real" parent array in the source layer's data model.
-                // The 'parentArray' parameter is from the display clone.
-                var realParentArray = FindNodeInSourceLayer(parentArray.Path, ActiveEditorLayer.LayerIndex) as ArrayNode;
-
-                // If the array doesn't exist in the active layer, we can't add to it.
-                // A full implementation would need to create an override of the array first.
-                if (realParentArray == null)
-                {
-                    // For now, this operation fails if the array is inherited.
-                    return false;
-                }
-
-                // 1. Create the new node from the user's value.
                 var newNode = _nodeFactory.CreateFromValue(editValue, realParentArray.Items.Count.ToString(), realParentArray, itemSchema);
                 if (newNode == null) return false;
-
-                // Create the operation using the real parent array from the source model.
-                var operation = new AddNodeOperation(ActiveEditorLayer.LayerIndex, realParentArray, newNode);
-                operation.Redo(this);
-                _historyService.Record(operation);
-                return true;
-
-                return true;
+                AddNodeWithHistory(realParentArray, newNode, newNode.Name);
             }
-            catch
+            // Case 2: The array is inherited. Use the helper to create an override.
+            else 
             {
-                return false;
+                Action<ArrayNode> addAction = (array) => {
+                    var newNode = _nodeFactory.CreateFromValue(editValue, array.Items.Count.ToString(), array, itemSchema);
+                    if (newNode != null) array.AddItem(newNode);
+                };
+                CreateArrayOverride(parentArrayFromClone, addAction, "add");
             }
+            return true;
         }
 
         internal bool CreateNodeFromSchemaWithValue(DataGridRowItemViewModel schemaOnlyVm, string finalValueStr)
@@ -1240,7 +1229,6 @@ namespace JsonConfigEditor.ViewModels
 
             var originIndex = item.OriginLayerIndex;
 
-            // Case 1: The node exists in the active layer and can be deleted directly.
             if (originIndex == ActiveEditorLayer.LayerIndex)
             {
                 var nodeToRemove = FindNodeInSourceLayer(item.DomNode.Path, ActiveEditorLayer.LayerIndex);
@@ -1253,38 +1241,13 @@ namespace JsonConfigEditor.ViewModels
                 operation.Redo(this);
                 _historyService.Record(operation);
             }
-            // Case 2: The node is an inherited array item. Confirm before creating an override.
             else if (item.DomNode.Parent is ArrayNode inheritedParentArray)
             {
-                // *** ADD CONFIRMATION DIALOG ***
-                var layerName = ActiveEditorLayer.Name;
-                var arrayName = inheritedParentArray.Name;
-                var message = $"The item you are deleting is inherited from a lower-level layer.\n\nTo remove it, a new version of the entire '{arrayName}' array will be created in the active '{layerName}' layer. This will override the inherited array.\n\nDo you want to proceed?";
-                
-                var result = MessageBox.Show(message, "Confirm Array Override", MessageBoxButton.YesNo, MessageBoxImage.Question);
-
-                if (result != MessageBoxResult.Yes)
-                {
-                    return; // User cancelled the operation.
-                }
-                // *** END CONFIRMATION DIALOG ***
-
-                // Find or create the parent of the array (e.g., the root) in the active layer.
-                var grandparentNode = FindOrCreateParentInSourceLayer_SchemaAware(inheritedParentArray.Path);
-                if (grandparentNode is not ObjectNode parentObject) return;
-
-                var newArray = new ArrayNode(inheritedParentArray.Name, parentObject);
-
-                // Deep-clone all items from the inherited array EXCEPT the one being deleted.
-                foreach (var itemToKeep in inheritedParentArray.Items)
-                {
-                    if (itemToKeep.Path != item.DomNode.Path)
-                    {
-                        newArray.AddItem(DomCloning.CloneNode(itemToKeep, newArray));
-                    }
-                }
-                
-                AddNodeWithHistory(parentObject, newArray, newArray.Name);
+                Action<ArrayNode> deleteAction = (array) => {
+                    var itemToRemove = array.Items.FirstOrDefault(i => i.Path.EndsWith(item.DomNode.Name));
+                    if (itemToRemove != null) array.RemoveItem(itemToRemove);
+                };
+                CreateArrayOverride(inheritedParentArray, deleteAction, "remove");
             }
         }
 
@@ -1507,28 +1470,35 @@ namespace JsonConfigEditor.ViewModels
         {
             if (ActiveEditorLayer == null) return;
 
-            var parentNode = FindOrCreateParentInSourceLayer_SchemaAware(path);
-            if (parentNode == null) return;
-            
-            var nodeName = path.Split('/').Last();
+            string parentPath = path.Substring(0, path.LastIndexOf('/'));
+            var parentSchema = SchemaLoader.FindSchemaForPath(parentPath);
 
-            if (parentNode is ObjectNode parentObject)
+            if (parentSchema?.NodeType == SchemaNodeType.Array)
             {
+                var inheritedArray = FindDomNodeByPath(parentPath) as ArrayNode;
+                if (inheritedArray == null) return;
+
+                Action<ArrayNode> editAction = (array) => {
+                    var itemToEdit = array.Items.FirstOrDefault(i => i.Path.EndsWith(path.Split('/').Last()));
+                    if (itemToEdit is ValueNode valueNode)
+                    {
+                        valueNode.TryUpdateFromString(value);
+                    }
+                };
+                CreateArrayOverride(inheritedArray, editAction, "edit");
+            }
+            else
+            {
+                var parentNode = FindOrCreateParentInSourceLayer_SchemaAware(path);
+                if (parentNode is not ObjectNode parentObject) return;
+
+                var nodeName = path.Split('/').Last();
                 var newNode = _nodeFactory.CreateFromValue(value, nodeName, parentObject, schema);
                 AddNodeWithHistory(parentObject, newNode, nodeName);
+                
+                ActiveEditorLayer.IsDirty = true;
+                RefreshDisplay();
             }
-            else if (parentNode is ArrayNode parentArray)
-            {
-                // When overriding an array item, we are adding the new value to an array
-                // that now exists in the active layer. The original index ("0") is not used;
-                // we simply add the new item. The merger will ensure this new array in the
-                // higher layer completely replaces the inherited one.
-                var newNode = _nodeFactory.CreateFromValue(value, parentArray.Items.Count.ToString(), parentArray, schema);
-                AddNodeWithHistory(parentArray, newNode, newNode.Name);
-            }
-
-            ActiveEditorLayer.IsDirty = true;
-            RefreshDisplay();
         }
 
         private DomNode? FindOrCreateParentInSourceLayer_SchemaAware(string leafNodePath)
@@ -1656,6 +1626,42 @@ namespace JsonConfigEditor.ViewModels
             }
 
             return null;
+        }
+
+        private void CreateArrayOverride(ArrayNode inheritedArray, Action<ArrayNode> modificationAction, string actionVerb)
+        {
+            if (ActiveEditorLayer == null) return;
+
+            // 1. Show a confirmation dialog with a specific message based on the action.
+            var layerName = ActiveEditorLayer.Name;
+            var arrayName = inheritedArray.Name;
+            var message = $"To {actionVerb} an item in this inherited array, a new, overriding version of the entire '{arrayName}' array will be created in the active '{layerName}' layer.\n\nDo you want to proceed?";
+            
+            var result = MessageBox.Show(message, "Confirm Array Override", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes) return;
+
+            // 2. Ensure the array's parent object exists in the active layer.
+            var grandparentNode = FindOrCreateParentInSourceLayer_SchemaAware(inheritedArray.Path);
+            if (grandparentNode is not ObjectNode parentObject) return;
+
+            // 3. Create the new array that will live in the active layer.
+            var newArrayInActiveLayer = new ArrayNode(inheritedArray.Name, parentObject);
+
+            // 4. Populate the new array by cloning the items from the inherited array.
+            foreach (var itemToClone in inheritedArray.Items)
+            {
+                newArrayInActiveLayer.AddItem(DomCloning.CloneNode(itemToClone, newArrayInActiveLayer));
+            }
+            
+            // 5. Apply the specific modification (add, edit, or delete) to the new array.
+            modificationAction(newArrayInActiveLayer);
+
+            // 6. Add the final, modified array to the active layer's data model.
+            AddNodeWithHistory(parentObject, newArrayInActiveLayer, newArrayInActiveLayer.Name);
+            
+            // 7. Mark dirty and refresh the UI (this might be better outside the helper)
+            ActiveEditorLayer.IsDirty = true;
+            RefreshDisplay();
         }
 
     }
