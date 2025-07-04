@@ -51,32 +51,6 @@
                 <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
             </Style>
             
-            <!-- Style for schema-only nodes (grayed out) -->
-            <Style x:Key="SchemaOnlyNodeStyle" TargetType="DataGridRow">
-                <Setter Property="Foreground" Value="Gray"/>
-                <Setter Property="FontStyle" Value="Italic"/>
-            </Style>
-            
-            <!-- Style for unschematized nodes (dark blue) -->
-            <Style x:Key="UnschematizedNodeStyle" TargetType="DataGridRow">
-                <Setter Property="Foreground" Value="DarkBlue"/>
-            </Style>
-            
-            <!-- Style for external/missing ref nodes (dark magenta) -->
-            <Style x:Key="ExternalRefNodeStyle" TargetType="DataGridRow">
-                <Setter Property="Foreground" Value="DarkMagenta"/>
-            </Style>
-            
-            <!-- Style for validation error nodes (red border) -->
-            <Style x:Key="ValidationErrorStyle" TargetType="DataGridRow">
-                <Setter Property="BorderBrush" Value="Red"/>
-                <Setter Property="BorderThickness" Value="1"/>
-            </Style>
-            
-            <!-- Style for search highlighted nodes -->
-            <Style x:Key="SearchHighlightStyle" TargetType="DataGridRow">
-                <Setter Property="Background" Value="Yellow"/>
-            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application> 
