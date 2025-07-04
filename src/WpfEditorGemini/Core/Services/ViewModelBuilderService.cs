@@ -146,13 +146,17 @@ namespace JsonConfigEditor.Core.Services
                     // Use the placeholder provider to get schema-only nodes.
                     if (showSchemaNodes && domToSchemaMap.TryGetValue(objectNode.Path, out var schema) && schema?.NodeType == SchemaNodeType.Object)
                     {
-                        var placeholders = _placeholderProvider.GetPlaceholders(objectNode, schema, _mainViewModel);
-                        flatItems.AddRange(placeholders);
+                        var placeholders = _placeholderProvider.GetPlaceholders(objectNode, schema, _mainViewModel)
+                                                               .OrderBy(vm => vm.NodeName)
+                                                               .ToList();
 
+                        // Iterate and add children immediately after the parent.
                         foreach (var p in placeholders)
                         {
+                            flatItems.Add(p); // Add the parent placeholder (e.g., "Database")
                             if (p.IsExpanded && p.IsExpandable)
                             {
+                                // Immediately add its children before moving to the next top-level placeholder
                                 AddSchemaOnlyChildrenRecursive(p, flatItems, persistentVmMap, domToSchemaMap, valueOrigins);
                             }
                         }
@@ -237,7 +241,8 @@ namespace JsonConfigEditor.Core.Services
               
             int parentDepth = parentVm.DomNode?.Depth ?? (int)(parentVm.Indentation.Left / 20);
 
-            foreach (var propEntry in parentVm.SchemaContextNode.Properties)
+            // Add sorting here to ensure children are displayed alphabetically
+            foreach (var propEntry in parentVm.SchemaContextNode.Properties.OrderBy(pe => pe.Key))
             {
                 var childDepth = parentDepth + 1;
                 var childSchemaPathKey = $"{parentVm.SchemaNodePathKey}/{propEntry.Key}";
