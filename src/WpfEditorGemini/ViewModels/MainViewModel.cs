@@ -389,26 +389,41 @@ namespace JsonConfigEditor.ViewModels
             OnPropertyChanged(nameof(WindowTitle));
             _ = Task.Run(() => ValidateDocumentAsync());
 
+            string? pathToSelect = null;
+
+            // Determine which path to select AFTER the refresh.
+            if (operation is RemoveNodeOperation)
+            {
+                // For a delete, we find the next logical item based on the current UI state.
+                var itemToSelect = FindNextItemToSelectForDeletion(SelectedGridItem);
+                // We get its path BEFORE the refresh so we can find the new VM after the refresh.
+                pathToSelect = itemToSelect?.DomNode?.Path ?? itemToSelect?.SchemaNodePathKey;
+            }
+            else
+            {
+                // For Add, Edit, or other operations, we want to select the node the operation affected.
+                pathToSelect = operation.NodePath;
+            }
+
+            // Now, perform the required UI refresh.
             if (operation.RequiresFullRefresh)
             {
-                // Get the unique path of the node that was just added or structurally changed.
-                string? pathToSelect = operation.NodePath;
-
-                RefreshDisplay(); // Rebuilds the list and the persistent VM map.
-
-                // After the refresh, find the new ViewModel and select it.
-                if (pathToSelect != null && _persistentVmMap.TryGetValue(pathToSelect, out var vmToSelect))
-                {
-                    SelectedGridItem = vmToSelect;
-                }
+                RefreshDisplay();
             }
-            else if (operation.NodePath != null)
+            else if (operation.NodePath != null && _persistentVmMap.TryGetValue(operation.NodePath, out var vmToUpdate))
             {
-                // This is for simple value changes that don't require a full refresh.
-                if (_persistentVmMap.TryGetValue(operation.NodePath, out var vmToUpdate))
-                {
-                    vmToUpdate.RefreshDisplayProperties();
-                }
+                // This lightweight update works for simple value changes.
+                vmToUpdate.RefreshDisplayProperties();
+            }
+
+            // Finally, apply the focus to the determined item.
+            if (pathToSelect != null && _persistentVmMap.TryGetValue(pathToSelect, out var vmToSelect))
+            {
+                SelectedGridItem = vmToSelect;
+            }
+            else
+            {
+                SelectedGridItem = null;
             }
         }
 
@@ -1576,5 +1591,45 @@ namespace JsonConfigEditor.ViewModels
             }
             return current;
         }
+
+        private DataGridRowItemViewModel? FindNextItemToSelectForDeletion(DataGridRowItemViewModel? deletedItem)
+        {
+            if (deletedItem == null || !FlatItemsSource.Any()) return null;
+
+            int deletedIndex = FlatItemsSource.IndexOf(deletedItem);
+            if (deletedIndex == -1) return null;
+
+            int deletedDepth = deletedItem.DomNode?.Depth ?? (int)(deletedItem.Indentation.Left / 20);
+
+            // 1. Look forward in the list to find the next item that is NOT a descendant.
+            //    A non-descendant will have a depth less than or equal to the deleted item.
+            for (int i = deletedIndex + 1; i < FlatItemsSource.Count; i++)
+            {
+                var nextItem = FlatItemsSource[i];
+                int nextDepth = nextItem.DomNode?.Depth ?? (int)(nextItem.Indentation.Left / 20);
+                if (nextDepth <= deletedDepth)
+                {
+                    return nextItem; // Found the next sibling or an "uncle" node.
+                }
+            }
+
+            // 2. If we didn't find a "next" item (i.e., we deleted the last node in a group or the last overall),
+            //    simply select the item that is now at the deleted item's original index, which will be its
+            //    former last child's new sibling, or the previous item. This is a safe fallback.
+            if (deletedIndex > 0)
+            {
+                // After deletion, the list will be smaller. The item at the previous index is a safe bet.
+                return FlatItemsSource[deletedIndex - 1];
+            }
+
+            // 3. If all else fails (e.g. deleting the first and only item), try to select the parent.
+            if (deletedItem.DomNode?.Parent?.Path != null)
+            {
+                return _persistentVmMap.GetValueOrDefault(deletedItem.DomNode.Parent.Path);
+            }
+
+            return null;
+        }
+
     }
 }
