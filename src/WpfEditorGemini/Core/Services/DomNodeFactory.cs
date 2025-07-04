@@ -94,7 +94,13 @@ namespace JsonConfigEditor.Core.Services
             // Note: This method will need access to the MainViewModel to record undo/redo operations
             // for the creation of parent nodes.
               
-            var rootNode = _mainViewModel.GetRootDomNode(); // A helper method to get the root
+            // The root for materialization MUST be the active editing layer's root, not the merged display root.
+            var rootNode = _mainViewModel.ActiveEditorLayer?.LayerConfigRootNode;
+
+            // If there's no active layer, we can't materialize anything.
+            if (rootNode == null) return null;
+
+
             if (string.IsNullOrEmpty(targetPathKey) || targetPathKey == "$root")
             {
                 if (rootNode != null) return rootNode;

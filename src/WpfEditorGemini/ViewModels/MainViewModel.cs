@@ -391,12 +391,20 @@ namespace JsonConfigEditor.ViewModels
 
             if (operation.RequiresFullRefresh)
             {
-                RefreshDisplay();
+                // Get the unique path of the node that was just added or structurally changed.
+                string? pathToSelect = operation.NodePath;
+
+                RefreshDisplay(); // Rebuilds the list and the persistent VM map.
+
+                // After the refresh, find the new ViewModel and select it.
+                if (pathToSelect != null && _persistentVmMap.TryGetValue(pathToSelect, out var vmToSelect))
+                {
+                    SelectedGridItem = vmToSelect;
+                }
             }
             else if (operation.NodePath != null)
             {
-                // Find the specific ViewModel for the node that changed
-                // and tell it to refresh its display properties from the updated model.
+                // This is for simple value changes that don't require a full refresh.
                 if (_persistentVmMap.TryGetValue(operation.NodePath, out var vmToUpdate))
                 {
                     vmToUpdate.RefreshDisplayProperties();
@@ -680,29 +688,29 @@ namespace JsonConfigEditor.ViewModels
         {
             try
             {
+                if (ActiveEditorLayer == null) return false;
+
+                // Find the "real" parent array in the source layer's data model.
+                // The 'parentArray' parameter is from the display clone.
+                var realParentArray = FindNodeInSourceLayer(parentArray.Path, ActiveEditorLayer.LayerIndex) as ArrayNode;
+
+                // If the array doesn't exist in the active layer, we can't add to it.
+                // A full implementation would need to create an override of the array first.
+                if (realParentArray == null)
+                {
+                    // For now, this operation fails if the array is inherited.
+                    return false;
+                }
+
                 // 1. Create the new node from the user's value.
-                var newNode = _nodeFactory.CreateFromValue(editValue, parentArray.Items.Count.ToString(), parentArray, itemSchema);
+                var newNode = _nodeFactory.CreateFromValue(editValue, realParentArray.Items.Count.ToString(), realParentArray, itemSchema);
                 if (newNode == null) return false;
 
-                // 2. Create the operation that knows how to add the node.
-                // FIX: Pass the active layer index to the operation.
-                var activeLayerIndex = ActiveEditorLayer?.LayerIndex ?? 0;
-                var operation = new AddNodeOperation(activeLayerIndex, parentArray, newNode);
-
-                // 3. (This is the fix) Execute the operation to modify the data model NOW.
+                // Create the operation using the real parent array from the source model.
+                var operation = new AddNodeOperation(ActiveEditorLayer.LayerIndex, realParentArray, newNode);
                 operation.Redo(this);
-
-                // 4. Now that the model is updated, record the operation for undo/redo.
-                //    This will trigger the ModelChanged event, which will correctly refresh the UI.
                 _historyService.Record(operation);
-
-                // After the list has been refreshed, find the ViewModel for the node we just added.
-                if (_persistentVmMap.TryGetValue(newNode.Path, out var newVm))
-                {
-                    // Set it as the selected item. This will trigger the PropertyChanged event handler,
-                    // which contains all the logic to scroll to and focus the new row.
-                    SelectedGridItem = newVm;
-                }
+                return true;
 
                 return true;
             }
@@ -712,87 +720,91 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
-        internal bool MaterializeSchemaNodeAndBeginEdit(DataGridRowItemViewModel schemaOnlyVm, string initialEditValue)
+        internal bool CreateNodeFromSchemaWithValue(DataGridRowItemViewModel schemaOnlyVm, string finalValueStr)
         {
-            if (!schemaOnlyVm.IsSchemaOnlyNode || schemaOnlyVm.SchemaContextNode == null)
+            if (ActiveEditorLayer == null || schemaOnlyVm.SchemaContextNode == null) return false;
+
+            try
             {
-                return false;
-            }
+                var parentNode = ActiveEditorLayer.LayerConfigRootNode;
+                var pathSegments = schemaOnlyVm.SchemaNodePathKey.Split('/');
+                var parentPathSegments = pathSegments.Take(pathSegments.Length - 1);
 
-            var targetPathKey = schemaOnlyVm.SchemaNodePathKey;
-            var targetSchemaNode = schemaOnlyVm.SchemaContextNode;
-
-            // DELEGATE materialization to the factory
-            DomNode? materializedDomNode = _nodeFactory.MaterializeDomPathRecursive(targetPathKey, targetSchemaNode);
-
-            if (materializedDomNode == null)
-            {
-                return false;
-            }
-
-            if (materializedDomNode is ValueNode valueNode)
-            {
-                try
+                // 1. Manually walk the path and create parent nodes in the source model directly,
+                // without triggering any history events or refreshes.
+                foreach (var segment in parentPathSegments)
                 {
-                    JsonElement newJsonValue;
-                    SchemaNode? vnSchema = schemaOnlyVm.SchemaContextNode;
-                    Type targetType = vnSchema?.ClrType ?? typeof(string);
+                    if (string.IsNullOrEmpty(segment) || segment == "$root") continue;
 
-                    if (targetType == typeof(bool) && bool.TryParse(initialEditValue, out bool bVal))
-                        newJsonValue = bVal ? JsonDocument.Parse("true").RootElement : JsonDocument.Parse("false").RootElement;
-                    else if ((targetType == typeof(int) || targetType == typeof(long)) && long.TryParse(initialEditValue, out long lVal))
-                        newJsonValue = JsonDocument.Parse(lVal.ToString()).RootElement;
-                    else if ((targetType == typeof(double) || targetType == typeof(float) || targetType == typeof(decimal)) && double.TryParse(initialEditValue, out double dVal))
-                        newJsonValue = JsonDocument.Parse(dVal.ToString(System.Globalization.CultureInfo.InvariantCulture)).RootElement;
-                    else
-                        newJsonValue = JsonDocument.Parse($"\"{JsonEncodedText.Encode(initialEditValue)}\"").RootElement;
-
-                    if (valueNode.Value.ValueKind != newJsonValue.ValueKind || valueNode.Value.ToString() != newJsonValue.ToString())
+                    var childNode = parentNode.GetChild(segment);
+                    if (childNode is ObjectNode existingObject)
                     {
-                        var oldValue = valueNode.Value;
-                        // FIX: Get the active layer index from the parent ViewModel.
-                        var activeLayerIndex = ActiveEditorLayer?.LayerIndex ?? 0;
-                        var valueEditOp = new ValueEditOperation(activeLayerIndex, valueNode, oldValue, newJsonValue.Clone());
-
-                        // 1. Execute the operation now to update the model from the default value to the new value.
-                        valueEditOp.Redo(this);
-
-                        _historyService.Record(valueEditOp);
+                        parentNode = existingObject;
+                    }
+                    else
+                    {
+                        // If a parent doesn't exist, create it and add it directly to the source tree.
+                        // The Undo for this entire action will be the removal of the final leaf node.
+                        var newParent = new ObjectNode(segment, parentNode);
+                        parentNode.AddChild(segment, newParent);
+                        parentNode = newParent;
                     }
                 }
-                catch (JsonException ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Failed to parse initialEditValue '{initialEditValue}' for materialized node '{valueNode.Path}': {ex.Message}");
-                }
-            }
 
-            // Ensure the newly materialized node is mapped to its schema
-            MapDomNodeToSchemaRecursive(materializedDomNode);
-            
-            // Debug output
-            if (materializedDomNode is ValueNode debugValueNode)
-            {
-                System.Diagnostics.Debug.WriteLine($"Materialization - Created node: {debugValueNode.Path}, JSON Type: {debugValueNode.Value.ValueKind}, JSON Value: {debugValueNode.Value}");
-                var schema = _domToSchemaMap.TryGetValue(debugValueNode.Path, out var s) ? s : null;
-                System.Diagnostics.Debug.WriteLine($"Materialization - Schema mapping: {schema?.Name}, Schema Type: {schema?.ClrType?.Name}");
+                // 2. Create the new leaf node with its final value.
+                string nodeName = pathSegments.Last();
+                JsonElement finalValue = CreateJsonElementFromString(finalValueStr, schemaOnlyVm.SchemaContextNode.ClrType);
+                var newNode = new ValueNode(nodeName, parentNode, finalValue);
+
+                // 3. Now, perform the SINGLE Add operation for the completed node and record it.
+                // This will trigger the one-and-only refresh on the final, correct data model.
+                AddNodeWithHistory(parentNode, newNode, nodeName);
                 
-                // Debug: Check if the schema mapping is actually in the map
-                System.Diagnostics.Debug.WriteLine($"Materialization - domToSchemaMap contains key '{debugValueNode.Path}': {_domToSchemaMap.ContainsKey(debugValueNode.Path)}");
-                System.Diagnostics.Debug.WriteLine($"Materialization - All keys in domToSchemaMap: {string.Join(", ", _domToSchemaMap.Keys)}");
+                return true;
             }
-
-            RefreshFlatList();
-
-            if (_persistentVmMap.TryGetValue(materializedDomNode.Path, out var newVm))
+            catch (Exception)
             {
-                SelectedGridItem = newVm;
-                if (materializedDomNode is ValueNode || materializedDomNode is RefNode)
-                {
-                    newVm.IsInEditMode = true;
-                    SetCurrentlyEditedItem(newVm);
-                }
+                // This can fail if a property already exists (e.g. from a parallel edit)
+                return false;
             }
-            return true;
+        }
+
+        // Helper method to create a JsonElement from a string, based on a target type.
+        private JsonElement CreateJsonElementFromString(string stringValue, Type targetType)
+        {
+            if (targetType == typeof(bool) && bool.TryParse(stringValue, out bool bVal))
+            {
+                return bVal ? JsonDocument.Parse("true").RootElement : JsonDocument.Parse("false").RootElement;
+            }
+            if ((targetType == typeof(int) || targetType == typeof(long)) && long.TryParse(stringValue, out long lVal))
+            {
+                return JsonDocument.Parse(lVal.ToString()).RootElement;
+            }
+            if ((targetType == typeof(double) || targetType == typeof(float) || targetType == typeof(decimal)) && double.TryParse(stringValue, System.Globalization.CultureInfo.InvariantCulture, out double dVal))
+            {
+                return JsonDocument.Parse(dVal.ToString(System.Globalization.CultureInfo.InvariantCulture)).RootElement;
+            }
+            // Fallback to a JSON string if no other type matches.
+            return JsonDocument.Parse($"\"{JsonEncodedText.Encode(stringValue)}\"").RootElement;
+        }
+
+        // Helper to find/create the parent node. We can reuse the node factory for this.
+        private ObjectNode? FindOrCreateParentInSourceLayer(string childPath)
+        {
+            if (ActiveEditorLayer == null) return null;
+
+            string parentPathKey;
+            if (!childPath.Contains('/'))
+            {
+                parentPathKey = "$root";
+            }
+            else
+            {
+                parentPathKey = childPath.Substring(0, childPath.LastIndexOf('/'));
+            }
+
+            var parentNode = _nodeFactory.MaterializeDomPathRecursive(parentPathKey, SchemaLoader.FindSchemaForPath(parentPathKey));
+            return parentNode as ObjectNode;
         }
 
         private void InitializeEmptyDocument()
@@ -870,6 +882,13 @@ namespace JsonConfigEditor.ViewModels
                 // Clear the origin maps as they don't apply in single-layer view
                 _valueOrigins.Clear();
                 _overrideSources.Clear();
+
+                // Populate the origins map so that every node is correctly
+                // associated with the single active layer.
+                if (_displayRoot != null && ActiveEditorLayer != null)
+                {
+                    PopulateOriginsForSingleLayer(_displayRoot, ActiveEditorLayer.LayerIndex, _valueOrigins);
+                }
             }
     
             // Now that the display tree is set, update the rest of the UI
@@ -879,7 +898,29 @@ namespace JsonConfigEditor.ViewModels
             OnPropertyChanged(nameof(WindowTitle));
         }
 
-        private void RefreshFlatList()
+        /// <summary>
+        /// Recursively populates the value origins map for a single layer's view.
+        /// </summary>
+        private void PopulateOriginsForSingleLayer(DomNode node, int layerIndex, Dictionary<string, int> origins)
+        {
+            origins[node.Path] = layerIndex;
+            if (node is ObjectNode objectNode)
+            {
+                foreach (var child in objectNode.GetChildren())
+                {
+                    PopulateOriginsForSingleLayer(child, layerIndex, origins);
+                }
+            }
+            else if (node is ArrayNode arrayNode)
+            {
+                foreach (var item in arrayNode.GetItems())
+                {
+                    PopulateOriginsForSingleLayer(item, layerIndex, origins);
+                }
+            }
+        }
+
+    private void RefreshFlatList()
         {
             // Persist the expansion state from the current ViewModels into the state dictionary.
             foreach (var vm in _persistentVmMap.Values)
@@ -917,6 +958,7 @@ namespace JsonConfigEditor.ViewModels
                     rootNode, 
                     _persistentVmMap, 
                     _domToSchemaMap, 
+                    _valueOrigins,
                     ShowSchemaNodes,
                     visiblePaths
                 );
@@ -927,6 +969,7 @@ namespace JsonConfigEditor.ViewModels
                     rootNode, 
                     _persistentVmMap, 
                     _domToSchemaMap, 
+                    _valueOrigins,
                     ShowSchemaNodes
                 );
             }
@@ -1196,24 +1239,29 @@ namespace JsonConfigEditor.ViewModels
 
         private void ExecuteDeleteSelectedNodes(DataGridRowItemViewModel? item)
         {
-            if (item?.DomNode != null)
+            if (item?.DomNode == null || ActiveEditorLayer == null) return;
+
+            // The item.DomNode is from the display clone. Find the real node in the source model.
+            var nodeToRemove = FindNodeInSourceLayer(item.DomNode.Path, ActiveEditorLayer.LayerIndex);
+
+            // If the node isn't in the active layer, it's inherited and cannot be deleted from here.
+            if (nodeToRemove == null || nodeToRemove.Parent == null)
             {
-                var nodeToRemove = item.DomNode;
-                var parent = nodeToRemove.Parent;
-                if (parent != null)
-                {
-                    int originalIndex = -1;
-                    if (parent is ArrayNode arrayParent)
-                    {
-                        originalIndex = arrayParent.Items.ToList().IndexOf(nodeToRemove);
-                    }
-                    // FIX: Pass the active layer index to the operation.
-                    var activeLayerIndex = ActiveEditorLayer?.LayerIndex ?? 0;
-                    var operation = new RemoveNodeOperation(activeLayerIndex, parent, nodeToRemove, nodeToRemove.Name, originalIndex);
-                    operation.Redo(this); // Execute immediately for structural changes
-                    _historyService.Record(operation);
-                }
+                return;
             }
+
+            var parent = nodeToRemove.Parent;
+            int originalIndex = -1;
+            if (parent is ArrayNode arrayParent)
+            {
+                originalIndex = arrayParent.Items.ToList().IndexOf(nodeToRemove);
+            }
+
+            // Create the operation with the real nodes from the source model.
+            var operation = new RemoveNodeOperation(ActiveEditorLayer.LayerIndex, parent, nodeToRemove, nodeToRemove.Name, originalIndex);
+            operation.Redo(this);
+      
+            _historyService.Record(operation);
         }
 
         private bool CanExecuteDeleteSelectedNodes(DataGridRowItemViewModel? item)
@@ -1425,38 +1473,131 @@ namespace JsonConfigEditor.ViewModels
 		/// </summary>
 		public void SetRootNode(DomNode? newRoot)
 		{
-		    // Ensure we have a valid ObjectNode. If the new root is null or not an object,
-		    // create a new empty root. This handles the "New File" scenario.
-		    var newObjectRoot = newRoot as ObjectNode ?? new ObjectNode("$root", null);
-
-		    // Get the currently active layer. In later stages, this will use `ActiveEditorLayer`.
-		    // For now, we assume a single-file context, so we operate on the first layer.
-		    var activeLayer = _cascadeLayers.FirstOrDefault();
-		    if (activeLayer != null)
-		    {
-		        // Replace the root node of the specific layer.
-		        activeLayer.LayerConfigRootNode = newObjectRoot;
-		    }
-		    else
-		    {
-		        // If no layers exist, create a new one to hold the new root.
-		        var newLayer = new CascadeLayer(0, "Default", "", new List<SourceFileInfo>(), newObjectRoot, new Dictionary<string, string>());
-		        _cascadeLayers = new List<CascadeLayer> { newLayer };
-		    }
-
-		    IsDirty = true;
-		    RebuildDomToSchemaMapping();
-		    RefreshFlatList();
-    
-		    // After refresh, find the ViewModel for the new root to select it in the UI
-		    if (_persistentVmMap.TryGetValue(newObjectRoot.Path, out var newRootVm))
-		    {
-		        SelectedGridItem = newRootVm;
-		    }
-		    else
-		    {
-		        SelectedGridItem = FlatItemsSource.FirstOrDefault();
-		    }
+		    _displayRoot = newRoot as ObjectNode;
+		    RefreshDisplay();
 		}
+
+        /// <summary>
+        /// Creates an override for an inherited value in the currently active editor layer.
+        /// </summary>
+        /// <param name="path">The full path of the node to override.</param>
+        /// <param name="value">The new value as a string.</param>
+        /// <param name="schema">The schema for the node being created.</param>
+        public void CreateOverride(string path, string value, SchemaNode? schema)
+        {
+            if (ActiveEditorLayer == null) return;
+
+            // 1. Ensure the parent path exists in the active layer's tree.
+            // This will create any necessary parent ObjectNodes.
+            var segments = path.Split('/');
+            var parentPath = string.Join('/', segments.Take(segments.Length - 1));
+            var nodeName = segments.Last();
+              
+            // We need a method to do this, let's call it EnsurePathExistsInLayer
+            var parentNode = EnsurePathExistsInLayer(parentPath, ActiveEditorLayer);
+            if (parentNode == null) return;
+
+            // 2. Use the factory to create the new ValueNode.
+            var newNode = _nodeFactory.CreateFromValue(value, nodeName, parentNode, schema);
+
+            // 3. Add the new node to the parent in the active layer's tree.
+            // This action should be recorded for undo/redo.
+            AddNodeWithHistory(parentNode, newNode, nodeName);
+              
+            // 4. Mark the layer as dirty and refresh the UI.
+            ActiveEditorLayer.IsDirty = true;
+            RefreshDisplay();
+        }
+
+        /// <summary>
+        /// A helper method to recursively create parent nodes in a specific layer's DOM tree.
+        /// </summary>
+/// <summary>
+        /// A helper method to recursively create parent nodes in a specific layer's DOM tree.
+        /// </summary>
+        private ObjectNode EnsurePathExistsInLayer(string path, CascadeLayer layer)
+        {
+            var current = layer.LayerConfigRootNode;
+
+            // If the path is just the root, return the layer's root itself.
+            if (string.IsNullOrEmpty(path) || path == "$root")
+            {
+                return current;
+            }
+
+            // Normalize the path to be relative to the root, removing any leading "$root/"
+            string normalizedPath = path.StartsWith("$root/") ? path.Substring("$root/".Length) : path;
+            
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return current;
+            }
+
+            var segments = normalizedPath.Split('/');
+            foreach (var segment in segments)
+            {
+                if (string.IsNullOrEmpty(segment)) continue;
+                var child = current.GetChild(segment);
+                if (child is ObjectNode childObject)
+                {
+                    current = childObject;
+                }
+                else if (child != null)
+                {
+                    // A node exists at this path but it's not an object (e.g., a ValueNode).
+                    // We cannot create children under it. This is an error condition.
+                    // Returning null to indicate failure.
+                    return null;
+                }
+                else
+                {
+                    // The segment doesn't exist, so create it.
+                    var newParent = new ObjectNode(segment, current);
+                    // Use the ViewModel method that correctly handles history.
+                    AddNodeWithHistory(current, newParent, segment); 
+                    current = newParent;
+                }
+            }
+            return current;
+        }
+
+        public DomNode? FindNodeInSourceLayer(string path, int originLayerIndex)
+        {
+            // The originLayerIndex is -1 for schema, or 0, 1, 2... for file layers.
+            if (originLayerIndex < 0 || originLayerIndex >= _cascadeLayers.Count)
+            {
+                return null; // It's a schema node or an invalid index
+            }
+
+            var sourceLayer = _cascadeLayers[originLayerIndex];
+            var layerRoot = sourceLayer.LayerConfigRootNode;
+
+            // Find the node by path within this layer's specific tree.
+            if (string.IsNullOrEmpty(path) || path == "$root") return layerRoot;
+
+            string normalizedPath = path.StartsWith("$root/") ? path.Substring("$root/".Length) : path;
+            if (string.IsNullOrEmpty(normalizedPath)) return layerRoot;
+
+            string[] segments = normalizedPath.Split('/');
+            DomNode? current = layerRoot;
+            foreach (string segment in segments)
+            {
+                if (current == null) return null;
+                if (current is ObjectNode objNode)
+                {
+                    current = objNode.GetChild(segment);
+                }
+                else if (current is ArrayNode arrNode)
+                {
+                    if (int.TryParse(segment, out int index))
+                    {
+                        current = arrNode.GetItem(index);
+                    }
+                    else return null;
+                }
+                else return null;
+            }
+            return current;
+        }
     }
 }

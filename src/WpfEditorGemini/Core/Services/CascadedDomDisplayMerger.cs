@@ -37,19 +37,18 @@ namespace JsonConfigEditor.Core.Services
 
             // 1. Start with a clone of the schema defaults as our base
             var mergedRoot = (ObjectNode)DomCloning.CloneNode(schemaDefaultsRoot, null);
-            // 2. Initialize origin maps with Layer 0 (Schema Defaults)
-            TrackOriginsRecursive(mergedRoot, 0, valueOrigins, overrideSources);
+            // 2. Initialize origin maps with Layer -1 (Schema Defaults)
+            TrackOriginsRecursive(mergedRoot, -1, valueOrigins, overrideSources); // Changed from 0 to -1
             // 3. Merge each subsequent layer on top of the result
             foreach (var layer in layersToMerge)
             {
-                // Layer index must be offset by 1 because Layer 0 is the schema defaults.
-                int effectiveLayerIndex = layer.LayerIndex + 1;
+                // Layer index no longer needs to be offset
+                int effectiveLayerIndex = layer.LayerIndex; // Changed from layer.LayerIndex + 1
                 MergeLayerIntoRecursive(mergedRoot, layer.LayerConfigRootNode, effectiveLayerIndex, valueOrigins, overrideSources);
             }
 
             return new DisplayMergeResult(mergedRoot, valueOrigins, overrideSources);
         }
-
         /// <summary>
         /// Recursively merges a source layer's tree into the target merged tree.
         /// </summary>

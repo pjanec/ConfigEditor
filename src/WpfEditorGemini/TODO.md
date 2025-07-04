@@ -4,4 +4,5 @@ BUG: Adding array node of type object (defined by schema) - now a generic value 
 
 Folding/unfolding takes long time on little json files.
 
+BUG: Boolean fields, if editing starts with "Enter", can not be toggled using spacebar because the checkbox is not focused. One tab press is needed.
 

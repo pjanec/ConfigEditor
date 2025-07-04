@@ -40,11 +40,12 @@ namespace JsonConfigEditor.ViewModels
         private string _originalValueBeforeEdit = string.Empty;
 
         // --- Constructor for actual DomNodes ---
-        public DataGridRowItemViewModel(DomNode domNode, SchemaNode? schemaContextNode, MainViewModel parentViewModel)
+        public DataGridRowItemViewModel(DomNode domNode, SchemaNode? schemaContextNode, MainViewModel parentViewModel, int originLayerIndex)
         {
             _domNode = domNode ?? throw new ArgumentNullException(nameof(domNode));
             _schemaContextNode = schemaContextNode;
             _parentViewModel = parentViewModel ?? throw new ArgumentNullException(nameof(parentViewModel));
+            OriginLayerIndex = originLayerIndex; // Store the origin index
             _isAddItemPlaceholder = false;
 
             // Restore the persisted expansion state for this node if it exists,
@@ -72,6 +73,7 @@ namespace JsonConfigEditor.ViewModels
             _depthForSchemaOnly = depth;
             _pathKeyForSchemaOnlyNode = pathKey;
             _isAddItemPlaceholder = false;
+            OriginLayerIndex = -1; // Schema-only nodes don't have an origin layer
             // Initialize IsExpanded based on persisted state or default
             _isExpandedInternal = parentViewModel.GetSchemaNodeExpansionState(pathKey) ?? 
                                 ((schemaPropertyNode.NodeType == SchemaNodeType.Object || schemaPropertyNode.NodeType == SchemaNodeType.Array) && (depth < 2));
@@ -94,6 +96,7 @@ namespace JsonConfigEditor.ViewModels
             _nameOverrideForSchemaOnly = "(Add new item)"; // Display text for placeholder
             _depthForSchemaOnly = depth;
             _isAddItemPlaceholder = true;
+            OriginLayerIndex = -1; // Add item placeholders don't have an origin layer
             _isExpandedInternal = false; // Placeholders are not expandable
             _editValue = string.Empty; // No edit value for add item placeholder initially
             // _pathKeyForSchemaOnlyNode remains empty for AddItem placeholders
@@ -399,6 +402,14 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
+        // --- Public Properties for DataBinding and Logic ---
+
+        /// <summary>
+        /// Gets the index of the layer that this node's value originates from.
+        /// -1 for schema-only nodes and placeholders.
+        /// </summary>
+        public int OriginLayerIndex { get; }
+
         // --- Public Methods ---
 
         /// <summary>
@@ -446,45 +457,79 @@ namespace JsonConfigEditor.ViewModels
                 }
                 else if (IsSchemaOnlyNode)
                 {
-                    bool success = _parentViewModel.MaterializeSchemaNodeAndBeginEdit(this, EditValue);
+                    // bool success = _parentViewModel.MaterializeSchemaNodeAndBeginEdit(this, EditValue); // OLD
+                    bool success = _parentViewModel.CreateNodeFromSchemaWithValue(this, EditValue); // NEW
                     if (success) IsInEditMode = false;
                     return success;
                 }
-                else if (_domNode is ValueNode valueNode)
+                else if (_domNode != null)
                 {
-                    JsonElement oldValue = valueNode.Value.Clone();
-                    if (valueNode.TryUpdateFromString(EditValue))
+
+                    // For direct edits, we must find the *actual* node in the source layer,
+                    // because _domNode might be a clone from the merged view.
+                    if (OriginLayerIndex == ParentViewModel.ActiveEditorLayer?.LayerIndex)
                     {
-                        var newValue = valueNode.Value;
-                        if (oldValue.ValueKind != newValue.ValueKind || oldValue.GetRawText() != newValue.GetRawText())
+                        // Find the real node in the source-of-truth layer's tree
+                        var realNode = ParentViewModel.FindNodeInSourceLayer(_domNode.Path, OriginLayerIndex);
+
+                        if (realNode is ValueNode realValueNode)
                         {
-                            // FIX: Get the active layer index from the parent ViewModel.
-                            var activeLayerIndex = ParentViewModel.ActiveEditorLayer?.LayerIndex ?? 0;
-                            var operation = new ValueEditOperation(activeLayerIndex, valueNode, oldValue, newValue);
-                            // Use the public property on the ParentViewModel
-                            ParentViewModel.HistoryService.Record(operation);
+                            JsonElement oldValue = realValueNode.Value.Clone();
+                            if (realValueNode.TryUpdateFromString(EditValue))
+                            {
+                                // *** FIX: Also update the local (cloned) node so the UI refreshes instantly ***
+                                if (_domNode is ValueNode clonedValueNode)
+                                {
+                                    clonedValueNode.TryUpdateFromString(EditValue);
+                                }
+
+                                var newValue = realValueNode.Value;
+                                if (oldValue.ValueKind != newValue.ValueKind || oldValue.GetRawText() != newValue.GetRawText())
+                                {
+                                    var activeLayerIndex = ParentViewModel.ActiveEditorLayer?.LayerIndex ?? 0;
+                                    var operation = new ValueEditOperation(activeLayerIndex, realValueNode, oldValue, newValue);
+                                    ParentViewModel.HistoryService.Record(operation);
+                                }
+                                SetValidationState(true, "");
+                                IsInEditMode = false;
+                                return true;
+                            }
+                            else
+                            {
+                                SetValidationState(false, "Invalid value format");
+                                return false;
+                            }
                         }
-                        SetValidationState(true, "");
-                        IsInEditMode = false; // Set state on success
-                        return true;
+                        else if (realNode is RefNode realRefNode)
+                        {
+                            string oldPath = realRefNode.ReferencePath;
+                            if (oldPath != EditValue)
+                            {
+                                // Update the real node
+                                realRefNode.ReferencePath = EditValue;
+                            
+                                // *** FIX: Also update the local (cloned) node ***
+                                if (_domNode is RefNode clonedRefNode)
+                                {
+                                    clonedRefNode.ReferencePath = EditValue;
+                                }
+                            
+                                // Note: The RefNode edit is not being added to the undo history, which is a separate issue.
+                                ParentViewModel.OnNodeValueChanged(this);
+                            }
+                            SetValidationState(true, "");
+                            IsInEditMode = false;
+                            return true;
+                        }
                     }
                     else
                     {
-                        SetValidationState(false, "Invalid value format");
-                        return false;
+                        // This is an override. The node is inherited from a lower layer.
+                        // Call the new method on MainViewModel to handle creating the override.
+                        ParentViewModel.CreateOverride(_domNode.Path, EditValue, _schemaContextNode);
+                        IsInEditMode = false;
+                        return true;
                     }
-                }
-                else if (_domNode is RefNode refNode)
-                {
-                    string oldPath = refNode.ReferencePath;
-                    if (oldPath != EditValue)
-                    {
-                        refNode.ReferencePath = EditValue;
-                        ParentViewModel.OnNodeValueChanged(this);
-                    }
-                    SetValidationState(true, "");
-                    IsInEditMode = false; // Set state on success
-                    return true;
                 }
 
                 return false;

@@ -28,6 +28,7 @@ namespace JsonConfigEditor.Core.Services
         /// <param name="rootNode">The root of the DomNode tree to display.</param>
         /// <param name="persistentVmMap">A map to look up existing VMs and preserve their state (e.g., IsExpanded).</param>
         /// <param name="domToSchemaMap">A map to find the correct schema for each DomNode.</param>
+        /// <param name="valueOrigins">A map from DOM path to the index of the layer that provided its final, effective value.</param>
         /// <param name="showSchemaNodes">A flag indicating whether to generate schema-only placeholders.</param>
         /// <param name="visiblePaths">Optional set of visible paths for filtering.</param>
         /// <returns>A complete, flat list of DataGridRowItemViewModels for the DataGrid.</returns>
@@ -35,6 +36,7 @@ namespace JsonConfigEditor.Core.Services
             DomNode rootNode,
             Dictionary<string, DataGridRowItemViewModel> persistentVmMap,
             Dictionary<string, SchemaNode?> domToSchemaMap,
+            Dictionary<string, int> valueOrigins,
             bool showSchemaNodes,
             HashSet<string>? visiblePaths = null)
         {
@@ -42,11 +44,11 @@ namespace JsonConfigEditor.Core.Services
             
             if (visiblePaths != null)
             {
-                BuildFilteredListRecursive(rootNode, flatList, persistentVmMap, domToSchemaMap, showSchemaNodes, visiblePaths);
+                BuildFilteredListRecursive(rootNode, flatList, persistentVmMap, domToSchemaMap, valueOrigins, showSchemaNodes, visiblePaths);
             }
             else
             {
-                BuildListRecursive(rootNode, flatList, persistentVmMap, domToSchemaMap, showSchemaNodes);
+                BuildListRecursive(rootNode, flatList, persistentVmMap, domToSchemaMap, valueOrigins, showSchemaNodes);
                 
                 // Add root schema nodes if needed (this was in the original implementation)
                 if (showSchemaNodes && _mainViewModel.SchemaLoader?.RootSchemas != null)
@@ -81,7 +83,7 @@ namespace JsonConfigEditor.Core.Services
                         flatList.Add(rootSchemaVm);
                         if (rootSchemaVm.IsExpanded && rootSchemaVm.IsExpandable)
                         {
-                            AddSchemaOnlyChildrenRecursive(rootSchemaVm, flatList, persistentVmMap, domToSchemaMap);
+                            AddSchemaOnlyChildrenRecursive(rootSchemaVm, flatList, persistentVmMap, domToSchemaMap, valueOrigins);
                         }
                     }
                 }
@@ -99,6 +101,7 @@ namespace JsonConfigEditor.Core.Services
             List<DataGridRowItemViewModel> flatItems,
             Dictionary<string, DataGridRowItemViewModel> persistentVmMap,
             Dictionary<string, SchemaNode?> domToSchemaMap,
+            Dictionary<string, int> valueOrigins,
             bool showSchemaNodes)
         {
             // Try to find an existing ViewModel for this node's path to preserve its state.
@@ -121,7 +124,11 @@ namespace JsonConfigEditor.Core.Services
                     }
                 }
                 
-                viewModel = new DataGridRowItemViewModel(node, schema, _mainViewModel);
+                // Get the origin layer index for this node's path. Default to -1 if not found.
+                valueOrigins.TryGetValue(node.Path, out int originIndex);
+                
+                // Pass the origin index to the constructor.
+                viewModel = new DataGridRowItemViewModel(node, schema, _mainViewModel, originIndex);
             }
             flatItems.Add(viewModel);
 
@@ -132,7 +139,8 @@ namespace JsonConfigEditor.Core.Services
                 {
                     foreach (var childDomNode in objectNode.GetChildren())
                     {
-                        BuildListRecursive(childDomNode, flatItems, persistentVmMap, domToSchemaMap, showSchemaNodes);
+                        // Pass the maps down in the recursive call
+                        BuildListRecursive(childDomNode, flatItems, persistentVmMap, domToSchemaMap, valueOrigins, showSchemaNodes);
                     }
 
                     // Use the placeholder provider to get schema-only nodes.
@@ -145,7 +153,7 @@ namespace JsonConfigEditor.Core.Services
                         {
                             if (p.IsExpanded && p.IsExpandable)
                             {
-                                AddSchemaOnlyChildrenRecursive(p, flatItems, persistentVmMap, domToSchemaMap);
+                                AddSchemaOnlyChildrenRecursive(p, flatItems, persistentVmMap, domToSchemaMap, valueOrigins);
                             }
                         }
                     }
@@ -154,7 +162,8 @@ namespace JsonConfigEditor.Core.Services
                 {
                     foreach (var itemDomNode in arrayNode.GetItems())
                     {
-                        BuildListRecursive(itemDomNode, flatItems, persistentVmMap, domToSchemaMap, showSchemaNodes);
+                        // Pass the maps down in the recursive call
+                        BuildListRecursive(itemDomNode, flatItems, persistentVmMap, domToSchemaMap, valueOrigins, showSchemaNodes);
                     }
                     // Add the "Add new item" placeholder for arrays.
                     if (domToSchemaMap.TryGetValue(arrayNode.Path, out var schema))
@@ -174,6 +183,7 @@ namespace JsonConfigEditor.Core.Services
             List<DataGridRowItemViewModel> flatItems,
             Dictionary<string, DataGridRowItemViewModel> persistentVmMap,
             Dictionary<string, SchemaNode?> domToSchemaMap,
+            Dictionary<string, int> valueOrigins,
             bool showSchemaNodes,
             HashSet<string> visiblePaths)
         {
@@ -186,7 +196,9 @@ namespace JsonConfigEditor.Core.Services
             if (!persistentVmMap.TryGetValue(node.Path, out var viewModel) || !viewModel.IsDomNodePresent)
             {
                 domToSchemaMap.TryGetValue(node.Path, out var schema);
-                viewModel = new DataGridRowItemViewModel(node, schema, _mainViewModel);
+                // Get the origin layer index for this node's path. Default to -1 if not found.
+                valueOrigins.TryGetValue(node.Path, out int originIndex);
+                viewModel = new DataGridRowItemViewModel(node, schema, _mainViewModel, originIndex);
             }
 
             // Force expansion for all nodes that are part of the revealed path
@@ -198,14 +210,14 @@ namespace JsonConfigEditor.Core.Services
             {
                 foreach (var child in objectNode.GetChildren().OrderBy(c => c.Name))
                 {
-                    BuildFilteredListRecursive(child, flatItems, persistentVmMap, domToSchemaMap, showSchemaNodes, visiblePaths);
+                    BuildFilteredListRecursive(child, flatItems, persistentVmMap, domToSchemaMap, valueOrigins, showSchemaNodes, visiblePaths);
                 }
             }
             else if (node is ArrayNode arrayNode)
             {
                 foreach (var item in arrayNode.GetItems())
                 {
-                    BuildFilteredListRecursive(item, flatItems, persistentVmMap, domToSchemaMap, showSchemaNodes, visiblePaths);
+                    BuildFilteredListRecursive(item, flatItems, persistentVmMap, domToSchemaMap, valueOrigins, showSchemaNodes, visiblePaths);
                 }
             }
         }
@@ -218,7 +230,8 @@ namespace JsonConfigEditor.Core.Services
             DataGridRowItemViewModel parentVm,
             List<DataGridRowItemViewModel> flatItems,
             Dictionary<string, DataGridRowItemViewModel> persistentVmMap,
-            Dictionary<string, SchemaNode?> domToSchemaMap)
+            Dictionary<string, SchemaNode?> domToSchemaMap,
+            Dictionary<string, int> valueOrigins)
         {
             if (parentVm.SchemaContextNode?.Properties == null) return;
               
@@ -238,7 +251,7 @@ namespace JsonConfigEditor.Core.Services
                 flatItems.Add(childSchemaVm);
                 if (childSchemaVm.IsExpanded && childSchemaVm.IsExpandable)
                 {
-                    AddSchemaOnlyChildrenRecursive(childSchemaVm, flatItems, persistentVmMap, domToSchemaMap);
+                    AddSchemaOnlyChildrenRecursive(childSchemaVm, flatItems, persistentVmMap, domToSchemaMap, valueOrigins);
                 }
             }
         }
