@@ -1351,33 +1351,7 @@ namespace JsonConfigEditor.ViewModels
 
         public DomNode? FindDomNodeByPath(string path)
         {
-            var rootNode = GetRootDomNode();
-            if (rootNode == null) return null;
-
-            if (string.IsNullOrEmpty(path) || path == "$root") return rootNode;
-
-            string normalizedPathKey = path.StartsWith("$root/") ? path.Substring("$root/".Length) : path;
-            if (string.IsNullOrEmpty(normalizedPathKey)) return rootNode;
-
-            string[] segments = normalizedPathKey.Split('/');
-            DomNode? current = rootNode;
-
-            foreach (string segment in segments)
-            {
-                if (current == null) return null;
-
-                if (current is ObjectNode objNode)
-                {
-                    current = objNode.GetChild(segment);
-                    if (current == null) return null;
-                }
-                else if (current is ArrayNode arrNode)
-                {
-                    current = arrNode.Items.FirstOrDefault(item => item.Name == segment);
-                }
-                else return null;
-            }
-            return current;
+            return FindNodeByPathFromRoot(GetRootDomNode(), path);
         }
 
         // Change the type of the 'parent' parameter from ObjectNode to DomNode
@@ -1547,37 +1521,13 @@ namespace JsonConfigEditor.ViewModels
 
         public DomNode? FindNodeInSourceLayer(string path, int originLayerIndex)
         {
-            // The originLayerIndex is -1 for schema, or 0, 1, 2... for file layers.
             if (originLayerIndex < 0 || originLayerIndex >= _cascadeLayers.Count)
             {
                 return null; // It's a schema node or an invalid index
             }
 
             var sourceLayer = _cascadeLayers[originLayerIndex];
-            var layerRoot = sourceLayer.LayerConfigRootNode;
-
-            // Find the node by path within this layer's specific tree.
-            if (string.IsNullOrEmpty(path) || path == "$root") return layerRoot;
-
-            string normalizedPath = path.StartsWith("$root/") ? path.Substring("$root/".Length) : path;
-            if (string.IsNullOrEmpty(normalizedPath)) return layerRoot;
-
-            string[] segments = normalizedPath.Split('/');
-            DomNode? current = layerRoot;
-            foreach (string segment in segments)
-            {
-                if (current == null) return null;
-                if (current is ObjectNode objNode)
-                {
-                    current = objNode.GetChild(segment);
-                }
-                else if (current is ArrayNode arrNode)
-                {
-                    current = arrNode.Items.FirstOrDefault(item => item.Name == segment);
-                }
-                else return null;
-            }
-            return current;
+            return FindNodeByPathFromRoot(sourceLayer.LayerConfigRootNode, path);
         }
 
         private DataGridRowItemViewModel? FindNextItemToSelectForDeletion(DataGridRowItemViewModel? deletedItem)
@@ -1655,5 +1605,37 @@ namespace JsonConfigEditor.ViewModels
             RefreshDisplay();
         }
 
+
+        private DomNode? FindNodeByPathFromRoot(DomNode? rootNode, string path)
+        {
+            if (rootNode == null) return null;
+
+            if (string.IsNullOrEmpty(path) || path == rootNode.Path) return rootNode;
+
+            string normalizedPath = path.StartsWith("$root/") ? path.Substring("$root/".Length) : path;
+            if (string.IsNullOrEmpty(normalizedPath)) return rootNode;
+
+            string[] segments = normalizedPath.Split('/');
+            DomNode? current = rootNode;
+            foreach (string segment in segments)
+            {
+                if (current == null) return null;
+
+                if (current is ObjectNode objNode)
+                {
+                    current = objNode.GetChild(segment);
+                }
+                else if (current is ArrayNode arrNode)
+                {
+                    current = arrNode.Items.FirstOrDefault(item => item.Name == segment);
+                }
+                else
+                {
+                    // Cannot traverse into a ValueNode or RefNode.
+                    return null;
+                }
+            }
+            return current;
+        }
     }
 }
