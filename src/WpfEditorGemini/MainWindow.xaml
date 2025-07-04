@@ -275,6 +275,10 @@
                         </Setter.Value>
                     </Setter>
                     <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsDefinedInActiveLayer}" Value="True">
+                            <Setter Property="FontWeight" Value="Bold" />
+                        </DataTrigger>
+
                         <!-- Schema-only nodes (grayed out) -->
                         <DataTrigger Binding="{Binding IsSchemaOnlyNode}" Value="True">
                             <Setter Property="Foreground" Value="Gray" />

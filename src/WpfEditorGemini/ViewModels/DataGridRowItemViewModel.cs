@@ -605,5 +605,19 @@ namespace JsonConfigEditor.ViewModels
         {
             OnPropertyChanged(nameof(IsHighlightedInSearch));
         }
+
+        /// <summary>
+        /// Gets a value indicating whether this node's value is defined in the currently active editor layer,
+        /// but only when in a multi-layer cascade project.
+        /// </summary>
+        public bool IsDefinedInActiveLayer
+        {
+            get
+            {
+                // The node should only be highlighted as bold if cascade mode is active
+                // AND the node's origin matches the currently selected active layer.
+                return _parentViewModel.IsCascadeModeActive && (OriginLayerIndex == _parentViewModel.ActiveEditorLayer?.LayerIndex);
+            }
+        }
     }
 } 
