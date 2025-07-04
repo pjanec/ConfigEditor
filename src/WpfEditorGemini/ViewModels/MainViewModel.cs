@@ -1229,7 +1229,7 @@ namespace JsonConfigEditor.ViewModels
 
             var originIndex = item.OriginLayerIndex;
 
-            // Case 1: The node exists in the active layer and can be deleted directly.
+            // Case 1: Direct delete in the active layer.
             if (originIndex == ActiveEditorLayer.LayerIndex)
             {
                 var nodeToRemove = FindNodeInSourceLayer(item.DomNode.Path, ActiveEditorLayer.LayerIndex);
@@ -1242,7 +1242,7 @@ namespace JsonConfigEditor.ViewModels
                 operation.Redo(this);
                 _historyService.Record(operation);
             }
-            // Case 2: Deleting an ITEM from an inherited array.
+            // Case 2: Deleting an item FROM an inherited array.
             else if (item.DomNode.Parent is ArrayNode inheritedParentArray)
             {
                 Action<ArrayNode> deleteAction = (array) => {
@@ -1258,7 +1258,8 @@ namespace JsonConfigEditor.ViewModels
                 var arrayName = inheritedArrayToDelete.Name;
                 var message = $"The '{arrayName}' array is inherited from a lower-level layer.\n\nTo hide it, a new, empty array will be created in the active '{layerName}' layer. This will override the inherited array.\n\nDo you want to proceed?";
                 
-                var result = MessageBox.Show(message, "Confirm Override", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                // Use YesNoCancel to allow closing the dialog with the Escape key.
+                var result = MessageBox.Show(message, "Confirm Override", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
                 if (result != MessageBoxResult.Yes) return;
 
                 var parentNode = FindOrCreateParentInSourceLayer_SchemaAware(inheritedArrayToDelete.Path);
@@ -1266,6 +1267,13 @@ namespace JsonConfigEditor.ViewModels
                 
                 var newEmptyArray = new ArrayNode(inheritedArrayToDelete.Name, parentObject);
                 AddNodeWithHistory(parentObject, newEmptyArray, newEmptyArray.Name);
+            }
+            // Case 4: Catch-all for trying to delete any other inherited node.
+            else
+            {
+                var nodeName = item.NodeName;
+                var message = $"The node '{nodeName}' is inherited and cannot be deleted from this layer.\n\nTo hide an inherited property, you must create an override for it.";
+                MessageBox.Show(message, "Cannot Delete Inherited Node", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -1596,7 +1604,8 @@ namespace JsonConfigEditor.ViewModels
             var arrayName = inheritedArray.Name;
             var message = $"To {actionVerb} an item in this inherited array, a new, overriding version of the entire '{arrayName}' array will be created in the active '{layerName}' layer.\n\nDo you want to proceed?";
             
-            var result = MessageBox.Show(message, "Confirm Array Override", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            // Use YesNoCancel to allow closing the dialog with the Escape key.
+            var result = MessageBox.Show(message, "Confirm Array Override", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (result != MessageBoxResult.Yes) return;
 
             // 2. Ensure the array's parent object exists in the active layer.
