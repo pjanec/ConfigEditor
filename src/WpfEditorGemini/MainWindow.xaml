@@ -78,13 +78,13 @@
                 <CheckBox IsChecked="{Binding EditValue, Converter={StaticResource BooleanToStringConverter}, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" HorizontalAlignment="Left"
                           ap:FocusAndSelect.IsEnabled="True"/>
             </DataTemplate>
-            
-            <DataTemplate x:Key="EditEnumTemplate">
-                <ComboBox ItemsSource="{Binding SchemaContextNode.AllowedValues}" 
-                          SelectedItem="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" 
-                          IsEditable="False" VerticalAlignment="Center"/>
-            </DataTemplate>
 
+            <DataTemplate x:Key="EditEnumTemplate">
+                <ComboBox ItemsSource="{Binding AllowedValues}" 
+                SelectedItem="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" 
+                IsEditable="False" VerticalAlignment="Center"/>
+            </DataTemplate>
+            
             <DataTemplate x:Key="EditRefTemplate">
                  <TextBox Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" 
                           ap:FocusAndSelect.IsEnabled="True" />

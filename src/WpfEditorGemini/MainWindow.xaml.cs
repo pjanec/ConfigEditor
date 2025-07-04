@@ -83,7 +83,6 @@ namespace JsonConfigEditor
 
             if (selectedItem == null)
                 return;
-
             switch (e.Key)
             {
                 case Key.Enter:
@@ -111,33 +110,66 @@ namespace JsonConfigEditor
                         e.Handled = true;
                     }
                     break;
-
                 case Key.Escape:
                     System.Diagnostics.Debug.WriteLine("Escape pressed, IsInEditMode: " + selectedItem.IsInEditMode);
                     if (selectedItem.IsInEditMode)
                     {
-                        selectedItem.CancelEdit(); // ViewModel cancels, resets value, sets IsInEditMode = false
-                        dataGrid.CancelEdit(DataGridEditingUnit.Row); // Tell DataGrid to cancel its edit operation for the row
-                        // dataGrid.CancelEdit(DataGridEditingUnit.Cell); // Alternative: if only cell edit needs cancelling
+                        selectedItem.CancelEdit();
+                        // ViewModel cancels, resets value, sets IsInEditMode = false
+                        dataGrid.CancelEdit(DataGridEditingUnit.Row);
+                        // Tell DataGrid to cancel its edit operation for the row
+                        // dataGrid.CancelEdit(DataGridEditingUnit.Cell);
+                        // Alternative: if only cell edit needs cancelling
                         System.Diagnostics.Debug.WriteLine("CancelEdit called, IsInEditMode after: " + selectedItem.IsInEditMode);
                         e.Handled = true;
                     }
                     break;
-
                 case Key.F2:
                     System.Diagnostics.Debug.WriteLine("F2 pressed, IsEditable: " + selectedItem.IsEditable + ", IsInEditMode (before): " + selectedItem.IsInEditMode);
                     if (!selectedItem.IsInEditMode && selectedItem.IsEditable)
                     {
-                        selectedItem.IsInEditMode = true;
-                        System.Diagnostics.Debug.WriteLine("F2: IsInEditMode set to true");
-                        // Consistently call BeginEdit like in Enter key handler
-                        // dataGrid.BeginEdit(e); // Pass original event args if needed by BeginEdit overload
-                        dataGrid.BeginEdit();    // Or the parameterless overload if sufficient
-                        System.Diagnostics.Debug.WriteLine("F2: dataGrid.BeginEdit() called");
+                        StartEditingCell(selectedItem); // Use the shared method for consistency.
                         e.Handled = true;
                     }
                     break;
+                case Key.Up:
+                case Key.Down:
+                    // NEW: When in edit mode for an enum, cycle through the allowed values
+                    if (selectedItem.IsInEditMode && selectedItem.IsEnumBased)
+                    {
+                        var allowedValues = selectedItem.AllowedValues;
+                        string currentValue = selectedItem.EditValue;
 
+                        int currentIndex = -1;
+                        for (int i = 0; i < allowedValues.Count; i++)
+                        {
+                            if (string.Equals(allowedValues[i], currentValue, StringComparison.OrdinalIgnoreCase))
+                            {
+                                currentIndex = i;
+                                break;
+                            }
+                        }
+
+                        if (currentIndex == -1) // If current value not found, default to the first item.
+                        {
+                            currentIndex = 0;
+                        }
+                        else // Cycle through the list.
+                        {
+                            if (e.Key == Key.Down)
+                            {
+                                currentIndex = (currentIndex + 1) % allowedValues.Count;
+                            }
+                            else // Key.Up
+                            {
+                                currentIndex = (currentIndex - 1 + allowedValues.Count) % allowedValues.Count;
+                            }
+                        }
+                
+                        selectedItem.EditValue = allowedValues[currentIndex];
+                        e.Handled = true;
+                    }
+                    break;
                 case Key.Space:
                     // Space key: Toggle expansion
                     if (selectedItem.IsExpandable && !selectedItem.IsInEditMode)
@@ -146,7 +178,6 @@ namespace JsonConfigEditor
                         e.Handled = true;
                     }
                     break;
-
                 case Key.Left:
                     // Left arrow: Collapse if expanded, otherwise move to parent
                     if (!selectedItem.IsInEditMode)
@@ -164,7 +195,6 @@ namespace JsonConfigEditor
                         }
                     }
                     break;
-
                 case Key.Right:
                     // Right arrow: Expand if collapsed and expandable
                     if (!selectedItem.IsInEditMode && selectedItem.IsExpandable && !selectedItem.IsExpanded)
@@ -173,7 +203,6 @@ namespace JsonConfigEditor
                         e.Handled = true;
                     }
                     break;
-
                 case Key.Delete:
                     if (!selectedItem.IsInEditMode && selectedItem.IsDomNodePresent)
                     {
@@ -195,6 +224,7 @@ namespace JsonConfigEditor
             }
         }
 
+ 
         /// <summary>
         /// Moves selection to the parent node of the current selection.
         /// </summary>
@@ -279,8 +309,9 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
             }
 
             // This logic is adapted from your working Enter key handler
-            var dataGrid = MainDataGrid; // Use the named DataGrid
-            
+            var dataGrid = MainDataGrid; 
+            // Use the named DataGrid
+    
             // Ensure the container for the row is generated, scrolling if necessary.
             var row = (DataGridRow)dataGrid.ItemContainerGenerator.ContainerFromItem(item);
             if (row == null)
@@ -292,13 +323,34 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
 
             DataGridColumn? valueColumn = dataGrid.Columns.FirstOrDefault(c => c.Header?.ToString() == "Value");
             if (valueColumn == null) return;
-            
             // Set the current cell to prepare for editing
             dataGrid.CurrentCell = new DataGridCellInfo(item, valueColumn);
-
             // Set the ViewModel state and tell the DataGrid to show the editing template
             item.IsInEditMode = true;
             dataGrid.BeginEdit();
+
+            // If the cell being edited is an enum/combo box, schedule an action
+            // to open the dropdown after the editing template is loaded.
+            if (item.IsEnumBased)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var editingRow = (DataGridRow)dataGrid.ItemContainerGenerator.ContainerFromItem(item);
+                    if (editingRow == null) return;
+
+                    var cell = GetCell(editingRow, valueColumn);
+                    if (cell == null) return;
+
+                    // Find the ComboBox within the cell's editing template.
+                    var comboBox = FindVisualChild<ComboBox>(cell);
+                    if (comboBox != null)
+                    {
+                        // Give the ComboBox focus and open its dropdown.
+                        comboBox.Focus();
+                        comboBox.IsDropDownOpen = true;
+                    }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
         }
 
         private void ValueCell_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -560,5 +612,24 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
             }
             return parent as DataGridCell;
         }
+
+        // This is a new helper method to be added to MainWindow.xaml.cs
+        private DataGridCell? GetCellForViewModel(DataGrid dataGrid, object viewModel, string columnName)
+        {
+            var row = dataGrid.ItemContainerGenerator.ContainerFromItem(viewModel) as DataGridRow;
+            if (row == null)
+            {
+                dataGrid.ScrollIntoView(viewModel);
+                row = dataGrid.ItemContainerGenerator.ContainerFromItem(viewModel) as DataGridRow;
+            }
+            if (row == null) return null;
+
+            var column = dataGrid.Columns.FirstOrDefault(c => c.Header?.ToString() == columnName);
+            if (column == null) return null;
+
+            return GetCell(row, column);
+        }
+
+
     }
 } 

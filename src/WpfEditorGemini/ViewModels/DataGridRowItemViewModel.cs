@@ -143,6 +143,18 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         public bool IsAddItemPlaceholder => _isAddItemPlaceholder;
 
+
+        /// <summary>
+        /// Gets a value indicating if this item should be edited with a ComboBox
+        /// because it represents an enum or a list of allowed values.
+        /// </summary>
+        public bool IsEnumBased => SchemaContextNode?.AllowedValues?.Any() == true;
+
+        /// <summary>
+        /// Exposes the list of allowed values for enum-based nodes directly to the view.
+        /// </summary>
+        public IReadOnlyList<string>? AllowedValues => SchemaContextNode?.AllowedValues;
+
         /// <summary>
         /// Gets the display name of the node. Handles placeholders, root, and array indices.
         /// (From specification document, Section 2.3.1)

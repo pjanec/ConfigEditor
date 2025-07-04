@@ -126,7 +126,7 @@ namespace JsonConfigEditor.Views
 
         private DataTemplate? SelectSchemaOnlyDisplayTemplate(DataGridRowItemViewModel vm)
         {
-            if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
+            if (vm.IsEnumBased)
                 return DisplayEnumTemplate ?? DisplayStringTemplate;
             
             return SelectTemplateBySchemaType(vm.SchemaContextNode?.ClrType, DisplayBooleanTemplate, DisplayNumberTemplate, DisplaySchemaOnlyTemplate, DisplayStringTemplate);
@@ -134,7 +134,7 @@ namespace JsonConfigEditor.Views
 
         private DataTemplate? SelectSchemaOnlyEditTemplate(DataGridRowItemViewModel vm)
         {
-            if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
+            if (vm.IsEnumBased)
                 return EditEnumTemplate ?? EditStringTemplate;
             
             return SelectTemplateBySchemaType(vm.SchemaContextNode?.ClrType, EditBooleanTemplate, EditNumberTemplate, EditSchemaOnlyTemplate, EditStringTemplate);
@@ -147,7 +147,7 @@ namespace JsonConfigEditor.Views
             System.Diagnostics.Debug.WriteLine($"Template Selector - SchemaContextNode is null: {vm.SchemaContextNode == null}, SchemaContextNode Name: {vm.SchemaContextNode?.Name}");
             
             // First check if schema has allowed values (enum)
-            if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
+            if (vm.IsEnumBased )
                 return DisplayEnumTemplate ?? DisplayStringTemplate;
             
             // Then check JSON value type
@@ -173,7 +173,7 @@ namespace JsonConfigEditor.Views
             System.Diagnostics.Debug.WriteLine($"Template Selector (EDIT) - DOM Node: {valueNode.Path}, JSON Type: {valueNode.Value.ValueKind}, Schema Type: {vm.SchemaContextNode?.ClrType?.Name}, Schema Allowed Values: {vm.SchemaContextNode?.AllowedValues?.Count ?? 0}");
             
             // First check if schema has allowed values (enum)
-            if (vm.SchemaContextNode?.AllowedValues?.Count > 0)
+            if (vm.IsEnumBased )
                 return EditEnumTemplate ?? EditStringTemplate;
 
             // Then check JSON value type
