@@ -1238,27 +1238,54 @@ namespace JsonConfigEditor.ViewModels
         {
             if (item?.DomNode == null || ActiveEditorLayer == null) return;
 
-            // The item.DomNode is from the display clone. Find the real node in the source model.
-            var nodeToRemove = FindNodeInSourceLayer(item.DomNode.Path, ActiveEditorLayer.LayerIndex);
+            var originIndex = item.OriginLayerIndex;
 
-            // If the node isn't in the active layer, it's inherited and cannot be deleted from here.
-            if (nodeToRemove == null || nodeToRemove.Parent == null)
+            // Case 1: The node exists in the active layer and can be deleted directly.
+            if (originIndex == ActiveEditorLayer.LayerIndex)
             {
-                return;
-            }
+                var nodeToRemove = FindNodeInSourceLayer(item.DomNode.Path, ActiveEditorLayer.LayerIndex);
+                if (nodeToRemove?.Parent == null) return;
 
-            var parent = nodeToRemove.Parent;
-            int originalIndex = -1;
-            if (parent is ArrayNode arrayParent)
+                var parent = nodeToRemove.Parent;
+                int originalIndex = (parent is ArrayNode ap) ? ap.IndexOf(nodeToRemove) : -1;
+                var operation = new RemoveNodeOperation(ActiveEditorLayer.LayerIndex, parent, nodeToRemove, nodeToRemove.Name, originalIndex);
+                
+                operation.Redo(this);
+                _historyService.Record(operation);
+            }
+            // Case 2: The node is an inherited array item. Confirm before creating an override.
+            else if (item.DomNode.Parent is ArrayNode inheritedParentArray)
             {
-                originalIndex = arrayParent.Items.ToList().IndexOf(nodeToRemove);
-            }
+                // *** ADD CONFIRMATION DIALOG ***
+                var layerName = ActiveEditorLayer.Name;
+                var arrayName = inheritedParentArray.Name;
+                var message = $"The item you are deleting is inherited from a lower-level layer.\n\nTo remove it, a new version of the entire '{arrayName}' array will be created in the active '{layerName}' layer. This will override the inherited array.\n\nDo you want to proceed?";
+                
+                var result = MessageBox.Show(message, "Confirm Array Override", MessageBoxButton.YesNo, MessageBoxImage.Question);
 
-            // Create the operation with the real nodes from the source model.
-            var operation = new RemoveNodeOperation(ActiveEditorLayer.LayerIndex, parent, nodeToRemove, nodeToRemove.Name, originalIndex);
-            operation.Redo(this);
-      
-            _historyService.Record(operation);
+                if (result != MessageBoxResult.Yes)
+                {
+                    return; // User cancelled the operation.
+                }
+                // *** END CONFIRMATION DIALOG ***
+
+                // Find or create the parent of the array (e.g., the root) in the active layer.
+                var grandparentNode = FindOrCreateParentInSourceLayer_SchemaAware(inheritedParentArray.Path);
+                if (grandparentNode is not ObjectNode parentObject) return;
+
+                var newArray = new ArrayNode(inheritedParentArray.Name, parentObject);
+
+                // Deep-clone all items from the inherited array EXCEPT the one being deleted.
+                foreach (var itemToKeep in inheritedParentArray.Items)
+                {
+                    if (itemToKeep.Path != item.DomNode.Path)
+                    {
+                        newArray.AddItem(DomCloning.CloneNode(itemToKeep, newArray));
+                    }
+                }
+                
+                AddNodeWithHistory(parentObject, newArray, newArray.Name);
+            }
         }
 
         private bool CanExecuteDeleteSelectedNodes(DataGridRowItemViewModel? item)

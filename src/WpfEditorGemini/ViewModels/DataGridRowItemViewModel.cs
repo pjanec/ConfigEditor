@@ -100,6 +100,9 @@ namespace JsonConfigEditor.ViewModels
             _isExpandedInternal = false; // Placeholders are not expandable
             _editValue = string.Empty; // No edit value for add item placeholder initially
             // _pathKeyForSchemaOnlyNode remains empty for AddItem placeholders
+
+            // Create a unique, stable key so this placeholder can be found after a refresh.
+            _pathKeyForSchemaOnlyNode = $"{parentArrayNode.Path}/_add_";
         }
 
         // --- Public Properties for DataBinding and Logic ---
