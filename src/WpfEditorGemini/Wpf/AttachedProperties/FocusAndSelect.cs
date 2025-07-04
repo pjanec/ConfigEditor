@@ -25,20 +25,33 @@ namespace JsonConfigEditor.Wpf.AttachedProperties
 
         private static void OnIsEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
-            if (d is TextBox textBox && (bool)e.NewValue)
+            // The check must be for FrameworkElement, which defines the 'Loaded' event.
+            if (d is FrameworkElement frameworkElement && (bool)e.NewValue)
             {
-                textBox.Loaded += (s, args) =>
+                frameworkElement.Loaded += (s, args) =>
                 {
-                    textBox.Focus();
-                    textBox.SelectAll();
+                    // Set focus on any FrameworkElement
+                    frameworkElement.Focus();
+
+                    // If it happens to be a TextBox, also select the text
+                    if (frameworkElement is TextBox textBox)
+                    {
+                        textBox.SelectAll();
+                    }
                 };
-                // Attempt to focus immediately if already loaded
-                if (textBox.IsLoaded)
+                
+                if (frameworkElement.IsLoaded)
                 {
-                    Keyboard.Focus(textBox); // More robust focus
-                    textBox.SelectAll();
+                    // Use the more robust Keyboard.Focus for elements already loaded
+                    Keyboard.Focus(frameworkElement);
+
+                    if (frameworkElement is TextBox textBox)
+                    {
+                        textBox.SelectAll();
+                    }
                 }
             }
         }
+
     }
 } 
