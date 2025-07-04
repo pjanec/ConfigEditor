@@ -788,24 +788,6 @@ namespace JsonConfigEditor.ViewModels
             return JsonDocument.Parse($"\"{JsonEncodedText.Encode(stringValue)}\"").RootElement;
         }
 
-        // Helper to find/create the parent node. We can reuse the node factory for this.
-        private ObjectNode? FindOrCreateParentInSourceLayer(string childPath)
-        {
-            if (ActiveEditorLayer == null) return null;
-
-            string parentPathKey;
-            if (!childPath.Contains('/'))
-            {
-                parentPathKey = "$root";
-            }
-            else
-            {
-                parentPathKey = childPath.Substring(0, childPath.LastIndexOf('/'));
-            }
-
-            var parentNode = _nodeFactory.MaterializeDomPathRecursive(parentPathKey, SchemaLoader.FindSchemaForPath(parentPathKey));
-            return parentNode as ObjectNode;
-        }
 
         private void InitializeEmptyDocument()
         {
@@ -1397,15 +1379,17 @@ namespace JsonConfigEditor.ViewModels
             }
             return current;
         }
-        internal void AddNodeWithHistory(ObjectNode parent, DomNode newNode, string name)
+
+        // Change the type of the 'parent' parameter from ObjectNode to DomNode
+        internal void AddNodeWithHistory(DomNode parent, DomNode newNode, string name)
         {
             // FIX: Pass the active layer index to the operation.
             var activeLayerIndex = ActiveEditorLayer?.LayerIndex ?? 0;
             var addOperation = new AddNodeOperation(activeLayerIndex, parent, newNode);
-            addOperation.Redo(this); // Execute immediately for structural changes
+            addOperation.Redo(this);
             _historyService.Record(addOperation);
         }
-        
+
         public void ReplaceRootWithHistory(DomNode newRoot)
         {
             var oldRoot = GetRootDomNode();
@@ -1477,88 +1461,81 @@ namespace JsonConfigEditor.ViewModels
 		    RefreshDisplay();
 		}
 
-        /// <summary>
-        /// Creates an override for an inherited value in the currently active editor layer.
-        /// </summary>
-        /// <param name="path">The full path of the node to override.</param>
-        /// <param name="value">The new value as a string.</param>
-        /// <param name="schema">The schema for the node being created.</param>
         public void CreateOverride(string path, string value, SchemaNode? schema)
         {
             if (ActiveEditorLayer == null) return;
 
-            // 1. Ensure the parent path exists in the active layer's tree.
-            // This will create any necessary parent ObjectNodes.
-            var segments = path.Split('/');
-            var parentPath = string.Join('/', segments.Take(segments.Length - 1));
-            var nodeName = segments.Last();
-              
-            // We need a method to do this, let's call it EnsurePathExistsInLayer
-            var parentNode = EnsurePathExistsInLayer(parentPath, ActiveEditorLayer);
+            var parentNode = FindOrCreateParentInSourceLayer_SchemaAware(path);
             if (parentNode == null) return;
+            
+            var nodeName = path.Split('/').Last();
 
-            // 2. Use the factory to create the new ValueNode.
-            var newNode = _nodeFactory.CreateFromValue(value, nodeName, parentNode, schema);
+            if (parentNode is ObjectNode parentObject)
+            {
+                var newNode = _nodeFactory.CreateFromValue(value, nodeName, parentObject, schema);
+                AddNodeWithHistory(parentObject, newNode, nodeName);
+            }
+            else if (parentNode is ArrayNode parentArray)
+            {
+                // When overriding an array item, we are adding the new value to an array
+                // that now exists in the active layer. The original index ("0") is not used;
+                // we simply add the new item. The merger will ensure this new array in the
+                // higher layer completely replaces the inherited one.
+                var newNode = _nodeFactory.CreateFromValue(value, parentArray.Items.Count.ToString(), parentArray, schema);
+                AddNodeWithHistory(parentArray, newNode, newNode.Name);
+            }
 
-            // 3. Add the new node to the parent in the active layer's tree.
-            // This action should be recorded for undo/redo.
-            AddNodeWithHistory(parentNode, newNode, nodeName);
-              
-            // 4. Mark the layer as dirty and refresh the UI.
             ActiveEditorLayer.IsDirty = true;
             RefreshDisplay();
         }
 
-        /// <summary>
-        /// A helper method to recursively create parent nodes in a specific layer's DOM tree.
-        /// </summary>
-/// <summary>
-        /// A helper method to recursively create parent nodes in a specific layer's DOM tree.
-        /// </summary>
-        private ObjectNode EnsurePathExistsInLayer(string path, CascadeLayer layer)
+        private DomNode? FindOrCreateParentInSourceLayer_SchemaAware(string leafNodePath)
         {
-            var current = layer.LayerConfigRootNode;
+            if (ActiveEditorLayer == null) return null;
 
-            // If the path is just the root, return the layer's root itself.
-            if (string.IsNullOrEmpty(path) || path == "$root")
-            {
-                return current;
-            }
+            var segments = leafNodePath.Split('/').Where(s => !string.IsNullOrEmpty(s) && s != "$root").ToList();
+            if (segments.Count <= 1) return ActiveEditorLayer.LayerConfigRootNode; 
 
-            // Normalize the path to be relative to the root, removing any leading "$root/"
-            string normalizedPath = path.StartsWith("$root/") ? path.Substring("$root/".Length) : path;
-            
-            if (string.IsNullOrEmpty(normalizedPath))
-            {
-                return current;
-            }
+            var parentSegments = segments.Take(segments.Count - 1);
+            ObjectNode currentParent = ActiveEditorLayer.LayerConfigRootNode;
 
-            var segments = normalizedPath.Split('/');
-            foreach (var segment in segments)
+            foreach (var segment in parentSegments)
             {
-                if (string.IsNullOrEmpty(segment)) continue;
-                var child = current.GetChild(segment);
-                if (child is ObjectNode childObject)
+                var childNode = currentParent.GetChild(segment);
+                if (childNode == null)
                 {
-                    current = childObject;
+                    // This is the line to fix:
+                    string newPath = currentParent.Path == "$root" ? $"$root/{segment}" : $"{currentParent.Path}/{segment}";
+                    
+                    var segmentSchema = SchemaLoader.FindSchemaForPath(newPath);
+
+                    if (segmentSchema?.NodeType == SchemaNodeType.Array)
+                    {
+                        var newArray = new ArrayNode(segment, currentParent);
+                        AddNodeWithHistory(currentParent, newArray, segment);
+                        return newArray; 
+                    }
+                    else
+                    {
+                        var newObject = new ObjectNode(segment, currentParent);
+                        AddNodeWithHistory(currentParent, newObject, segment);
+                        currentParent = newObject;
+                    }
                 }
-                else if (child != null)
+                else if (childNode is ObjectNode obj)
                 {
-                    // A node exists at this path but it's not an object (e.g., a ValueNode).
-                    // We cannot create children under it. This is an error condition.
-                    // Returning null to indicate failure.
-                    return null;
+                    currentParent = obj;
+                }
+                else if (childNode is ArrayNode arr)
+                {
+                    return arr;
                 }
                 else
                 {
-                    // The segment doesn't exist, so create it.
-                    var newParent = new ObjectNode(segment, current);
-                    // Use the ViewModel method that correctly handles history.
-                    AddNodeWithHistory(current, newParent, segment); 
-                    current = newParent;
+                    return null;
                 }
             }
-            return current;
+            return currentParent;
         }
 
         public DomNode? FindNodeInSourceLayer(string path, int originLayerIndex)
