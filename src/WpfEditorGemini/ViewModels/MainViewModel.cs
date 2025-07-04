@@ -1373,12 +1373,7 @@ namespace JsonConfigEditor.ViewModels
                 }
                 else if (current is ArrayNode arrNode)
                 {
-                    if (int.TryParse(segment, out int index))
-                    {
-                        current = arrNode.GetItem(index);
-                        if (current == null) return null;
-                    }
-                    else return null;
+                    current = arrNode.Items.FirstOrDefault(item => item.Name == segment);
                 }
                 else return null;
             }
@@ -1578,11 +1573,7 @@ namespace JsonConfigEditor.ViewModels
                 }
                 else if (current is ArrayNode arrNode)
                 {
-                    if (int.TryParse(segment, out int index))
-                    {
-                        current = arrNode.GetItem(index);
-                    }
-                    else return null;
+                    current = arrNode.Items.FirstOrDefault(item => item.Name == segment);
                 }
                 else return null;
             }
