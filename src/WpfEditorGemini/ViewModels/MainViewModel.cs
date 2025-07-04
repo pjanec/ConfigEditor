@@ -1229,6 +1229,7 @@ namespace JsonConfigEditor.ViewModels
 
             var originIndex = item.OriginLayerIndex;
 
+            // Case 1: The node exists in the active layer and can be deleted directly.
             if (originIndex == ActiveEditorLayer.LayerIndex)
             {
                 var nodeToRemove = FindNodeInSourceLayer(item.DomNode.Path, ActiveEditorLayer.LayerIndex);
@@ -1241,13 +1242,30 @@ namespace JsonConfigEditor.ViewModels
                 operation.Redo(this);
                 _historyService.Record(operation);
             }
+            // Case 2: Deleting an ITEM from an inherited array.
             else if (item.DomNode.Parent is ArrayNode inheritedParentArray)
             {
                 Action<ArrayNode> deleteAction = (array) => {
                     var itemToRemove = array.Items.FirstOrDefault(i => i.Path.EndsWith(item.DomNode.Name));
                     if (itemToRemove != null) array.RemoveItem(itemToRemove);
                 };
-                CreateArrayOverride(inheritedParentArray, deleteAction, "remove");
+                CreateArrayOverride(inheritedParentArray, deleteAction, "remove an item from");
+            }
+            // Case 3: Deleting an ENTIRE inherited array.
+            else if (item.DomNode is ArrayNode inheritedArrayToDelete)
+            {
+                var layerName = ActiveEditorLayer.Name;
+                var arrayName = inheritedArrayToDelete.Name;
+                var message = $"The '{arrayName}' array is inherited from a lower-level layer.\n\nTo hide it, a new, empty array will be created in the active '{layerName}' layer. This will override the inherited array.\n\nDo you want to proceed?";
+                
+                var result = MessageBox.Show(message, "Confirm Override", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result != MessageBoxResult.Yes) return;
+
+                var parentNode = FindOrCreateParentInSourceLayer_SchemaAware(inheritedArrayToDelete.Path);
+                if (parentNode is not ObjectNode parentObject) return;
+                
+                var newEmptyArray = new ArrayNode(inheritedArrayToDelete.Name, parentObject);
+                AddNodeWithHistory(parentObject, newEmptyArray, newEmptyArray.Name);
             }
         }
 
