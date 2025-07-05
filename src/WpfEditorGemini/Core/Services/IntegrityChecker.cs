@@ -1,4 +1,5 @@
 ﻿using JsonConfigEditor.Core.Cascade;
+using JsonConfigEditor.Core.Validation; // Add this
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,7 +24,7 @@ namespace JsonConfigEditor.Core.Services
     /// <summary>
     /// Represents a single warning or informational issue found during an integrity check.
     /// </summary>
-    public record IntegrityIssue(string Message, string LayerName, string? DomPath = null, string? FilePath = null);
+    public record IntegrityIssue(ValidationSeverity Severity, string Message, string LayerName, string? DomPath = null, string? FilePath = null);
 
     /// <summary>
     /// Performs various integrity and consistency checks across a full cascade project.
@@ -83,6 +84,7 @@ namespace JsonConfigEditor.Core.Services
                             if (canonical.FilePath != currentRelativePath)
                             {
                                 issues.Add(new IntegrityIssue(
+                                    ValidationSeverity.Warning, // Specify a severity
                                     $"Path inconsistency for '{path}'. It is defined in '{canonical.FilePath}' in the '{canonical.LayerName}' layer, but in '{currentRelativePath}' in the '{layer.Name}' layer.",
                                     layer.Name,
                                     path
@@ -120,6 +122,7 @@ namespace JsonConfigEditor.Core.Services
                         if (string.CompareOrdinal(path, canonical.CasedPath) != 0)
                         {
                              issues.Add(new IntegrityIssue(
+                                ValidationSeverity.Warning, // Specify a severity
                                 $"Property name casing mismatch for '{path}'. It is defined as '{canonical.CasedPath}' in the '{canonical.LayerName}' layer, but as '{path}' in the '{layer.Name}' layer.",
                                 layer.Name,
                                 path

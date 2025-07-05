@@ -1,4 +1,5 @@
 ﻿using JsonConfigEditor.Core.Services;
+using JsonConfigEditor.Core.Validation; // Add this using
 using System.Windows.Input;
 
 namespace JsonConfigEditor.ViewModels
@@ -11,6 +12,11 @@ namespace JsonConfigEditor.ViewModels
     {
         private readonly MainViewModel _mainViewModel;
         private readonly IntegrityIssue _issue;
+
+        /// <summary>
+        /// The severity level of the issue.
+        /// </summary>
+        public ValidationSeverity Severity => _issue.Severity;
 
         /// <summary>
         /// The descriptive message detailing the issue.

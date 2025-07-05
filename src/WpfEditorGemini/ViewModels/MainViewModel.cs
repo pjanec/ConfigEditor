@@ -21,6 +21,7 @@ using System.Threading; // Added for Timer
 using JsonConfigEditor.Core.Cascade;
 using JsonConfigEditor.Core.Services;
 using JsonConfigEditor.Core.History;
+using JsonConfigEditor.Views; // Add this for IntegrityCheckDialog
 
 namespace JsonConfigEditor.ViewModels
 {
@@ -117,6 +118,7 @@ namespace JsonConfigEditor.ViewModels
         private string _searchText = string.Empty;
         private DataGridRowItemViewModel? _currentlyEditedItem;
         private DataGridRowItemViewModel? _selectedGridItem; // For TwoWay binding with DataGrid
+        private bool _isDiagnosticsPanelVisible;
         private int _currentSearchIndex = -1;
 
         // --- Private Fields: Search Session State ---
@@ -153,6 +155,7 @@ namespace JsonConfigEditor.ViewModels
         public ICommand ExpandSelectedRecursiveCommand { get; }
         public ICommand CollapseSelectedRecursiveCommand { get; }
         public ICommand LoadCascadeProjectCommand { get; }
+        public ICommand RunIntegrityCheckCommand { get; }
 
         // --- Public Properties ---
 
@@ -161,6 +164,7 @@ namespace JsonConfigEditor.ViewModels
         public EditHistoryService HistoryService => _historyService; // Expose the service
 
         public ObservableCollection<DataGridRowItemViewModel> FlatItemsSource { get; } = new();
+        public ObservableCollection<IssueViewModel> Issues { get; } = new();
 
         private System.Threading.Timer? _filterDebounceTimer;
 
@@ -234,6 +238,12 @@ namespace JsonConfigEditor.ViewModels
             get => _cascadeLayers.Any(l => l.IsDirty);
         }
 
+        public bool IsDiagnosticsPanelVisible
+        {
+            get => _isDiagnosticsPanelVisible;
+            set => SetProperty(ref _isDiagnosticsPanelVisible, value);
+        }
+
         public string? CurrentFilePath
         {
             get => _currentFilePath;
@@ -280,6 +290,7 @@ namespace JsonConfigEditor.ViewModels
             NewFileCommand = new RelayCommand(ExecuteNewFile);
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
             LoadCascadeProjectCommand = new RelayCommand(ExecuteLoadCascadeProject);
+            RunIntegrityCheckCommand = new RelayCommand(ExecuteRunIntegrityCheck, () => IsCascadeModeActive);
             SaveFileCommand = new RelayCommand(ExecuteSaveFile, CanExecuteSaveFile);
             SaveAsFileCommand = new RelayCommand(ExecuteSaveAsFile);
             ExitCommand = new RelayCommand(ExecuteExit);
@@ -1508,12 +1519,40 @@ namespace JsonConfigEditor.ViewModels
             return menuItems;
         }
 
+        private void ExecuteRunIntegrityCheck()
+        {
+            // The dialog already exists, we just need to show it.
+            // The dialog's ViewModel will call back into `ExecuteIntegrityCheck` below.
+            var dialog = new IntegrityCheckDialog(this, IntegrityCheckType.All);
+            dialog.ShowDialog();
+        }
+
         /// <summary>
-        /// [Placeholder] Runs the selected integrity checks.
+        /// Runs the selected integrity checks.
         /// </summary>
         public void ExecuteIntegrityCheck(IntegrityCheckType checksToRun)
         {
-            // Logic will be implemented in a later stage.
+            if (!_cascadeLayers.Any()) return;
+
+            Issues.Clear();
+
+            var integrityChecker = new IntegrityChecker(); // Instantiate the service
+            var issuesFound = integrityChecker.RunChecks(_cascadeLayers, checksToRun);
+
+            if (issuesFound.Any())
+            {
+                foreach (var issue in issuesFound)
+                {
+                    Issues.Add(new IssueViewModel(issue, this));
+                }
+                IsDiagnosticsPanelVisible = true;
+            }
+            else
+            {
+                // If no issues are found, we can show a confirmation message.
+                MessageBox.Show("No integrity issues found.", "Integrity Check Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                IsDiagnosticsPanelVisible = false;
+            }
         }
 
         public DomNode? GetRootDomNode()
