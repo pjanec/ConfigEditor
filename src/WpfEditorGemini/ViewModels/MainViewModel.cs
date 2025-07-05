@@ -1949,10 +1949,8 @@ namespace JsonConfigEditor.ViewModels
         {
             foreach (var action in actionsToApply)
             {
-                // Find the layer this action applies to.
-                var layer = _cascadeLayers.FirstOrDefault(l => 
-                    l.IntraLayerValueOrigins.ContainsValue(action.AncestorFile) && 
-                    l.IntraLayerValueOrigins.ContainsValue(action.DescendantFile));
+                // MODIFICATION: Find the layer directly by its name from the action.
+                var layer = _cascadeLayers.FirstOrDefault(l => l.Name == action.LayerName);
                 if (layer == null) continue;
 
                 // Find all paths that need to be re-mapped.

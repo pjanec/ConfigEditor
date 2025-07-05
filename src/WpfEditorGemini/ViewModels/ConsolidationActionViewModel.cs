@@ -13,7 +13,8 @@ namespace JsonConfigEditor.ViewModels
             set => SetProperty(ref _isSelected, value);
         }
 
-        public string Description => $"Merge '{Action.DescendantFile}' into '{Action.AncestorFile}'";
+        // MODIFICATION: Updated the description to include the layer name
+        public string Description => $"In layer '{Action.LayerName}', merge '{Action.DescendantFile}' into '{Action.AncestorFile}'";
 
         public ConsolidationActionViewModel(ConsolidationAction action)
         {

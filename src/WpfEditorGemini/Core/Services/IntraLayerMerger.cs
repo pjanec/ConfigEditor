@@ -10,7 +10,7 @@ namespace JsonConfigEditor.Core.Services
     /// <summary>
     /// Represents a single proposed consolidation action to merge overlapping files.
     /// </summary>
-    public record ConsolidationAction(string AncestorFile, string DescendantFile, string TopLevelPropertyPath);
+    public record ConsolidationAction(string AncestorFile, string DescendantFile, string TopLevelPropertyPath, string LayerName);
 
     /// <summary>
     /// Represents the result of an intra-layer merge, including the final merged tree,
@@ -73,7 +73,8 @@ namespace JsonConfigEditor.Core.Services
                     {
                         // We found a violation!
                         var propertyPath = "/" + Path.GetDirectoryName(descendantPath)!.Replace('\\', '/');
-                        proposedConsolidations.Add(new ConsolidationAction(ancestorPath, descendantPath, propertyPath));
+                        // MODIFICATION: Pass the layer name from the load result into the new action
+                        proposedConsolidations.Add(new ConsolidationAction(ancestorPath, descendantPath, propertyPath, layerLoadResult.Definition.Name));
                         break; // Found the highest-level conflict, no need to check further up.
                     }
                     tempPath = Path.GetDirectoryName(tempPath)?.Replace('\\', '/');
