@@ -40,6 +40,7 @@ namespace JsonConfigEditor.ViewModels
         private readonly DomSearchService _searchService;
         private readonly SchemaPlaceholderProvider _placeholderProvider;
         private readonly ViewModelBuilderService _viewModelBuilder;
+        private readonly ProjectSaver _projectSaver; // Add this field
         // ADD the new intra-layer merger service
         private readonly IntraLayerMerger _intraLayerMerger;
         private readonly ProjectLoader _projectLoader;
@@ -108,7 +109,8 @@ namespace JsonConfigEditor.ViewModels
 
         // --- Private Fields: UI State & Filters/Search ---
         private string? _currentFilePath;
-        private bool _isDirty;
+        // REMOVE the old private field for IsDirty:
+        // private bool _isDirty;
         private string _filterText = string.Empty;
         private bool _showOnlyInvalidNodes;
         private bool _showSchemaNodes = true; // Toggle for DOM vs DOM+Schema view
@@ -228,8 +230,8 @@ namespace JsonConfigEditor.ViewModels
 
         public bool IsDirty
         {
-            get => _isDirty;
-            private set => SetProperty(ref _isDirty, value);
+            // The project is considered dirty if ANY layer has unsaved changes.
+            get => _cascadeLayers.Any(l => l.IsDirty);
         }
 
         public string? CurrentFilePath
@@ -272,6 +274,7 @@ namespace JsonConfigEditor.ViewModels
             _intraLayerMerger = new IntraLayerMerger();
             _projectLoader = new ProjectLoader(_jsonParser); // Add this
             _displayMerger = new CascadedDomDisplayMerger(); // Add this
+            _projectSaver = new ProjectSaver(_jsonSerializer); // Initialize the saver
             _viewModelBuilder = new ViewModelBuilderService(_placeholderProvider, this);
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
@@ -352,7 +355,8 @@ namespace JsonConfigEditor.ViewModels
 
         private bool CanExecuteSaveFile()
         {
-            return _cascadeLayers.Count > 0;
+            // The command can execute if there are any layers loaded AND the project is dirty.
+            return _cascadeLayers.Any() && IsDirty;
         }
 
         private async void ExecuteSaveAsFile()
@@ -384,7 +388,13 @@ namespace JsonConfigEditor.ViewModels
 
         private void OnHistoryModelChanged(EditOperation operation)
         {
-            IsDirty = true;
+            // When an undo/redo operation occurs, mark the specific layer as dirty.
+            if (operation.LayerIndex >= 0 && operation.LayerIndex < _cascadeLayers.Count)
+            {
+                _cascadeLayers[operation.LayerIndex].IsDirty = true;
+            }
+            // Notify that the computed IsDirty property may have changed.
+            OnPropertyChanged(nameof(IsDirty));
             OnPropertyChanged(nameof(WindowTitle));
 
             _ = Task.Run(() => ValidateDocumentAsync());
@@ -542,7 +552,7 @@ namespace JsonConfigEditor.ViewModels
                         var cascadeLayer = new CascadeLayer(
                             layerIndex++,
                             layerData.Definition.Name,
-                            layerData.Definition.FolderPath,
+                            layerData.AbsoluteFolderPath, // Use the absolute path from the load result
                             layerData.SourceFiles,
                             mergeResult.LayerConfigRootNode,
                             mergeResult.IntraLayerValueOrigins
@@ -556,7 +566,6 @@ namespace JsonConfigEditor.ViewModels
                     // END NEW
 
                     CurrentFilePath = openDialog.FileName;
-                    IsDirty = false;
                     ActiveEditorLayer = _cascadeLayers.LastOrDefault();
                     OnPropertyChanged(nameof(IsCascadeModeActive)); 
               
@@ -631,7 +640,6 @@ namespace JsonConfigEditor.ViewModels
                 // END NEW
 
                 CurrentFilePath = filePath;
-                IsDirty = false;
 
                 ResetSearchState();
                 // This no longer needs to be called here as RefreshDisplay will do it.
@@ -692,32 +700,49 @@ namespace JsonConfigEditor.ViewModels
 
         public async Task SaveFileAsync(string? filePath = null)
         {
-            // Get the root node from the first layer to save it.
-            var rootNodeToSave = _cascadeLayers.FirstOrDefault()?.LayerConfigRootNode;
-            if (rootNodeToSave == null) return;
-
             var targetPath = filePath ?? CurrentFilePath;
             if (string.IsNullOrEmpty(targetPath))
                 throw new InvalidOperationException("No file path specified for save operation");
 
-            try
+            // Check if we are in "Project Mode" by inspecting the file extension.
+            if (CurrentFilePath?.EndsWith(".cascade.jsonc", StringComparison.OrdinalIgnoreCase) == true)
             {
+                // In project mode, 'Save As' is not a simple file copy. We'll disallow it for now
+                // and save changes back to the original layer files.
+                if (filePath != null && filePath != CurrentFilePath)
+                {
+                    MessageBox.Show("Saving a project to a new location ('Save As') is not supported. Changes will be saved to the original project structure.", "Save As Not Supported", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+
+                // Iterate through only the dirty layers and save them using the ProjectSaver.
+                foreach (var layer in _cascadeLayers.Where(l => l.IsDirty))
+                {
+                    await _projectSaver.SaveLayerAsync(layer);
+                }
+            }
+            else // We are in "Single-File Mode".
+            {
+                var rootNodeToSave = _cascadeLayers.FirstOrDefault()?.LayerConfigRootNode;
+                if (rootNodeToSave == null) return;
+
                 await _jsonSerializer.SerializeToFileAsync(rootNodeToSave, targetPath);
-                CurrentFilePath = targetPath;
-                IsDirty = false;
-                OnPropertyChanged(nameof(WindowTitle));
+                CurrentFilePath = targetPath; // Update path if 'Save As' was used.
+
+                // Mark the single layer as no longer dirty.
+                var singleLayer = _cascadeLayers.FirstOrDefault();
+                if (singleLayer != null) singleLayer.IsDirty = false;
             }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"Failed to save file: {ex.Message}", ex);
-            }
+
+            // After saving, notify the UI that the dirty state and window title need to be re-evaluated.
+            OnPropertyChanged(nameof(IsDirty));
+            OnPropertyChanged(nameof(WindowTitle));
         }
 
         public void NewDocument()
         {
             InitializeEmptyDocument();
             CurrentFilePath = null;
-            IsDirty = false;
+            OnPropertyChanged(nameof(IsDirty));
             OnPropertyChanged(nameof(WindowTitle));
         }
 
@@ -741,7 +766,13 @@ namespace JsonConfigEditor.ViewModels
 
         internal void OnNodeValueChanged(DataGridRowItemViewModel item)
         {
-            IsDirty = true;
+            // When a value is changed, mark the active layer as dirty.
+            if (ActiveEditorLayer != null)
+            {
+                ActiveEditorLayer.IsDirty = true;
+            }
+            // Notify that the computed IsDirty property may have changed.
+            OnPropertyChanged(nameof(IsDirty));
             OnPropertyChanged(nameof(WindowTitle));
 
             _ = Task.Run(async () => await ValidateDocumentAsync());
@@ -1525,7 +1556,13 @@ namespace JsonConfigEditor.ViewModels
             }
             else
             {
-                IsDirty = true;
+                // When a value is changed, mark the active layer as dirty.
+                if (ActiveEditorLayer != null)
+                {
+                    ActiveEditorLayer.IsDirty = true;
+                }
+                // Notify that the computed IsDirty property may have changed.
+                OnPropertyChanged(nameof(IsDirty));
                 OnPropertyChanged(nameof(WindowTitle));
                 _ = ValidateDocumentAsync();
             }
@@ -1605,7 +1642,17 @@ namespace JsonConfigEditor.ViewModels
                 var nodeName = path.Split('/').Last();
                 var newNode = _nodeFactory.CreateFromValue(value, nodeName, parentObject, schema);
                 AddNodeWithHistory(parentObject, newNode, nodeName);
-                
+
+                // --- MODIFICATION START ---
+                // If this action created a new top-level node in the active layer,
+                // we must track its file origin.
+                if (newNode.Parent == ActiveEditorLayer?.LayerConfigRootNode)
+                {
+                    string relativeFilePath = $"{newNode.Name.ToLower()}.json";
+                    TrackOriginForNewNodeRecursive(newNode, relativeFilePath, ActiveEditorLayer.IntraLayerValueOrigins);
+                }
+                // --- MODIFICATION END ---
+
                 ActiveEditorLayer.IsDirty = true;
                 RefreshDisplay();
             }
@@ -1741,7 +1788,16 @@ namespace JsonConfigEditor.ViewModels
 
             // 6. Add the final, modified array to the active layer's data model.
             AddNodeWithHistory(parentObject, newArrayInActiveLayer, newArrayInActiveLayer.Name);
-            
+
+            // --- MODIFICATION START ---
+            // This new array is a top-level override, so we must track its file origin.
+            if (newArrayInActiveLayer.Parent == ActiveEditorLayer?.LayerConfigRootNode)
+            {
+                string relativeFilePath = $"{newArrayInActiveLayer.Name.ToLower()}.json";
+                TrackOriginForNewNodeRecursive(newArrayInActiveLayer, relativeFilePath, ActiveEditorLayer.IntraLayerValueOrigins);
+            }
+            // --- MODIFICATION END ---
+
             // 7. Mark dirty and refresh the UI (this might be better outside the helper)
             ActiveEditorLayer.IsDirty = true;
             RefreshDisplay();
@@ -1792,6 +1848,26 @@ namespace JsonConfigEditor.ViewModels
                 return _cascadeLayers[layerIndex].Name;
             }
             return null;
+        }
+
+        private void TrackOriginForNewNodeRecursive(DomNode node, string relativeFilePath, Dictionary<string, string> origins)
+        {
+            origins[node.Path] = relativeFilePath;
+
+            if (node is ObjectNode objectNode)
+            {
+                foreach (var child in objectNode.GetChildren())
+                {
+                    TrackOriginForNewNodeRecursive(child, relativeFilePath, origins);
+                }
+            }
+            else if (node is ArrayNode arrayNode)
+            {
+                foreach (var item in arrayNode.GetItems())
+                {
+                    TrackOriginForNewNodeRecursive(item, relativeFilePath, origins);
+                }
+            }
         }
 
         private void RecalculateAuthoritativeOriginMaps()

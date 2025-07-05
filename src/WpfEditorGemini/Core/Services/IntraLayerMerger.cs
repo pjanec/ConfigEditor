@@ -29,27 +29,25 @@ namespace JsonConfigEditor.Core.Services
         /// <returns>An IntraLayerMergeResult containing the merged tree, origin map, and errors.</returns>
         public IntraLayerMergeResult Merge(LayerLoadResult layerLoadResult)
         {
-            var rootNode = new ObjectNode("$root", null); // The unified tree for the entire layer
-            var origins = new Dictionary<string, string>(); // The origin map for the layer
+            var rootNode = new ObjectNode("$root", null);
+            var origins = new Dictionary<string, string>();
             var errors = new List<string>();
 
-            // Iterate through each file parsed from the layer's folder
             foreach (var sourceFile in layerLoadResult.SourceFiles.OrderBy(f => f.RelativePath))
             {
-                if (sourceFile.DomRoot is ObjectNode sourceFileRoot)
+                // --- MODIFICATION START ---
+                // Enforce that the root of the source file must be an object.
+                if (sourceFile.DomRoot is not ObjectNode sourceFileRoot)
                 {
-                    // --- NEW LOGIC ---
-                    // 1. Get the correct target node in the layer's tree based on the file path.
-                    var targetNode = EnsurePathAndGetTarget(rootNode, sourceFile.RelativePath);
-
-                    // 2. Merge the file's content into this specific target node.
-                    MergeNodeRecursive(targetNode, sourceFileRoot, sourceFile, origins, errors);
-                    // --- END NEW LOGIC ---
-                }
-                else
-                {
+                    // If the file content is not a JSON object (e.g., it's an array `[]` or a value `"hello"`),
+                    // it violates our structural rule. Log an error and skip this file.
                     errors.Add($"Source file '{sourceFile.RelativePath}' does not have a root JSON object and will be ignored.");
+                    continue; // Skip to the next file
                 }
+                // --- MODIFICATION END ---
+
+                var targetNode = EnsurePathAndGetTarget(rootNode, sourceFile.RelativePath);
+                MergeNodeRecursive(targetNode, sourceFileRoot, sourceFile, origins, errors);
             }
 
             return new IntraLayerMergeResult(rootNode, origins, errors);

@@ -15,7 +15,7 @@ namespace JsonConfigEditor.Core.Services
     /// Represents the structured result of loading all files for a single layer,
     /// before any merging has occurred.
     /// </summary>
-    public record LayerLoadResult(LayerDefinitionModel Definition, IReadOnlyList<SourceFileInfo> SourceFiles);
+    public record LayerLoadResult(LayerDefinitionModel Definition, string AbsoluteFolderPath, IReadOnlyList<SourceFileInfo> SourceFiles);
     
     /// <summary>
     /// Represents a single layer definition as parsed from the project file.
@@ -70,7 +70,8 @@ namespace JsonConfigEditor.Core.Services
                 // 3. Discover and parse all JSON files within the layer's folder
                 var sourceFiles = await LoadAllFilesFromLayerFolderAsync(absoluteLayerPath, layerIndex++); // Pass index
                 
-                loadedLayers.Add(new LayerLoadResult(layerDef, sourceFiles));
+                // Pass the calculated absoluteLayerPath into the new record
+                loadedLayers.Add(new LayerLoadResult(layerDef, absoluteLayerPath, sourceFiles));
             }
             
             return loadedLayers;
