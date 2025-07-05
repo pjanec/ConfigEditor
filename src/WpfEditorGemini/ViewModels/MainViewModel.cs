@@ -1694,5 +1694,20 @@ namespace JsonConfigEditor.ViewModels
             }
             return current;
         }
+
+        /// <summary>
+        /// Gets the name of a layer by its index.
+        /// </summary>
+        /// <param name="layerIndex">The index of the layer.</param>
+        /// <returns>The layer name, or null if the index is invalid.</returns>
+        public string? GetLayerNameByIndex(int layerIndex)
+        {
+            if (layerIndex >= 0 && layerIndex < _cascadeLayers.Count)
+            {
+                return _cascadeLayers[layerIndex].Name;
+            }
+            return null;
+        }
     }
+
 }

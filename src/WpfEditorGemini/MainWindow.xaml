@@ -377,6 +377,14 @@
                     </DataGridTemplateColumn.CellEditingTemplateSelector>
                 </DataGridTemplateColumn>
 
+                <!-- Origin Column -->
+                <DataGridTextColumn Header="Origin"
+                                    Binding="{Binding OriginLayerName}"
+                                    Width="110"
+                                    IsReadOnly="True"
+                                    ToolTipService.ToolTip="The layer providing the final value for this property."
+                                    Visibility="{Binding DataContext.IsMergedViewActive, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
                 <!-- Type Column -->
                 <DataGridTextColumn Header="Type" 
                                     Binding="{Binding SchemaContextNode.ClrType.Name}" 

@@ -632,7 +632,7 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
-/// <summary>
+        /// <summary>
         /// Forces the ViewModel to synchronize its state with a new value from the data model.
         /// This is called after an Undo/Redo of a value change to update the UI without a full refresh.
         /// </summary>
@@ -647,5 +647,24 @@ namespace JsonConfigEditor.ViewModels
             // Trigger a refresh of all data-bound properties on the ViewModel.
             RefreshDisplayProperties();
         }
+
+        /// <summary>
+        /// Gets the name of the layer this node's value originates from.
+        /// Returns "Schema" for schema-only nodes.
+        /// </summary>
+        public string OriginLayerName
+        {
+            get
+            {
+                if (OriginLayerIndex < 0)
+                {
+                    return "Schema";
+                }
+                // Ask the MainViewModel to resolve the layer name from the index
+                return ParentViewModel.GetLayerNameByIndex(OriginLayerIndex) ?? "Unknown";
+            }
+        }
+
+
     }
 } 
