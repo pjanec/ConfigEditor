@@ -57,6 +57,27 @@ namespace JsonConfigEditor.Core.Services
                 }
             }
 
+            // --- MODIFICATION START ---
+            // Phase 3: Delete consolidated files.
+            foreach (var fileToDelete in layer.FilesToDeleteOnSave)
+            {
+                var absolutePath = Path.Combine(layer.FolderPath, fileToDelete);
+                if (File.Exists(absolutePath))
+                {
+                    try
+                    {
+                        File.Delete(absolutePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log error: Failed to delete consolidated file.
+                        Console.Error.WriteLine($"Failed to delete consolidated file '{absolutePath}': {ex.Message}");
+                    }
+                }
+            }
+            layer.FilesToDeleteOnSave.Clear(); // Clear the list after processing.
+            // --- MODIFICATION END ---
+
             layer.IsDirty = false;
         }
 

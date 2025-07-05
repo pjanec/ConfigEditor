@@ -52,6 +52,12 @@ namespace JsonConfigEditor.Core.Cascade
         public bool IsDirty { get; set; }
 
         /// <summary>
+        /// Gets the set of files that should be deleted when this layer is saved.
+        /// These are files that have been consolidated into other files.
+        /// </summary>
+        public HashSet<string> FilesToDeleteOnSave { get; } = new();
+
+        /// <summary>
         /// Initializes a new instance of the CascadeLayer class.
         /// </summary>
         /// <param name="layerIndex">The layer's index in the cascade.</param>

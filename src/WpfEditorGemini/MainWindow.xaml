@@ -413,12 +413,22 @@
                 </DataGridTemplateColumn>
 
                 <!-- Origin Column -->
-                <DataGridTextColumn Header="Origin"
-                                    Binding="{Binding OriginLayerName}"
-                                    Width="110"
-                                    IsReadOnly="True"
-                                    ToolTipService.ToolTip="The layer providing the final value for this property."
-                                    Visibility="{Binding DataContext.IsMergedViewActive, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                <DataGridTemplateColumn Width="110">
+                    <DataGridTemplateColumn.HeaderTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="Origin" 
+                                       Visibility="{Binding DataContext.IsMergedViewActive, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.HeaderTemplate>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding OriginLayerName}" 
+                                       VerticalAlignment="Center"
+                                       ToolTip="The layer providing the final value for this property."
+                                       Visibility="{Binding DataContext.IsMergedViewActive, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
 
                 <!-- Type Column -->
                 <DataGridTextColumn Header="Type" 

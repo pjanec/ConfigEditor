@@ -555,11 +555,18 @@ namespace JsonConfigEditor.ViewModels
                     var loadedLayersData = await _projectLoader.LoadProjectAsync(openDialog.FileName);
                     _cascadeLayers.Clear();
                     AllLayers.Clear();
+                    var allProposedConsolidations = new List<ConsolidationAction>();
 
                     int layerIndex = 0;
                     foreach (var layerData in loadedLayersData)
                     {
                         var mergeResult = _intraLayerMerger.Merge(layerData);
+                        // --- MODIFICATION START ---
+                        if (mergeResult.ProposedConsolidations.Any())
+                        {
+                            allProposedConsolidations.AddRange(mergeResult.ProposedConsolidations);
+                        }
+                        // --- MODIFICATION END ---
                         var cascadeLayer = new CascadeLayer(
                             layerIndex++,
                             layerData.Definition.Name,
@@ -571,6 +578,19 @@ namespace JsonConfigEditor.ViewModels
                         _cascadeLayers.Add(cascadeLayer);
                         AllLayers.Add(cascadeLayer);
                     }
+
+                    // --- MODIFICATION START ---
+                    // After loading all layers, check if we need to show the consolidation dialog.
+                    if (allProposedConsolidations.Any())
+                    {
+                        var dialog = new ConsolidationDialog(allProposedConsolidations, selectedActions =>
+                        {
+                            // This is the callback that applies the changes.
+                            ApplyConsolidationActions(selectedActions);
+                        });
+                        dialog.ShowDialog();
+                    }
+                    // --- MODIFICATION END ---
 
                     // NEW: Perform a full project merge to populate authoritative origin maps
                     RecalculateAuthoritativeOriginMaps();
@@ -1922,6 +1942,36 @@ namespace JsonConfigEditor.ViewModels
             var fullMergeResult = _displayMerger.MergeForDisplay(_cascadeLayers, schemaDefaultsRoot);
             _authoritativeValueOrigins = fullMergeResult.ValueOrigins;
             _authoritativeOverrideSources = fullMergeResult.OverrideSources;
+        }
+
+        // Add this new private method to MainViewModel
+        private void ApplyConsolidationActions(List<ConsolidationAction> actionsToApply)
+        {
+            foreach (var action in actionsToApply)
+            {
+                // Find the layer this action applies to.
+                var layer = _cascadeLayers.FirstOrDefault(l => 
+                    l.IntraLayerValueOrigins.ContainsValue(action.AncestorFile) && 
+                    l.IntraLayerValueOrigins.ContainsValue(action.DescendantFile));
+                if (layer == null) continue;
+
+                // Find all paths that need to be re-mapped.
+                var pathsToRemap = layer.IntraLayerValueOrigins
+                    .Where(kvp => kvp.Value.Equals(action.DescendantFile, StringComparison.OrdinalIgnoreCase))
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                // Re-map them to the ancestor file.
+                foreach (var path in pathsToRemap)
+                {
+                    layer.IntraLayerValueOrigins[path] = action.AncestorFile;
+                }
+
+                // Queue the descendant file for deletion.
+                layer.FilesToDeleteOnSave.Add(action.DescendantFile);
+                layer.IsDirty = true; // Mark layer as dirty to trigger save.
+            }
+            OnPropertyChanged(nameof(IsDirty)); // Notify UI that overall state may be dirty.
         }
     }
 

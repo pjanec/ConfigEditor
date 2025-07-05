@@ -1,0 +1,30 @@
+<Window x:Class="JsonConfigEditor.Views.ConsolidationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Project Structure Update" SizeToContent="WidthAndHeight" WindowStartupLocation="CenterOwner"
+        MinWidth="450" MaxWidth="600">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,10">
+            We found opportunities to simplify your project's file structure by merging overlapping files. Please select the changes you wish to apply.
+        </TextBlock>
+
+        <ListView Grid.Row="1" ItemsSource="{Binding Actions}" MaxHeight="300">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Description}" Margin="5"/>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+            <Button Content="Apply Selected" Command="{Binding ApplyCommand}" IsDefault="True" MinWidth="120" Margin="5"/>
+            <Button Content="Skip for Now" IsCancel="True" MinWidth="100" Margin="5"/>
+        </StackPanel>
+    </Grid>
+</Window> 

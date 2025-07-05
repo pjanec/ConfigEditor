@@ -2,10 +2,16 @@
 using JsonConfigEditor.Core.Dom;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 namespace JsonConfigEditor.Core.Services
 {
+    /// <summary>
+    /// Represents a single proposed consolidation action to merge overlapping files.
+    /// </summary>
+    public record ConsolidationAction(string AncestorFile, string DescendantFile, string TopLevelPropertyPath);
+
     /// <summary>
     /// Represents the result of an intra-layer merge, including the final merged tree,
     /// its origin map, and any errors that were detected during the process.
@@ -13,7 +19,8 @@ namespace JsonConfigEditor.Core.Services
     public record IntraLayerMergeResult(
         ObjectNode LayerConfigRootNode,
         Dictionary<string, string> IntraLayerValueOrigins,
-        List<string> Errors
+        List<string> Errors,
+        List<ConsolidationAction> ProposedConsolidations
     );
 
     /// <summary>
@@ -32,6 +39,7 @@ namespace JsonConfigEditor.Core.Services
             var rootNode = new ObjectNode("$root", null);
             var origins = new Dictionary<string, string>();
             var errors = new List<string>();
+            var proposedConsolidations = new List<ConsolidationAction>(); // Instantiate the new list
 
             foreach (var sourceFile in layerLoadResult.SourceFiles.OrderBy(f => f.RelativePath))
             {
@@ -50,7 +58,30 @@ namespace JsonConfigEditor.Core.Services
                 MergeNodeRecursive(targetNode, sourceFileRoot, sourceFile, origins, errors);
             }
 
-            return new IntraLayerMergeResult(rootNode, origins, errors);
+            // --- MODIFICATION START ---
+            // After merging all files, check the origins map for consolidation opportunities.
+            var filePaths = origins.Values.Distinct().ToList();
+            foreach (var descendantPath in filePaths)
+            {
+                // Example: descendantPath is "database/auditing.json"
+                var tempPath = Path.GetDirectoryName(descendantPath)?.Replace('\\', '/');
+                while (!string.IsNullOrEmpty(tempPath))
+                {
+                    // Example: ancestorPath becomes "database.json"
+                    var ancestorPath = $"{tempPath}.json";
+                    if (filePaths.Contains(ancestorPath))
+                    {
+                        // We found a violation!
+                        var propertyPath = "/" + Path.GetDirectoryName(descendantPath)!.Replace('\\', '/');
+                        proposedConsolidations.Add(new ConsolidationAction(ancestorPath, descendantPath, propertyPath));
+                        break; // Found the highest-level conflict, no need to check further up.
+                    }
+                    tempPath = Path.GetDirectoryName(tempPath)?.Replace('\\', '/');
+                }
+            }
+            // --- MODIFICATION END ---
+
+            return new IntraLayerMergeResult(rootNode, origins, errors, proposedConsolidations);
         }
 
         /// <summary>
