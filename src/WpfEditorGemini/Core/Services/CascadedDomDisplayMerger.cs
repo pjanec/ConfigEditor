@@ -30,7 +30,7 @@ namespace JsonConfigEditor.Core.Services
         /// <param name="allSourceFiles">The ordered list of source files to merge (lowest to highest priority).</param>
         /// <param name="schemaDefaultsRoot">The root node containing schema defaults, acting as Layer -1.</param>
         /// <returns>A DisplayMergeResult containing the merged tree and origin maps.</returns>
-        public DisplayMergeResult MergeForDisplay(IReadOnlyList<SourceFileInfo> allSourceFiles, ObjectNode schemaDefaultsRoot)
+        public DisplayMergeResult MergeForDisplay(IReadOnlyList<CascadeLayer> allLayers, ObjectNode schemaDefaultsRoot)
         {
             var valueOrigins = new Dictionary<string, int>();
             var overrideSources = new Dictionary<string, List<int>>();
@@ -39,19 +39,18 @@ namespace JsonConfigEditor.Core.Services
             var mergedRoot = (ObjectNode)DomCloning.CloneNode(schemaDefaultsRoot, null);
             // 2. Initialize origin maps with Layer -1 (Schema Defaults)
             TrackOriginsRecursive(mergedRoot, -1, valueOrigins, overrideSources);
-            // 3. The core logic now iterates over files, not layers
-            foreach (var sourceFile in allSourceFiles)
+
+            // 3. The core logic now iterates over the pre-processed layers
+            foreach (var layer in allLayers)
             {
-                if (sourceFile.DomRoot is ObjectNode sourceFileRoot)
-                {
-                    // The effective layer index comes directly from the source file
-                    int effectiveLayerIndex = sourceFile.LayerIndex;
-                    MergeNodeIntoRecursive(mergedRoot, sourceFileRoot, effectiveLayerIndex, valueOrigins, overrideSources);
-                }
+                // Merge the layer's already-structured root node into the final merged tree
+                MergeNodeIntoRecursive(mergedRoot, layer.LayerConfigRootNode, layer.LayerIndex, valueOrigins, overrideSources);
             }
 
             return new DisplayMergeResult(mergedRoot, valueOrigins, overrideSources);
         }
+
+
         /// <summary>
         /// Recursively merges a source node's tree into the target merged tree.
         /// </summary>

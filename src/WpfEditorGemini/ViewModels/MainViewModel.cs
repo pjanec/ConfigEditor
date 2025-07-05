@@ -596,30 +596,40 @@ namespace JsonConfigEditor.ViewModels
             _historyService.Clear();
             try
             {
-                // --- NEW LOGIC ---
-                // Treat the single file as a project with one layer.
+                // 1. Read and parse the single file. The parser returns an ObjectNode named "$root"
+                // containing the file's properties as its children. This is exactly what we want.
                 var fileContent = await File.ReadAllTextAsync(filePath);
-                var domRoot = _jsonParser.ParseFromString(fileContent);
+                var domRoot = _jsonParser.ParseFromString(fileContent) as ObjectNode;
 
-                // Create the necessary info objects.
-                var sourceFile = new SourceFileInfo(filePath, Path.GetFileName(filePath), domRoot, fileContent, 0); // Pass index 0
-                var layerDef = new LayerDefinitionModel("Default", Path.GetDirectoryName(filePath)!);
-                var layerLoadResult = new LayerLoadResult(layerDef, new List<SourceFileInfo> { sourceFile });
+                if (domRoot == null)
+                {
+                    throw new InvalidOperationException("The root of the loaded JSON file must be an object.");
+                }
 
-                // Perform the intra-layer merge (which is trivial for one file).
-                var mergeResult = _intraLayerMerger.Merge(layerLoadResult);
-                  
-                // Create the single CascadeLayer.
-                var singleLayer = new CascadeLayer(0, "Default", Path.GetDirectoryName(filePath)!, 
-                    layerLoadResult.SourceFiles, mergeResult.LayerConfigRootNode, mergeResult.IntraLayerValueOrigins);
+                // 2. Create a simple origin map. All properties come from this one file.
+                var origins = new Dictionary<string, string>();
+                var fileName = Path.GetFileName(filePath);
+                TrackOriginsForSingleFile(domRoot, fileName, origins);
 
-                // Set the new data model.
+                // 3. Create the necessary info objects without calling IntraLayerMerger.
+                var sourceFile = new SourceFileInfo(filePath, fileName, domRoot, fileContent, 0);
+        
+                // 4. Create the single CascadeLayer, using the parsed domRoot directly as its root.
+                var singleLayer = new CascadeLayer(
+                    layerIndex: 0,
+                    name: "Default",
+                    folderPath: Path.GetDirectoryName(filePath)!,
+                    sourceFiles: new List<SourceFileInfo> { sourceFile },
+                    layerConfigRootNode: domRoot, // Use the parsed root directly
+                    intraLayerValueOrigins: origins
+                );
+
+                // 5. Set the new data model.
                 _cascadeLayers = new List<CascadeLayer> { singleLayer };
                 AllLayers.Clear();
                 AllLayers.Add(singleLayer);
-                ActiveEditorLayer = _cascadeLayers.FirstOrDefault(); // Set the active layer
-                OnPropertyChanged(nameof(IsCascadeModeActive)); // Notify UI to show cascade controls
-                // --- END NEW LOGIC ---
+                ActiveEditorLayer = _cascadeLayers.FirstOrDefault();
+                OnPropertyChanged(nameof(IsCascadeModeActive));
 
                 CurrentFilePath = filePath;
                 IsDirty = false;
@@ -633,6 +643,27 @@ namespace JsonConfigEditor.ViewModels
             catch (Exception ex)
             {
                 throw new InvalidOperationException($"Failed to load file: {ex.Message}", ex);
+            }
+        }
+
+        // Add this new helper method to the MainViewModel class
+        private void TrackOriginsForSingleFile(DomNode node, string fileName, Dictionary<string, string> origins)
+        {
+            origins[node.Path] = fileName;
+
+            if (node is ObjectNode objectNode)
+            {
+                foreach (var child in objectNode.GetChildren())
+                {
+                    TrackOriginsForSingleFile(child, fileName, origins);
+                }
+            }
+            else if (node is ArrayNode arrayNode)
+            {
+                foreach (var item in arrayNode.GetItems())
+                {
+                    TrackOriginsForSingleFile(item, fileName, origins);
+                }
             }
         }
 
@@ -846,20 +877,15 @@ namespace JsonConfigEditor.ViewModels
             if (IsMergedViewActive && IsCascadeModeActive && ActiveEditorLayer != null)
             {
                 // MERGED VIEW
-                // ---- NEW LOGIC ----
-                // Get all source files from layers up to and including the active one.
-                var filesToMerge = _cascadeLayers
+                // Get all layers up to and including the active one.
+                var layersToMerge = _cascadeLayers
                     .Where(l => l.LayerIndex <= ActiveEditorLayer.LayerIndex)
-                    .SelectMany(l => l.SourceFiles)
-                    .OrderBy(f => f.LayerIndex) // Ensure files are merged in correct layer order
                     .ToList();
 
                 // For now, we create an empty schema defaults node (Layer -1).
                 var schemaDefaultsRoot = new ObjectNode("$root", null);
-
-                // Use the refactored merger to get the complete result
-                var mergeResult = _displayMerger.MergeForDisplay(filesToMerge, schemaDefaultsRoot);
-                // ---- END NEW LOGIC ----
+                // Use the refactored merger, passing the processed layers
+                var mergeResult = _displayMerger.MergeForDisplay(layersToMerge, schemaDefaultsRoot);
 
                 _displayRoot = mergeResult.MergedRoot;
                 _valueOrigins = mergeResult.ValueOrigins;
@@ -868,7 +894,7 @@ namespace JsonConfigEditor.ViewModels
             else
             {
                 // SINGLE LAYER VIEW (This logic remains mostly the same, but now reads from the correct source)
-                _displayRoot = ActiveEditorLayer?.LayerConfigRootNode; // This will be removed in Stage 3. For now, it provides the single-layer view.
+                _displayRoot = ActiveEditorLayer?.LayerConfigRootNode;
                 // Clear the origin maps as they don't apply in single-layer view
                 _valueOrigins.Clear();
                 _overrideSources.Clear();
@@ -880,7 +906,7 @@ namespace JsonConfigEditor.ViewModels
                     PopulateOriginsForSingleLayer(_displayRoot, ActiveEditorLayer.LayerIndex, _valueOrigins);
                 }
             }
-    
+
             // Now that the display tree is set, update the rest of the UI
             RebuildDomToSchemaMapping();
             RefreshFlatList();

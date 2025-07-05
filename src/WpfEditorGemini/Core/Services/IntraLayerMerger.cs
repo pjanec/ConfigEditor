@@ -34,12 +34,17 @@ namespace JsonConfigEditor.Core.Services
             var errors = new List<string>();
 
             // Iterate through each file parsed from the layer's folder
-            foreach (var sourceFile in layerLoadResult.SourceFiles)
+            foreach (var sourceFile in layerLoadResult.SourceFiles.OrderBy(f => f.RelativePath))
             {
                 if (sourceFile.DomRoot is ObjectNode sourceFileRoot)
                 {
-                    // Recursively merge the file's content into the layer's root node
-                    MergeNodeRecursive(rootNode, sourceFileRoot, sourceFile, origins, errors);
+                    // --- NEW LOGIC ---
+                    // 1. Get the correct target node in the layer's tree based on the file path.
+                    var targetNode = EnsurePathAndGetTarget(rootNode, sourceFile.RelativePath);
+
+                    // 2. Merge the file's content into this specific target node.
+                    MergeNodeRecursive(targetNode, sourceFileRoot, sourceFile, origins, errors);
+                    // --- END NEW LOGIC ---
                 }
                 else
                 {
@@ -48,6 +53,40 @@ namespace JsonConfigEditor.Core.Services
             }
 
             return new IntraLayerMergeResult(rootNode, origins, errors);
+        }
+
+        /// <summary>
+        /// Creates the nested ObjectNode structure that mirrors the file path.
+        /// </summary>
+        /// <param name="layerRoot">The root node of the layer.</param>
+        /// <param name="relativePath">The relative path of the file.</param>
+        /// <returns>The target node where the file content should be merged.</returns>
+        private ObjectNode EnsurePathAndGetTarget(ObjectNode layerRoot, string relativePath)
+        {
+            // Remove the .json extension and split the path by directory separators
+            var pathWithoutExtension = relativePath.Replace(".json", "", StringComparison.OrdinalIgnoreCase);
+            var segments = pathWithoutExtension.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+
+            ObjectNode currentParent = layerRoot;
+
+            // Walk the path, creating parent nodes as needed
+            foreach (var segment in segments)
+            {
+                var childNode = currentParent.GetChild(segment);
+                if (childNode is ObjectNode existingObject)
+                {
+                    // If a node for this path segment already exists, use it
+                    currentParent = existingObject;
+                }
+                else
+                {
+                    // If it doesn't exist, create it and add it to the tree
+                    var newNode = new ObjectNode(segment, currentParent);
+                    currentParent.AddChild(segment, newNode);
+                    currentParent = newNode;
+                }
+            }
+            return currentParent;
         }
 
         /// <summary>
@@ -82,10 +121,9 @@ namespace JsonConfigEditor.Core.Services
                 else
                 {
                     // No conflict. This is a new property for the unified tree.
-                    // FIX: Use the shared cloning utility and pass the correct new parent.
+                    // The logic here is correct, but we ensure the key is passed to AddChild
                     var clonedNode = DomCloning.CloneNode(childNode, targetParent);
-                    targetParent.AddChild(clonedNode.Name, clonedNode);
-
+                    targetParent.AddChild(clonedNode.Name, clonedNode); // This is correct
                     TrackOriginsRecursive(clonedNode, sourceFile.RelativePath, origins);
                 }
             }
