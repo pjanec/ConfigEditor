@@ -602,7 +602,7 @@ namespace JsonConfigEditor.ViewModels
                 var domRoot = _jsonParser.ParseFromString(fileContent);
 
                 // Create the necessary info objects.
-                var sourceFile = new SourceFileInfo(filePath, Path.GetFileName(filePath), domRoot, fileContent);
+                var sourceFile = new SourceFileInfo(filePath, Path.GetFileName(filePath), domRoot, fileContent, 0); // Pass index 0
                 var layerDef = new LayerDefinitionModel("Default", Path.GetDirectoryName(filePath)!);
                 var layerLoadResult = new LayerLoadResult(layerDef, new List<SourceFileInfo> { sourceFile });
 
@@ -846,15 +846,20 @@ namespace JsonConfigEditor.ViewModels
             if (IsMergedViewActive && IsCascadeModeActive && ActiveEditorLayer != null)
             {
                 // MERGED VIEW
-                // Get all layers that should be part of the merge
-                var layersToMerge = _cascadeLayers.Where(l => l.LayerIndex <= ActiveEditorLayer.LayerIndex).ToList();
-        
-                // For now, we create an empty schema defaults node (Layer 0).
-                // This will be replaced by a real implementation later.
+                // ---- NEW LOGIC ----
+                // Get all source files from layers up to and including the active one.
+                var filesToMerge = _cascadeLayers
+                    .Where(l => l.LayerIndex <= ActiveEditorLayer.LayerIndex)
+                    .SelectMany(l => l.SourceFiles)
+                    .OrderBy(f => f.LayerIndex) // Ensure files are merged in correct layer order
+                    .ToList();
+
+                // For now, we create an empty schema defaults node (Layer -1).
                 var schemaDefaultsRoot = new ObjectNode("$root", null);
 
-                // Use the merger to get the complete result
-                var mergeResult = _displayMerger.MergeForDisplay(layersToMerge, schemaDefaultsRoot);
+                // Use the refactored merger to get the complete result
+                var mergeResult = _displayMerger.MergeForDisplay(filesToMerge, schemaDefaultsRoot);
+                // ---- END NEW LOGIC ----
 
                 _displayRoot = mergeResult.MergedRoot;
                 _valueOrigins = mergeResult.ValueOrigins;
@@ -862,8 +867,8 @@ namespace JsonConfigEditor.ViewModels
             }
             else
             {
-                // SINGLE LAYER VIEW
-                _displayRoot = ActiveEditorLayer?.LayerConfigRootNode;
+                // SINGLE LAYER VIEW (This logic remains mostly the same, but now reads from the correct source)
+                _displayRoot = ActiveEditorLayer?.LayerConfigRootNode; // This will be removed in Stage 3. For now, it provides the single-layer view.
                 // Clear the origin maps as they don't apply in single-layer view
                 _valueOrigins.Clear();
                 _overrideSources.Clear();

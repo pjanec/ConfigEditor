@@ -57,6 +57,7 @@ namespace JsonConfigEditor.Core.Services
             var loadedLayers = new List<LayerLoadResult>();
 
             // 2. Iterate through each layer definition and process its folder
+            int layerIndex = 0; // Keep track of the index
             foreach (var layerDef in projectModel.Layers)
             {
                 var absoluteLayerPath = Path.GetFullPath(Path.Combine(projectDirectory, layerDef.FolderPath));
@@ -67,7 +68,7 @@ namespace JsonConfigEditor.Core.Services
                 }
                 
                 // 3. Discover and parse all JSON files within the layer's folder
-                var sourceFiles = await LoadAllFilesFromLayerFolderAsync(absoluteLayerPath);
+                var sourceFiles = await LoadAllFilesFromLayerFolderAsync(absoluteLayerPath, layerIndex++); // Pass index
                 
                 loadedLayers.Add(new LayerLoadResult(layerDef, sourceFiles));
             }
@@ -94,7 +95,7 @@ namespace JsonConfigEditor.Core.Services
         /// <summary>
         /// Finds all *.json files in a layer folder and parses each one into a SourceFileInfo object.
         /// </summary>
-        private async Task<IReadOnlyList<SourceFileInfo>> LoadAllFilesFromLayerFolderAsync(string absoluteLayerPath)
+        private async Task<IReadOnlyList<SourceFileInfo>> LoadAllFilesFromLayerFolderAsync(string absoluteLayerPath, int layerIndex)
         {
             var sourceFiles = new List<SourceFileInfo>();
             var jsonFiles = Directory.GetFiles(absoluteLayerPath, "*.json", SearchOption.AllDirectories);
@@ -109,7 +110,7 @@ namespace JsonConfigEditor.Core.Services
                     
                     var relativePath = Path.GetRelativePath(absoluteLayerPath, filePath).Replace('\\', '/');
 
-                    sourceFiles.Add(new SourceFileInfo(filePath, relativePath, domRoot, fileContent));
+                    sourceFiles.Add(new SourceFileInfo(filePath, relativePath, domRoot, fileContent, layerIndex));
                 }
                 catch(Exception ex)
                 {

@@ -25,12 +25,12 @@ namespace JsonConfigEditor.Core.Services
     public class CascadedDomDisplayMerger
     {
         /// <summary>
-        /// Merges a list of layers, starting with schema defaults, into a single result for UI display.
+        /// Merges a list of source files, starting with schema defaults, into a single result for UI display.
         /// </summary>
-        /// <param name="layersToMerge">The ordered list of cascade layers to merge (lowest to highest priority).</param>
-        /// <param name="schemaDefaultsRoot">The root node containing schema defaults, acting as Layer 0.</param>
+        /// <param name="allSourceFiles">The ordered list of source files to merge (lowest to highest priority).</param>
+        /// <param name="schemaDefaultsRoot">The root node containing schema defaults, acting as Layer -1.</param>
         /// <returns>A DisplayMergeResult containing the merged tree and origin maps.</returns>
-        public DisplayMergeResult MergeForDisplay(IReadOnlyList<CascadeLayer> layersToMerge, ObjectNode schemaDefaultsRoot)
+        public DisplayMergeResult MergeForDisplay(IReadOnlyList<SourceFileInfo> allSourceFiles, ObjectNode schemaDefaultsRoot)
         {
             var valueOrigins = new Dictionary<string, int>();
             var overrideSources = new Dictionary<string, List<int>>();
@@ -38,21 +38,24 @@ namespace JsonConfigEditor.Core.Services
             // 1. Start with a clone of the schema defaults as our base
             var mergedRoot = (ObjectNode)DomCloning.CloneNode(schemaDefaultsRoot, null);
             // 2. Initialize origin maps with Layer -1 (Schema Defaults)
-            TrackOriginsRecursive(mergedRoot, -1, valueOrigins, overrideSources); // Changed from 0 to -1
-            // 3. Merge each subsequent layer on top of the result
-            foreach (var layer in layersToMerge)
+            TrackOriginsRecursive(mergedRoot, -1, valueOrigins, overrideSources);
+            // 3. The core logic now iterates over files, not layers
+            foreach (var sourceFile in allSourceFiles)
             {
-                // Layer index no longer needs to be offset
-                int effectiveLayerIndex = layer.LayerIndex; // Changed from layer.LayerIndex + 1
-                MergeLayerIntoRecursive(mergedRoot, layer.LayerConfigRootNode, effectiveLayerIndex, valueOrigins, overrideSources);
+                if (sourceFile.DomRoot is ObjectNode sourceFileRoot)
+                {
+                    // The effective layer index comes directly from the source file
+                    int effectiveLayerIndex = sourceFile.LayerIndex;
+                    MergeNodeIntoRecursive(mergedRoot, sourceFileRoot, effectiveLayerIndex, valueOrigins, overrideSources);
+                }
             }
 
             return new DisplayMergeResult(mergedRoot, valueOrigins, overrideSources);
         }
         /// <summary>
-        /// Recursively merges a source layer's tree into the target merged tree.
+        /// Recursively merges a source node's tree into the target merged tree.
         /// </summary>
-        private void MergeLayerIntoRecursive(ObjectNode targetParent, ObjectNode sourceParent, int layerIndex, Dictionary<string, int> valueOrigins, Dictionary<string, List<int>> overrideSources)
+        private void MergeNodeIntoRecursive(ObjectNode targetParent, ObjectNode sourceParent, int layerIndex, Dictionary<string, int> valueOrigins, Dictionary<string, List<int>> overrideSources)
         {
             foreach (var (childKey, sourceChild) in sourceParent.Children)
             {
@@ -62,7 +65,7 @@ namespace JsonConfigEditor.Core.Services
                     if (existingChild is ObjectNode existingObject && sourceChild is ObjectNode sourceObject)
                     {
                         // Both are objects, so recurse into them.
-                        MergeLayerIntoRecursive(existingObject, sourceObject, layerIndex, valueOrigins, overrideSources);
+                        MergeNodeIntoRecursive(existingObject, sourceObject, layerIndex, valueOrigins, overrideSources);
                     }
                     else
                     {

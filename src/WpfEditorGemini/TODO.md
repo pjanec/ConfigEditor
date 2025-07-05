@@ -4,3 +4,5 @@ Empty object should be created.
 Folding/unfolding takes long time on little json files.
 
 BUG: Cascaded loading does not take the json file name as a level in hierarchy.
+
+Insert key for adding new stuff into array. Insert item in context menu. Inserts ABOVE selected array item.

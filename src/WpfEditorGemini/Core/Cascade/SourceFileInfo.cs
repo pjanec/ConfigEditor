@@ -32,18 +32,25 @@ namespace JsonConfigEditor.Core.Cascade
         public string OriginalText { get; }
 
         /// <summary>
+        /// Gets the index of the layer this source file belongs to.
+        /// </summary>
+        public int LayerIndex { get; }
+
+        /// <summary>
         /// Initializes a new instance of the SourceFileInfo class.
         /// </summary>
         /// <param name="filePath">The absolute path to the source file.</param>
         /// <param name="relativePath">The path relative to the layer's root folder.</param>
         /// <param name="domRoot">The parsed DomNode tree from the file.</param>
         /// <param name="originalText">The raw text content of the file.</param>
-        public SourceFileInfo(string filePath, string relativePath, DomNode domRoot, string originalText)
+        /// <param name="layerIndex">The index of the layer this source file belongs to.</param>
+        public SourceFileInfo(string filePath, string relativePath, DomNode domRoot, string originalText, int layerIndex)
         {
             FilePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
             RelativePath = relativePath ?? throw new ArgumentNullException(nameof(relativePath));
             DomRoot = domRoot ?? throw new ArgumentNullException(nameof(domRoot));
             OriginalText = originalText ?? throw new ArgumentNullException(nameof(originalText));
+            LayerIndex = layerIndex;
         }
     }
 }

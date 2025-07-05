@@ -28,13 +28,13 @@ namespace JsonConfigEditor.Core.Cascade
 
         /// <summary>
         /// Gets a list of all source files that were loaded from this layer's folder.
+        /// This is the raw, un-merged data for the layer.
         /// </summary>
         public IReadOnlyList<SourceFileInfo> SourceFiles { get; }
 
         /// <summary>
-        /// Gets the single, unified root DomNode for this layer. This node is the result
-        /// of merging all source files within this layer into a single tree.
-        /// The setter is internal to allow services to modify it during processing.
+        /// Gets the single, unified root DomNode for this layer. This property
+        /// will be removed in a later refactoring stage.
         /// </summary>
         public ObjectNode LayerConfigRootNode { get; internal set; }
 
