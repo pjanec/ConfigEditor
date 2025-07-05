@@ -665,6 +665,19 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
+        public List<LayerMenuItemViewModel> OverrideSourceLayers  
+        {  
+            get  
+            {  
+                if (!IsDomNodePresent || DomNode == null)  
+                {  
+                    return new List<LayerMenuItemViewModel>();  
+                }  
+                // Call the new authoritative method for the context menu  
+                return ParentViewModel.GetAuthoritativeOverrideLayersForNode(DomNode.Path);  
+            }  
+        }
+
 
     }
 } 

@@ -406,6 +406,14 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
             }
         }
 
+        private void DataGridRow_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is DataGridRow row && !row.IsSelected)
+            {
+                row.IsSelected = true;
+            }
+        }
+
         /// <summary>
         /// Loads default schemas from the current assembly.
         /// </summary>

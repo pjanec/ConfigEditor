@@ -53,8 +53,8 @@ namespace JsonConfigEditor.ViewModels
 
         // NEW: Add fields to store the full result of a display merge
         private ObjectNode? _displayRoot;
-        private Dictionary<string, int> _valueOrigins = new();
-        private Dictionary<string, List<int>> _overrideSources = new();
+        private Dictionary<string, int> _authoritativeValueOrigins = new();
+        private Dictionary<string, List<int>> _authoritativeOverrideSources = new();
 
         // --- Add a new region for Cascade State ---
         #region Cascade State
@@ -180,7 +180,7 @@ namespace JsonConfigEditor.ViewModels
         {
             Application.Current?.Dispatcher.Invoke(() =>
             {
-                RefreshFlatList();
+                RefreshFlatList(GetCurrentViewSpecificOrigins());
             });
         }
 
@@ -195,7 +195,7 @@ namespace JsonConfigEditor.ViewModels
             {
                 if (SetProperty(ref _showOnlyInvalidNodes, value))
                 {
-                    RefreshFlatList();
+                    RefreshFlatList(GetCurrentViewSpecificOrigins());
                 }
             }
         }
@@ -207,7 +207,7 @@ namespace JsonConfigEditor.ViewModels
             {
                 if (SetProperty(ref _showSchemaNodes, value))
                 {
-                    RefreshFlatList();
+                    RefreshFlatList(GetCurrentViewSpecificOrigins());
                 }
             }
         }
@@ -386,11 +386,17 @@ namespace JsonConfigEditor.ViewModels
         {
             IsDirty = true;
             OnPropertyChanged(nameof(WindowTitle));
+
             _ = Task.Run(() => ValidateDocumentAsync());
 
-            // --- Handle Structural Changes (Add/Remove) ---
+            // This property is true for AddNodeOperation and RemoveNodeOperation
             if (operation.RequiresFullRefresh)
             {
+                // --- OPTIMIZATION ---
+                // Only recalculate the authoritative origin maps after a structural change.
+                RecalculateAuthoritativeOriginMaps();
+                // --- END OPTIMIZATION ---
+
                 string? pathToSelect = null;
                 if (operation is RemoveNodeOperation)
                 {
@@ -402,26 +408,21 @@ namespace JsonConfigEditor.ViewModels
                     pathToSelect = operation.NodePath;
                 }
 
-                RefreshDisplay(); // Full refresh is necessary here.
+                RefreshDisplay();
 
                 if (pathToSelect != null && _persistentVmMap.TryGetValue(pathToSelect, out var vmToSelect))
                 {
                     SelectedGridItem = vmToSelect;
                 }
             }
-            // --- Handle Lightweight Value Changes (Edit/Undo Edit) ---
             else if (operation is ValueEditOperation valueOp && valueOp.NodePath != null)
             {
-                // Find the ViewModel for the node that changed.
+                // For simple value edits, no origin recalculation is needed.
+                // We just sync the UI with the new value.
                 if (_persistentVmMap.TryGetValue(valueOp.NodePath, out var vmToUpdate))
                 {
-                    // Get the new, correct value from the operation's node.
                     var newValue = valueOp.Node.Value;
-                    
-                    // Push the new state into the ViewModel, updating its display clone and properties.
                     vmToUpdate.SyncValueFromModel(newValue);
-
-                    // Ensure the item remains selected.
                     SelectedGridItem = vmToUpdate;
                 }
             }
@@ -521,20 +522,16 @@ namespace JsonConfigEditor.ViewModels
         private async void ExecuteLoadCascadeProject()
         {
             if (!CheckUnsavedChanges()) return;
-
             var openDialog = new OpenFileDialog
             {
                 Filter = "Cascade Project files (*.cascade.jsonc)|*.cascade.jsonc|All files (*.*)|*.*",
                 DefaultExt = "cascade.jsonc"
             };
-
             if (openDialog.ShowDialog() == true)
             {
                 try
                 {
-                    // Use the ProjectLoader service
                     var loadedLayersData = await _projectLoader.LoadProjectAsync(openDialog.FileName);
-                      
                     _cascadeLayers.Clear();
                     AllLayers.Clear();
 
@@ -542,7 +539,6 @@ namespace JsonConfigEditor.ViewModels
                     foreach (var layerData in loadedLayersData)
                     {
                         var mergeResult = _intraLayerMerger.Merge(layerData);
-                        // Handle errors from intra-layer merge if necessary
                         var cascadeLayer = new CascadeLayer(
                             layerIndex++,
                             layerData.Definition.Name,
@@ -555,13 +551,16 @@ namespace JsonConfigEditor.ViewModels
                         AllLayers.Add(cascadeLayer);
                     }
 
-                    // Set initial state
+                    // NEW: Perform a full project merge to populate authoritative origin maps
+                    RecalculateAuthoritativeOriginMaps();
+                    // END NEW
+
                     CurrentFilePath = openDialog.FileName;
                     IsDirty = false;
-                    ActiveEditorLayer = _cascadeLayers.LastOrDefault(); // Default to highest priority layer
-                    OnPropertyChanged(nameof(IsCascadeModeActive)); // Notify UI to show cascade controls
-                      
-                    RefreshDisplay(); // This will handle schema mapping, validation, and list building
+                    ActiveEditorLayer = _cascadeLayers.LastOrDefault();
+                    OnPropertyChanged(nameof(IsCascadeModeActive)); 
+              
+                    RefreshDisplay();
                 }
                 catch (Exception ex)
                 {
@@ -596,8 +595,6 @@ namespace JsonConfigEditor.ViewModels
             _historyService.Clear();
             try
             {
-                // 1. Read and parse the single file. The parser returns an ObjectNode named "$root"
-                // containing the file's properties as its children. This is exactly what we want.
                 var fileContent = await File.ReadAllTextAsync(filePath);
                 var domRoot = _jsonParser.ParseFromString(fileContent) as ObjectNode;
 
@@ -605,44 +602,70 @@ namespace JsonConfigEditor.ViewModels
                 {
                     throw new InvalidOperationException("The root of the loaded JSON file must be an object.");
                 }
+        
+                // This method no longer needs to create its own origin map.
+                // That will be handled by the new authoritative logic below.
 
-                // 2. Create a simple origin map. All properties come from this one file.
-                var origins = new Dictionary<string, string>();
                 var fileName = Path.GetFileName(filePath);
-                TrackOriginsForSingleFile(domRoot, fileName, origins);
-
-                // 3. Create the necessary info objects without calling IntraLayerMerger.
                 var sourceFile = new SourceFileInfo(filePath, fileName, domRoot, fileContent, 0);
         
-                // 4. Create the single CascadeLayer, using the parsed domRoot directly as its root.
                 var singleLayer = new CascadeLayer(
                     layerIndex: 0,
                     name: "Default",
                     folderPath: Path.GetDirectoryName(filePath)!,
                     sourceFiles: new List<SourceFileInfo> { sourceFile },
-                    layerConfigRootNode: domRoot, // Use the parsed root directly
-                    intraLayerValueOrigins: origins
+                    layerConfigRootNode: domRoot,
+                    intraLayerValueOrigins: new Dictionary<string, string>() // This can be simple for single-file mode
                 );
 
-                // 5. Set the new data model.
                 _cascadeLayers = new List<CascadeLayer> { singleLayer };
                 AllLayers.Clear();
                 AllLayers.Add(singleLayer);
                 ActiveEditorLayer = _cascadeLayers.FirstOrDefault();
                 OnPropertyChanged(nameof(IsCascadeModeActive));
 
+                // NEW: Populate the authoritative origin maps for the single layer
+                _authoritativeValueOrigins.Clear();
+                _authoritativeOverrideSources.Clear();
+                PopulateOriginsForSingleFile(singleLayer.LayerConfigRootNode, 0, _authoritativeValueOrigins, _authoritativeOverrideSources);
+                // END NEW
+
                 CurrentFilePath = filePath;
                 IsDirty = false;
 
                 ResetSearchState();
-                RebuildDomToSchemaMapping();
-                RefreshFlatList();
+                // This no longer needs to be called here as RefreshDisplay will do it.
+                // RebuildDomToSchemaMapping(); 
+                RefreshDisplay(); // RefreshDisplay will now use the authoritative maps
                 await ValidateDocumentAsync();
                 OnPropertyChanged(nameof(WindowTitle));
             }
             catch (Exception ex)
             {
                 throw new InvalidOperationException($"Failed to load file: {ex.Message}", ex);
+            }
+        }
+
+        // Add this new helper method to the MainViewModel class
+        private void PopulateOriginsForSingleFile(DomNode node, int layerIndex, 
+            Dictionary<string, int> valueOrigins, Dictionary<string, List<int>> overrideSources)
+        {
+            valueOrigins[node.Path] = layerIndex;
+            overrideSources[node.Path] = new List<int> { layerIndex };
+
+            if (node is ObjectNode objectNode)
+            {
+                foreach (var child in objectNode.GetChildren())
+                {
+                    PopulateOriginsForSingleFile(child, layerIndex, valueOrigins, overrideSources);
+                }
+            }
+            else if (node is ArrayNode arrayNode)
+            {
+                foreach (var item in arrayNode.GetItems())
+                {
+                    PopulateOriginsForSingleFile(item, layerIndex, valueOrigins, overrideSources);
+                }
             }
         }
 
@@ -702,13 +725,13 @@ namespace JsonConfigEditor.ViewModels
         {
             await _schemaLoader.LoadSchemasFromAssembliesAsync(assemblyPaths);
             RebuildDomToSchemaMapping();
-            RefreshFlatList();
+            RefreshFlatList(GetCurrentViewSpecificOrigins());
             await ValidateDocumentAsync();
         }
 
         internal void OnExpansionChanged(DataGridRowItemViewModel item)
         {
-            RefreshFlatList();
+            RefreshFlatList(GetCurrentViewSpecificOrigins());
         }
 
         internal void SetCurrentlyEditedItem(DataGridRowItemViewModel? item)
@@ -836,7 +859,7 @@ namespace JsonConfigEditor.ViewModels
             _domToSchemaMap.Clear();
             _validationIssuesMap.Clear();
             _persistentVmMap.Clear();
-            RefreshFlatList();
+            RefreshFlatList(GetCurrentViewSpecificOrigins());
         }
 
         private void RebuildDomToSchemaMapping()
@@ -873,50 +896,37 @@ namespace JsonConfigEditor.ViewModels
 
         private void RefreshDisplay()
         {
-            // Determine the current root node for display
+            Dictionary<string, int> viewSpecificValueOrigins;
+              
             if (IsMergedViewActive && IsCascadeModeActive && ActiveEditorLayer != null)
             {
-                // MERGED VIEW
-                // Get all layers up to and including the active one.
                 var layersToMerge = _cascadeLayers
                     .Where(l => l.LayerIndex <= ActiveEditorLayer.LayerIndex)
                     .ToList();
-
-                // For now, we create an empty schema defaults node (Layer -1).
                 var schemaDefaultsRoot = new ObjectNode("$root", null);
-                // Use the refactored merger, passing the processed layers
-                var mergeResult = _displayMerger.MergeForDisplay(layersToMerge, schemaDefaultsRoot);
-
-                _displayRoot = mergeResult.MergedRoot;
-                _valueOrigins = mergeResult.ValueOrigins;
-                _overrideSources = mergeResult.OverrideSources;
+                  
+                var viewSpecificMergeResult = _displayMerger.MergeForDisplay(layersToMerge, schemaDefaultsRoot);
+                _displayRoot = viewSpecificMergeResult.MergedRoot;
+                viewSpecificValueOrigins = viewSpecificMergeResult.ValueOrigins;
             }
             else
             {
-                // SINGLE LAYER VIEW (This logic remains mostly the same, but now reads from the correct source)
                 _displayRoot = ActiveEditorLayer?.LayerConfigRootNode;
-                // Clear the origin maps as they don't apply in single-layer view
-                _valueOrigins.Clear();
-                _overrideSources.Clear();
-
-                // Populate the origins map so that every node is correctly
-                // associated with the single active layer.
+                viewSpecificValueOrigins = new Dictionary<string, int>();
                 if (_displayRoot != null && ActiveEditorLayer != null)
                 {
-                    PopulateOriginsForSingleLayer(_displayRoot, ActiveEditorLayer.LayerIndex, _valueOrigins);
+                    // The PopulateOriginsForSingleLayer method is added back here
+                    PopulateOriginsForSingleLayer(_displayRoot, ActiveEditorLayer.LayerIndex, viewSpecificValueOrigins);
                 }
             }
 
-            // Now that the display tree is set, update the rest of the UI
             RebuildDomToSchemaMapping();
-            RefreshFlatList();
+            RefreshFlatList(viewSpecificValueOrigins); // Pass the view-specific map
             _ = ValidateDocumentAsync();
             OnPropertyChanged(nameof(WindowTitle));
         }
 
-        /// <summary>
-        /// Recursively populates the value origins map for a single layer's view.
-        /// </summary>
+        // Add this helper method back to MainViewModel
         private void PopulateOriginsForSingleLayer(DomNode node, int layerIndex, Dictionary<string, int> origins)
         {
             origins[node.Path] = layerIndex;
@@ -936,7 +946,31 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
-    private void RefreshFlatList()
+        // Helper method to get current view-specific origin data
+        private Dictionary<string, int> GetCurrentViewSpecificOrigins()
+        {
+            if (IsMergedViewActive && IsCascadeModeActive && ActiveEditorLayer != null)
+            {
+                var layersToMerge = _cascadeLayers
+                    .Where(l => l.LayerIndex <= ActiveEditorLayer.LayerIndex)
+                    .ToList();
+                var schemaDefaultsRoot = new ObjectNode("$root", null);
+                var viewSpecificMergeResult = _displayMerger.MergeForDisplay(layersToMerge, schemaDefaultsRoot);
+                return viewSpecificMergeResult.ValueOrigins;
+            }
+            else if (_displayRoot != null && ActiveEditorLayer != null)
+            {
+                var viewSpecificValueOrigins = new Dictionary<string, int>();
+                PopulateOriginsForSingleLayer(_displayRoot, ActiveEditorLayer.LayerIndex, viewSpecificValueOrigins);
+                return viewSpecificValueOrigins;
+            }
+            else
+            {
+                return new Dictionary<string, int>();
+            }
+        }
+
+    private void RefreshFlatList(Dictionary<string, int> viewSpecificValueOrigins)
         {
             // Persist the expansion state from the current ViewModels into the state dictionary.
             foreach (var vm in _persistentVmMap.Values)
@@ -960,21 +994,17 @@ namespace JsonConfigEditor.ViewModels
                 return;
             }
 
-            // 1. Preserve selection
             string? selectedPathIdentifier = SelectedGridItem?.DomNode?.Path ?? (SelectedGridItem?.IsSchemaOnlyNode == true ? SelectedGridItem.SchemaNodePathKey : null);
               
-            // 2. DELEGATE list building to the new service
             List<DataGridRowItemViewModel> tempFlatList;
-            
             if (!string.IsNullOrEmpty(FilterText))
             {
-                // Use filtering service to get visible paths
                 var visiblePaths = _filterService.GetVisibleNodePaths(rootNode, FilterText);
                 tempFlatList = _viewModelBuilder.BuildList(
                     rootNode, 
                     _persistentVmMap, 
                     _domToSchemaMap, 
-                    _valueOrigins,
+                    viewSpecificValueOrigins, // Use the view-specific map
                     ShowSchemaNodes,
                     visiblePaths
                 );
@@ -985,7 +1015,7 @@ namespace JsonConfigEditor.ViewModels
                     rootNode, 
                     _persistentVmMap, 
                     _domToSchemaMap, 
-                    _valueOrigins,
+                    viewSpecificValueOrigins, // Use the view-specific map
                     ShowSchemaNodes
                 );
             }
@@ -1193,7 +1223,7 @@ namespace JsonConfigEditor.ViewModels
             if (currentVm != null && !currentVm.IsExpanded)
             {
                 currentVm.SetExpansionStateInternal(true);
-                RefreshFlatList();
+                RefreshFlatList(GetCurrentViewSpecificOrigins());
             }
 
             foreach (var segment in segments)
@@ -1225,7 +1255,7 @@ namespace JsonConfigEditor.ViewModels
                     if (!childVm.IsExpanded)
                     {
                         childVm.SetExpansionStateInternal(true);
-                        RefreshFlatList();
+                        RefreshFlatList(GetCurrentViewSpecificOrigins());
                     }
                 }
             }
@@ -1356,7 +1386,7 @@ namespace JsonConfigEditor.ViewModels
                     }
                 }
             }
-            RefreshFlatList();
+            RefreshFlatList(GetCurrentViewSpecificOrigins());
         }
 
         public bool? GetSchemaNodeExpansionState(string pathKey)
@@ -1390,6 +1420,61 @@ namespace JsonConfigEditor.ViewModels
             {
                 ActiveEditorLayer = _cascadeLayers[layerIndex];
             }
+        }
+
+        /// <summary>  
+        /// Generates the list of ViewModels for the "Override Sources" context submenu  
+        /// for a given node path.  
+        /// </summary>  
+        public List<LayerMenuItemViewModel> GetOverrideSourceLayersForNode(string nodePath)  
+        {  
+            var menuItems = new List<LayerMenuItemViewModel>();  
+            if (!IsCascadeModeActive) return menuItems;
+
+            _authoritativeOverrideSources.TryGetValue(nodePath, out var definingLayerIndices);  
+            _authoritativeValueOrigins.TryGetValue(nodePath, out var effectiveLayerIndex);
+
+            foreach (var layer in _cascadeLayers)  
+            {  
+                bool isDefined = definingLayerIndices?.Contains(layer.LayerIndex) ?? false;  
+                bool isEffective = layer.LayerIndex == effectiveLayerIndex;
+
+                menuItems.Add(new LayerMenuItemViewModel(  
+                    layerName: layer.Name,  
+                    layerIndex: layer.LayerIndex,  
+                    isDefinedInThisLayer: isDefined,  
+                    isEffectiveInThisLayer: isEffective,  
+                    mainViewModel: this  
+                ));  
+            }  
+            return menuItems;  
+        }
+
+        // Add this new public method to MainViewModel
+        public List<LayerMenuItemViewModel> GetAuthoritativeOverrideLayersForNode(string nodePath)
+        {
+            var menuItems = new List<LayerMenuItemViewModel>();
+            if (!IsCascadeModeActive) return menuItems;
+
+            // Use the authoritative map for override sources
+            _authoritativeOverrideSources.TryGetValue(nodePath, out var definingLayerIndices);
+            // Use the authoritative map for the winning value
+            _authoritativeValueOrigins.TryGetValue(nodePath, out var effectiveLayerIndex);
+
+            foreach (var layer in _cascadeLayers)
+            {
+                bool isDefined = definingLayerIndices?.Contains(layer.LayerIndex) ?? false;
+                bool isEffective = layer.LayerIndex == effectiveLayerIndex;
+
+                menuItems.Add(new LayerMenuItemViewModel(
+                    layerName: layer.Name,
+                    layerIndex: layer.LayerIndex,
+                    isDefinedInThisLayer: isDefined,
+                    isEffectiveInThisLayer: isEffective,
+                    mainViewModel: this
+                ));
+            }
+            return menuItems;
         }
 
         /// <summary>
@@ -1707,6 +1792,21 @@ namespace JsonConfigEditor.ViewModels
                 return _cascadeLayers[layerIndex].Name;
             }
             return null;
+        }
+
+        private void RecalculateAuthoritativeOriginMaps()
+        {
+            if (!IsCascadeModeActive || !_cascadeLayers.Any())
+            {
+                _authoritativeValueOrigins.Clear();
+                _authoritativeOverrideSources.Clear();
+                return;
+            }
+
+            var schemaDefaultsRoot = new ObjectNode("$root", null);
+            var fullMergeResult = _displayMerger.MergeForDisplay(_cascadeLayers, schemaDefaultsRoot);
+            _authoritativeValueOrigins = fullMergeResult.ValueOrigins;
+            _authoritativeOverrideSources = fullMergeResult.OverrideSources;
         }
     }
 

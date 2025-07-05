@@ -38,6 +38,20 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         public ICommand SwitchToLayerCommand { get; }
 
+
+        /// <summary>
+        /// Gets a value indicating whether this layer is the one currently
+        /// selected for editing in the main UI.
+        /// </summary>
+        public bool IsCurrentlyActiveLayer
+        {
+            get
+            {
+                // Check if this layer is the one currently selected in the MainViewModel.
+                return _mainViewModel.ActiveEditorLayer?.LayerIndex == this.LayerIndex;
+            }
+        }
+
         public LayerMenuItemViewModel(
             string layerName,
             int layerIndex,
