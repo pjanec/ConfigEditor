@@ -436,10 +436,10 @@
                                     Width="100" 
                                     IsReadOnly="True" />
 
-                <!-- Path Column -->
-                <DataGridTextColumn Header="Path" 
-                                    Binding="{Binding DomNode.Path}" 
-                                    Width="200" 
+                <!-- Origin File Column -->
+                <DataGridTextColumn Header="Origin File"  
+                                    Binding="{Binding OriginFilePath}"  
+                                    Width="200"  
                                     IsReadOnly="True" />
             </DataGrid.Columns>
         </DataGrid>

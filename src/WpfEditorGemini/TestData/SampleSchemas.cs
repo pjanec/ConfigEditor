@@ -32,6 +32,29 @@ namespace JsonConfigEditor.TestData
 
         // Add this property to the main configuration schema
         public SecretsSettings Secrets { get; set; } = new();
+
+        public ServicesConfiguration Services  { get; set; } = new();
+    }
+
+
+    // Add these new classes to the bottom of TestData/SampleSchemas.cs
+
+    public class AuditingSettings
+    {
+        public bool IsEnabled { get; set; } = false;
+        public int RetentionPeriod { get; set; } = 90;
+    }
+
+    public class LoggingSettings
+    {
+        public LogLevel Level { get; set; } = LogLevel.Warning;
+        public bool EnableStructuredLogs { get; set; } = false;
+    }
+
+    public class ServicesConfiguration
+    {
+        public AuditingSettings Auditing { get; set; } = new();
+        public LoggingSettings Logging { get; set; } = new();
     }
 
     /// <summary>

@@ -659,20 +659,21 @@ namespace JsonConfigEditor.ViewModels
                 {
                     throw new InvalidOperationException("The root of the loaded JSON file must be an object.");
                 }
-        
-                // This method no longer needs to create its own origin map.
-                // That will be handled by the new authoritative logic below.
 
                 var fileName = Path.GetFileName(filePath);
+                // Create a map to track that all nodes come from this one file.
+                var intraLayerOrigins = new Dictionary<string, string>();
+                TrackOriginsForSingleFile(domRoot, fileName, intraLayerOrigins);
                 var sourceFile = new SourceFileInfo(filePath, fileName, domRoot, fileContent, 0);
-        
+
                 var singleLayer = new CascadeLayer(
                     layerIndex: 0,
                     name: "Default",
                     folderPath: Path.GetDirectoryName(filePath)!,
                     sourceFiles: new List<SourceFileInfo> { sourceFile },
                     layerConfigRootNode: domRoot,
-                    intraLayerValueOrigins: new Dictionary<string, string>() // This can be simple for single-file mode
+                    // Assign the newly created origin map to the layer.
+                    intraLayerValueOrigins: intraLayerOrigins
                 );
 
                 _cascadeLayers = new List<CascadeLayer> { singleLayer };
@@ -680,19 +681,15 @@ namespace JsonConfigEditor.ViewModels
                 AllLayers.Add(singleLayer);
                 ActiveEditorLayer = _cascadeLayers.FirstOrDefault();
                 OnPropertyChanged(nameof(IsCascadeModeActive));
-
-                // NEW: Populate the authoritative origin maps for the single layer
+                  
                 _authoritativeValueOrigins.Clear();
                 _authoritativeOverrideSources.Clear();
                 PopulateOriginsForSingleFile(singleLayer.LayerConfigRootNode, 0, _authoritativeValueOrigins, _authoritativeOverrideSources);
-                // END NEW
-
+                  
                 CurrentFilePath = filePath;
 
                 ResetSearchState();
-                // This no longer needs to be called here as RefreshDisplay will do it.
-                // RebuildDomToSchemaMapping(); 
-                RefreshDisplay(); // RefreshDisplay will now use the authoritative maps
+                RefreshDisplay();
                 await ValidateDocumentAsync();
                 OnPropertyChanged(nameof(WindowTitle));
             }
@@ -1941,40 +1938,79 @@ namespace JsonConfigEditor.ViewModels
 
         private List<string> GetSuggestedFilePaths(string domPath)
         {
-            // Use a dictionary to store path -> reason, preventing duplicates and storing context.
-            var suggestions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var segments = domPath.Split('/');
-            if (segments.Length < 2) return new List<string> { "root.json" };
+            // A raw list to hold all potential suggestions with their priority.
+            // Lower priority number = more important.
+            var rawSuggestions = new List<(string Path, string Reason, int Priority)>();
+            var segments = domPath.Split('/')
+                .Where(s => !string.IsNullOrEmpty(s) && s != "$root")
+                .ToList();
 
-            var topLevelProperty = segments[1]; // e.g., "Secrets"
-
-            // Heuristic 1: Look for precedent in other layers
-            foreach (var layer in _cascadeLayers.Where(l => l != ActiveEditorLayer))
+            if (segments.Count == 0)
             {
-                var precedentPaths = layer.IntraLayerValueOrigins
-                    .Where(kvp => kvp.Key.Split('/').Contains(topLevelProperty, StringComparer.OrdinalIgnoreCase))
-                    .Select(kvp => kvp.Value) // Get the file path
-                    .Distinct();
+                // For a root-level property, the only option is root.json, with no reason.
+                return new List<string> { "root.json" };
+            }
+    
+            // 1. Add the primary path suggestion with a low priority (3). The reason is now empty.
+            string primaryPath = $"{segments.First()}.json";
+            rawSuggestions.Add((primaryPath, "", 3));
 
-                foreach(var path in precedentPaths)
+            // 2. Walk up the hierarchy from the direct parent to find precedents and other valid paths.
+            for (int i = segments.Count - 1; i >= 1; i--)
+            {
+                var currentParentSegments = segments.Take(i).ToList();
+                var currentParentPath = "$root/" + string.Join('/', currentParentSegments);
+
+                var precedents = new Dictionary<string, List<string>>();
+                int totalDefiningLayers = 0;
+                foreach (var layer in _cascadeLayers.Where(l => l != ActiveEditorLayer))
                 {
-                    // Store the path and the reason it was suggested.
-                    if (!suggestions.ContainsKey(path))
+                    var filesForThisParent = layer.IntraLayerValueOrigins
+                        .Where(kvp => kvp.Key.StartsWith(currentParentPath + "/", StringComparison.OrdinalIgnoreCase))
+                        .Select(kvp => kvp.Value)
+                        .Distinct().ToList();
+
+                    if (filesForThisParent.Any())
                     {
-                        suggestions.Add(path, $"from '{layer.Name}' layer");
+                        totalDefiningLayers++;
+                        foreach (var filePath in filesForThisParent)
+                        {
+                            if (!precedents.ContainsKey(filePath)) precedents[filePath] = new List<string>();
+                            precedents[filePath].Add(layer.Name);
+                        }
                     }
                 }
+
+                // Add found precedents to the raw list with a high priority (1 or 2).
+                foreach (var precedent in precedents)
+                {
+                    bool isSameAsOthers = precedent.Value.Count == totalDefiningLayers && totalDefiningLayers > 1;
+                    string reason = isSameAsOthers ? "same as other layers" : $"from '{string.Join("', '", precedent.Value)}'";
+                    int priority = isSameAsOthers ? 1 : 2; // Priority 1 is the best.
+                    rawSuggestions.Add((precedent.Key, reason, priority));
+                }
+
+                // Add the ancestor path as a fallback with the lowest priority (4). The reason is now empty.
+                var currentParentName = currentParentSegments.Last();
+                var directorySegments = currentParentSegments.Take(currentParentSegments.Count - 1);
+                var directoryPath = string.Join('/', directorySegments);
+                string ancestorPath = string.IsNullOrEmpty(directoryPath)
+                    ? $"{currentParentName}.json"
+                    : $"{directoryPath}/{currentParentName}.json";
+        
+                rawSuggestions.Add((ancestorPath, "", 4));
             }
 
-            // Heuristic 2: Add the default convention
-            string conventionalPath = $"{topLevelProperty}.json";
-            if (!suggestions.ContainsKey(conventionalPath))
-            {
-                suggestions.Add(conventionalPath, "conventional default");
-            }
+            // 3. Process the raw list to get the final, sorted, and distinct list.
+            var finalSuggestions = rawSuggestions
+                .GroupBy(s => s.Path) // Group by the file path to handle duplicates.
+                .Select(g => g.OrderBy(s => s.Priority).First()) // From each group, pick the one with the best (lowest) priority.
+                .OrderBy(s => s.Priority) // Sort the final list by that priority.
+                .ThenBy(s => s.Path)      // Then alphabetically for consistent ordering.
+                .Select(s => string.IsNullOrWhiteSpace(s.Reason) ? s.Path : $"{s.Path}  ({s.Reason})") // Format for display.
+                .ToList();
 
-            // Format the dictionary into a list of display strings for the UI.
-            return suggestions.Select(kvp => $"{kvp.Key}  ({kvp.Value})").ToList();
+            return finalSuggestions;
         }
 
         private void FinalizeNodeCreation(DomNode parent, DomNode newNode)
@@ -1993,28 +2029,18 @@ namespace JsonConfigEditor.ViewModels
             else
             {
                 // FAILURE: No origin could be deduced. Prompt the user as a last resort.
-                Action<string> onPathSelected = chosenPathWithReason =>
+                Action<string> onPathSelected = chosenPath =>
                 {
-                    string chosenPath = chosenPathWithReason.Split(' ').First();
-            
                     // Assign the user's chosen path and add the node.
                     TrackOriginForNewNodeRecursive(newNode, chosenPath, ActiveEditorLayer.IntraLayerValueOrigins);
                     AddNodeWithHistory(parent, newNode, newNode.Name);
                 };
 
-                // This is the existing dialog-showing logic
-                Func<string, string?> openPathBuilder = (domPath) => {
-                    var pathBuilderVm = new PathBuilderViewModel(domPath);
-                    var pathBuilderDialog = new PathBuilderDialog { DataContext = pathBuilderVm, Owner = Application.Current.MainWindow };
-                    if (pathBuilderDialog.ShowDialog() == true)
-                    {
-                        return pathBuilderVm.SelectedPath;
-                    }
-                    return null;
-                };
-
                 var suggestions = GetSuggestedFilePaths(newNode.Path);
-                var vm = new AssignSourceFileViewModel(suggestions, onPathSelected, openPathBuilder, newNode.Path);
+                var activeLayerName = ActiveEditorLayer?.Name ?? "Unknown Layer";
+
+                // Call the updated ViewModel constructor.
+                var vm = new AssignSourceFileViewModel(suggestions, onPathSelected, newNode.Path, activeLayerName);
                 var dialog = new AssignSourceFileDialog { DataContext = vm, Owner = Application.Current.MainWindow };
 
                 dialog.ShowDialog();

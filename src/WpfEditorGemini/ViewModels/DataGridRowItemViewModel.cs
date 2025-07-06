@@ -665,6 +665,51 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
+        /// <summary>
+        /// Gets the relative file path where this node's value originates from.
+        /// </summary>
+        public string OriginFilePath
+        {
+            get
+            {
+                // For placeholders or container nodes (Object/Array), display nothing.
+                if (IsSchemaOnlyNode || IsAddItemPlaceholder || DomNode is ObjectNode || DomNode is ArrayNode)
+                {
+                    return string.Empty;
+                }
+
+                if (DomNode == null)
+                {
+                    return string.Empty;
+                }
+
+                // For leaf nodes (ValueNode, RefNode), find their definitive origin file.
+                // The OriginLayerIndex property tells us which layer provides the final, effective value.
+                if (OriginLayerIndex >= 0 && OriginLayerIndex < ParentViewModel.AllLayers.Count)
+                {
+                    // Get the correct layer using the index.
+                    var originLayer = ParentViewModel.AllLayers[OriginLayerIndex];
+            
+                    // Look up the node's path in that specific layer's origin map.
+                    if (originLayer.IntraLayerValueOrigins.TryGetValue(DomNode.Path, out var filePath))
+                    {
+                        return filePath;
+                    }
+                }
+
+                // This provides a fallback for newly created nodes that might not have an
+                // origin index assigned yet, but whose origin has been tracked in the active layer.
+                if (ParentViewModel.ActiveEditorLayer != null && 
+                    ParentViewModel.ActiveEditorLayer.IntraLayerValueOrigins.TryGetValue(DomNode.Path, out var newFilePath))
+                {
+                    return newFilePath;
+                }
+
+                // If no origin can be found for the leaf node, return an empty string.
+                return string.Empty;
+            }
+        }
+        
         public List<LayerMenuItemViewModel> OverrideSourceLayers  
         {  
             get  

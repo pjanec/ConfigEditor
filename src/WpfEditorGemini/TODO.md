@@ -22,3 +22,8 @@ On save, the editor does not clenup the abandoned TestData\config\1_base\sub1\ba
 was absorbed into TestData\config\1_base\sub1.json. This pre-save check is probably also missing.
 
 
+BUG: Editor allows editing the Value field of a object-typed schema node
+
+File name/folder case of json files vs. schema defined object/class field names - editor differentitates! Needs case independency...
+Or at least the editor should check really hard the letter case compatibility between schema, all existing files/folder and all content in the json files.
+
