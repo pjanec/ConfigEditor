@@ -163,6 +163,9 @@ namespace JsonConfigEditor.ViewModels
         public ICommand DismissCriticalErrorCommand { get; }
         public ICommand CheckProjectStructureCommand { get; }
         public ICommand ToggleDiagnosticsPanelCommand { get; }
+        public ICommand ToggleMergedViewCommand { get; }
+        public ICommand ToggleSchemaNodesCommand { get; }
+        public ICommand ToggleInvalidOnlyCommand { get; }
 
         // --- Public Properties ---
 
@@ -317,6 +320,9 @@ namespace JsonConfigEditor.ViewModels
             DismissCriticalErrorCommand = new RelayCommand(ExecuteDismissCriticalError);
             CheckProjectStructureCommand = new RelayCommand(ExecuteCheckProjectStructure, () => IsCascadeModeActive);
             ToggleDiagnosticsPanelCommand = new RelayCommand(ExecuteToggleDiagnosticsPanel);
+            ToggleMergedViewCommand = new RelayCommand(ExecuteToggleMergedView);
+            ToggleSchemaNodesCommand = new RelayCommand(ExecuteToggleSchemaNodes);
+            ToggleInvalidOnlyCommand = new RelayCommand(ExecuteToggleInvalidOnly);
             SaveFileCommand = new RelayCommand(ExecuteSaveFile, CanExecuteSaveFile);
             SaveAsFileCommand = new RelayCommand(ExecuteSaveAsFile);
             ExitCommand = new RelayCommand(ExecuteExit);
@@ -1627,6 +1633,21 @@ namespace JsonConfigEditor.ViewModels
         private void ExecuteToggleDiagnosticsPanel()
         {
             IsDiagnosticsPanelVisible = !IsDiagnosticsPanelVisible;
+        }
+
+        private void ExecuteToggleMergedView()
+        {
+            IsMergedViewActive = !IsMergedViewActive;
+        }
+
+        private void ExecuteToggleSchemaNodes()
+        {
+            ShowSchemaNodes = !ShowSchemaNodes;
+        }
+
+        private void ExecuteToggleInvalidOnly()
+        {
+            ShowOnlyInvalidNodes = !ShowOnlyInvalidNodes;
         }
 
         /// <summary>

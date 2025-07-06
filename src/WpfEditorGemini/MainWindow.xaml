@@ -228,24 +228,54 @@
                           VerticalContentAlignment="Center"
                           ToolTip="Select the active layer for editing."/>
 
-                <CheckBox IsChecked="{Binding IsMergedViewActive, Mode=TwoWay}"
-                          Content="Show Merged Result"
-                          VerticalAlignment="Center"
-                          Margin="10,0,0,0"
-                          ToolTip="Toggle between viewing the final merged configuration and only the selected layer's overrides."/>
+                <Button Command="{Binding ToggleMergedViewCommand}"
+                        ToolTip="Toggle between viewing the final merged configuration and only the selected layer's overrides"
+                        Margin="10,0,0,0">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsMergedViewActive}" Value="True">
+                                    <Setter Property="Background" Value="LightBlue" />
+                                    <Setter Property="BorderBrush" Value="Blue" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <TextBlock Text="🔗" FontSize="14" />
+                </Button>
             </StackPanel>
             
             <Separator />
             
             <!-- View Options -->
-            <CheckBox IsChecked="{Binding ShowSchemaNodes}" 
-                      Content="Schema Nodes" 
-                      VerticalAlignment="Center" 
-                      ToolTip="Show schema-only nodes that can be added" />
-            <CheckBox IsChecked="{Binding ShowOnlyInvalidNodes}" 
-                      Content="Invalid Only" 
-                      VerticalAlignment="Center" 
-                      ToolTip="Show only nodes with validation errors" />
+            <Button Command="{Binding ToggleSchemaNodesCommand}"
+                    ToolTip="Show schema-only nodes that can be added">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ShowSchemaNodes}" Value="True">
+                                <Setter Property="Background" Value="LightGreen" />
+                                <Setter Property="BorderBrush" Value="Green" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+                <TextBlock Text="📋" FontSize="14" />
+            </Button>
+            <Button Command="{Binding ToggleInvalidOnlyCommand}"
+                    ToolTip="Show only nodes with validation errors">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ShowOnlyInvalidNodes}" Value="True">
+                                <Setter Property="Background" Value="LightCoral" />
+                                <Setter Property="BorderBrush" Value="Red" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+                <TextBlock Text="⚠️" FontSize="14" />
+            </Button>
         </ToolBar>
 
         <!-- Main DataGrid -->
