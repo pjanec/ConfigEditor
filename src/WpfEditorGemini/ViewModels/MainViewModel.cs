@@ -1941,59 +1941,71 @@ namespace JsonConfigEditor.ViewModels
 
         private List<string> GetSuggestedFilePaths(string domPath)
         {
-            var suggestions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Use a dictionary to store path -> reason, preventing duplicates and storing context.
+            var suggestions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var segments = domPath.Split('/');
             if (segments.Length < 2) return new List<string> { "root.json" };
 
-            var topLevelProperty = segments[1]; // e.g., "features" from "$root/features/analytics"
+            var topLevelProperty = segments[1]; // e.g., "Secrets"
 
             // Heuristic 1: Look for precedent in other layers
             foreach (var layer in _cascadeLayers.Where(l => l != ActiveEditorLayer))
             {
-                // Find any file that houses a node at the top-level path
                 var precedentPaths = layer.IntraLayerValueOrigins
-                    .Where(kvp => kvp.Key.StartsWith($"$root/{topLevelProperty}", StringComparison.OrdinalIgnoreCase))
+                    .Where(kvp => kvp.Key.Split('/').Contains(topLevelProperty, StringComparer.OrdinalIgnoreCase))
                     .Select(kvp => kvp.Value) // Get the file path
                     .Distinct();
 
-                foreach (var path in precedentPaths)
+                foreach(var path in precedentPaths)
                 {
-                    suggestions.Add(path);
+                    // Store the path and the reason it was suggested.
+                    if (!suggestions.ContainsKey(path))
+                    {
+                        suggestions.Add(path, $"from '{layer.Name}' layer");
+                    }
                 }
             }
 
-            // Heuristic 2: Add the default convention (e.g., "features.json")
-            suggestions.Add($"{topLevelProperty}.json");
+            // Heuristic 2: Add the default convention
+            string conventionalPath = $"{topLevelProperty}.json";
+            if (!suggestions.ContainsKey(conventionalPath))
+            {
+                suggestions.Add(conventionalPath, "conventional default");
+            }
 
-            return suggestions.ToList();
+            // Format the dictionary into a list of display strings for the UI.
+            return suggestions.Select(kvp => $"{kvp.Key}  ({kvp.Value})").ToList();
         }
 
         private void FinalizeNodeCreation(DomNode parent, DomNode newNode)
         {
             if (ActiveEditorLayer == null) return;
 
-            if (IsNewFileRequiredForNode(newNode))
+            // Try to deduce the origin automatically first.
+            var deducedOrigin = DeduceOriginForNewNode(newNode);
+
+            if (deducedOrigin != null)
             {
-                // --- A new file is required, so start the dialog workflow ---
-
-                // This is the final action, executed only after a path is successfully chosen.
-                Action<string> onPathSelected = chosenPath =>
+                // SUCCESS: An origin was deduced. Assign it and add the node without prompting.
+                TrackOriginForNewNodeRecursive(newNode, deducedOrigin, ActiveEditorLayer.IntraLayerValueOrigins);
+                AddNodeWithHistory(parent, newNode, newNode.Name);
+            }
+            else
+            {
+                // FAILURE: No origin could be deduced. Prompt the user as a last resort.
+                Action<string> onPathSelected = chosenPathWithReason =>
                 {
-                    // FIX: The node must be added to the parent *first* so that the subsequent
-                    // recursive origin tracking can find the complete subtree.
+                    string chosenPath = chosenPathWithReason.Split(' ').First();
+            
+                    // Assign the user's chosen path and add the node.
+                    TrackOriginForNewNodeRecursive(newNode, chosenPath, ActiveEditorLayer.IntraLayerValueOrigins);
                     AddNodeWithHistory(parent, newNode, newNode.Name);
-
-                    // FIX: Track the origin for the parent node. This ensures that the object
-                    // corresponding to the file's root ({ "features": ... }) is mapped, and
-                    // the recursive call will also map the newNode that was just added.
-                    TrackOriginForNewNodeRecursive(parent, chosenPath, ActiveEditorLayer.IntraLayerValueOrigins);
                 };
 
-                // This function is passed to the dialog VM to let it open the secondary dialog.
+                // This is the existing dialog-showing logic
                 Func<string, string?> openPathBuilder = (domPath) => {
                     var pathBuilderVm = new PathBuilderViewModel(domPath);
                     var pathBuilderDialog = new PathBuilderDialog { DataContext = pathBuilderVm, Owner = Application.Current.MainWindow };
-                    // ShowDialog returns bool?, so check for true
                     if (pathBuilderDialog.ShowDialog() == true)
                     {
                         return pathBuilderVm.SelectedPath;
@@ -2005,16 +2017,7 @@ namespace JsonConfigEditor.ViewModels
                 var vm = new AssignSourceFileViewModel(suggestions, onPathSelected, openPathBuilder, newNode.Path);
                 var dialog = new AssignSourceFileDialog { DataContext = vm, Owner = Application.Current.MainWindow };
 
-                // Show the dialog. If the user selects a path and clicks OK, the `onPathSelected`
-                // callback will be executed, finalizing the node creation. If they cancel, nothing happens.
                 dialog.ShowDialog();
-            }
-            else
-            {
-                // --- No new file needed, proceed directly ---
-                var parentOrigin = ActiveEditorLayer.IntraLayerValueOrigins[parent.Path];
-                TrackOriginForNewNodeRecursive(newNode, parentOrigin, ActiveEditorLayer.IntraLayerValueOrigins);
-                AddNodeWithHistory(parent, newNode, newNode.Name);
             }
         }
 
@@ -2074,6 +2077,82 @@ namespace JsonConfigEditor.ViewModels
             HasCriticalErrors = true;
             IsDiagnosticsPanelVisible = true; // Automatically open the panel
             SearchStatusText = $"Project loaded with {issues.Count} critical errors."; // Reuse status text property
+        }
+
+        /// <summary>
+        /// Tries to deduce the destination file for a new node by checking its surroundings.
+        /// </summary>
+        /// <returns>The deduced file path, or null if no origin can be determined.</returns>
+        private string? DeduceOriginForNewNode(DomNode node)
+        {
+            var parent = node.Parent;
+            if (parent == null || ActiveEditorLayer == null)
+            {
+                return null;
+            }
+
+            // 1. First, check the immediate parent. This is the most direct relationship.
+            if (ActiveEditorLayer.IntraLayerValueOrigins.TryGetValue(parent.Path, out var parentOrigin))
+            {
+                return parentOrigin;
+            }
+
+            // 2. If parent has no origin, check siblings and their descendants for a clue.
+            Func<DomNode, string?>? findDescendantOrigin = null;
+            findDescendantOrigin = (startNode) =>
+            {
+                if (startNode is ValueNode || startNode is RefNode)
+                {
+                    return ActiveEditorLayer.IntraLayerValueOrigins.GetValueOrDefault(startNode.Path);
+                }
+                if (startNode is ObjectNode obj)
+                {
+                    foreach (var child in obj.GetChildren())
+                    {
+                        var origin = findDescendantOrigin!(child);
+                        if (origin != null) return origin;
+                    }
+                }
+                else if (startNode is ArrayNode arr)
+                {
+                    foreach (var item in arr.GetItems())
+                    {
+                        var origin = findDescendantOrigin!(item);
+                        if (origin != null) return origin;
+                    }
+                }
+                return null;
+            };
+    
+            // THE FIX: Get the list of siblings based on the parent's actual type.
+            IEnumerable<DomNode> siblings;
+            if (parent is ObjectNode objectParent)
+            {
+                siblings = objectParent.GetChildren();
+            }
+            else if (parent is ArrayNode arrayParent)
+            {
+                siblings = arrayParent.GetItems();
+            }
+            else
+            {
+                // The parent is a type that cannot have children, so there are no siblings.
+                return null;
+            }
+
+            // Check all siblings of the new node.
+            foreach (var sibling in siblings)
+            {
+                if (sibling == node) continue; // Don't check the new node itself
+                var deducedOrigin = findDescendantOrigin(sibling);
+                if (deducedOrigin != null)
+                {
+                    return deducedOrigin; // Found a home!
+                }
+            }
+
+            // 3. No origin could be deduced from any surrounding properties.
+            return null;
         }
     }
 

@@ -4,6 +4,13 @@ using System.ComponentModel.DataAnnotations;
 
 namespace JsonConfigEditor.TestData
 {
+    // Add this new class for the secrets schema
+    public class SecretsSettings
+    {
+        public string ApiKey { get; set; } = "DEFAULT_API_KEY";
+        public string Token { get; set; } = "DEFAULT_TOKEN";
+    }
+
     /// <summary>
     /// Sample schema class for testing the root configuration.
     /// </summary>
@@ -21,8 +28,11 @@ namespace JsonConfigEditor.TestData
         
         public List<string> AllowedHosts { get; set; } = new() { "localhost" };
 
-        public FeatureConfiguration features  { get; set; }     = new();
-	}
+        public FeatureConfiguration features  { get; set; } = new();
+
+        // Add this property to the main configuration schema
+        public SecretsSettings Secrets { get; set; } = new();
+    }
 
     /// <summary>
     /// Sample schema class for database configuration.
