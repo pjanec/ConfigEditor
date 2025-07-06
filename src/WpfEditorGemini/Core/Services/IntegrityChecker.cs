@@ -76,7 +76,7 @@ namespace JsonConfigEditor.Core.Services
         {
             var issues = new List<IntegrityIssue>();
             // Key: DOM Path (e.g., "/database"). Value: Tuple of (Canonical Relative File Path, Canonical Layer Name)
-            var canonicalPaths = new Dictionary<string, (string FilePath, string LayerName)>();
+            var canonicalPaths = new Dictionary<string, (string FilePath, string LayerName)>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var layer in allLayers)
             {

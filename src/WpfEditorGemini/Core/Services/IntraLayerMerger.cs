@@ -37,7 +37,7 @@ namespace JsonConfigEditor.Core.Services
         public IntraLayerMergeResult Merge(LayerLoadResult layerLoadResult)
         {
             var rootNode = new ObjectNode("$root", null);
-            var origins = new Dictionary<string, string>();
+            var origins = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var errors = new List<string>();
             var proposedConsolidations = new List<ConsolidationAction>(); // Instantiate the new list
 

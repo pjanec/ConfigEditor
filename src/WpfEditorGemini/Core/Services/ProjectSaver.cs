@@ -124,7 +124,7 @@ namespace JsonConfigEditor.Core.Services
             var plan = new Dictionary<string, ObjectNode>();
 
             // Get a list of all files that need to be considered for saving.  
-            var filesToProcess = new HashSet<string>(layer.IntraLayerValueOrigins.Values);  
+            var filesToProcess = new HashSet<string>(layer.IntraLayerValueOrigins.Values, StringComparer.OrdinalIgnoreCase);  
             foreach (var sourceFile in layer.SourceFiles)  
             {  
                 filesToProcess.Add(sourceFile.RelativePath);  

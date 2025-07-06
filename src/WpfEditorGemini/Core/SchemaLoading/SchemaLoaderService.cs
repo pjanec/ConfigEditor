@@ -27,7 +27,7 @@ namespace JsonConfigEditor.Core.SchemaLoading
         private readonly CustomUIRegistryService _uiRegistry;
         
         // Missing field from previous erroneous edit
-        private readonly Dictionary<string, Type> _processedTypes = new Dictionary<string, Type>();
+        private readonly Dictionary<string, Type> _processedTypes = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SchemaLoaderService"/> class.

@@ -107,10 +107,10 @@ namespace JsonConfigEditor.ViewModels
         public bool IsCascadeModeActive => AllLayers.Count > 1;
         #endregion
         // Dictionaries are now keyed by the node's unique string path for stability
-        private readonly Dictionary<string, SchemaNode?> _domToSchemaMap = new();
-        private readonly Dictionary<string, List<ValidationIssue>> _validationIssuesMap = new();
-        private readonly Dictionary<string, DataGridRowItemViewModel> _persistentVmMap = new();
-        private readonly Dictionary<string, bool> _schemaNodeExpansionState = new(); // For schema-only node states
+        private readonly Dictionary<string, SchemaNode?> _domToSchemaMap = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, List<ValidationIssue>> _validationIssuesMap = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DataGridRowItemViewModel> _persistentVmMap = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, bool> _schemaNodeExpansionState = new(StringComparer.OrdinalIgnoreCase); // For schema-only node states
 
         // --- Private Fields: UI State & Filters/Search ---
         private string? _currentFilePath;
@@ -1897,7 +1897,7 @@ namespace JsonConfigEditor.ViewModels
         {
             if (rootNode == null) return null;
 
-            if (string.IsNullOrEmpty(path) || path == rootNode.Path) return rootNode;
+            if (string.IsNullOrEmpty(path) || path.Equals(rootNode.Path, StringComparison.OrdinalIgnoreCase)) return rootNode;
 
             string normalizedPath = path.StartsWith("$root/") ? path.Substring("$root/".Length) : path;
             if (string.IsNullOrEmpty(normalizedPath)) return rootNode;
