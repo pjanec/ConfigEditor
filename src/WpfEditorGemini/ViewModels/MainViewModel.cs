@@ -22,6 +22,7 @@ using JsonConfigEditor.Core.Cascade;
 using JsonConfigEditor.Core.Services;
 using JsonConfigEditor.Core.History;
 using JsonConfigEditor.Views; // Add this for IntegrityCheckDialog
+using JsonConfigEditor.ViewModels; // Add this for new ViewModels
 
 namespace JsonConfigEditor.ViewModels
 {
@@ -891,9 +892,8 @@ namespace JsonConfigEditor.ViewModels
                 JsonElement finalValue = CreateJsonElementFromString(finalValueStr, schemaOnlyVm.SchemaContextNode.ClrType);
                 var newNode = new ValueNode(nodeName, parentNode, finalValue);
 
-                // 3. Now, perform the SINGLE Add operation for the completed node and record it.
-                // This will trigger the one-and-only refresh on the final, correct data model.
-                AddNodeWithHistory(parentNode, newNode, nodeName);
+                // *** CHANGE: Instead of calling AddNodeWithHistory, call the central method ***
+                FinalizeNodeCreation(parentNode, newNode);
                 
                 return true;
             }
@@ -1716,17 +1716,9 @@ namespace JsonConfigEditor.ViewModels
 
                 var nodeName = path.Split('/').Last();
                 var newNode = _nodeFactory.CreateFromValue(value, nodeName, parentObject, schema);
-                AddNodeWithHistory(parentObject, newNode, nodeName);
-
-                // --- MODIFICATION START ---
-                // If this action created a new top-level node in the active layer,
-                // we must track its file origin.
-                if (newNode.Parent == ActiveEditorLayer?.LayerConfigRootNode)
-                {
-                    string relativeFilePath = $"{newNode.Name.ToLower()}.json";
-                    TrackOriginForNewNodeRecursive(newNode, relativeFilePath, ActiveEditorLayer.IntraLayerValueOrigins);
-                }
-                // --- MODIFICATION END ---
+                
+                // *** CHANGE: Call the central method ***
+                FinalizeNodeCreation(parentObject, newNode);
 
                 ActiveEditorLayer.IsDirty = true;
                 RefreshDisplay();
@@ -1861,17 +1853,8 @@ namespace JsonConfigEditor.ViewModels
             // 5. Apply the specific modification (add, edit, or delete) to the new array.
             modificationAction(newArrayInActiveLayer);
 
-            // 6. Add the final, modified array to the active layer's data model.
-            AddNodeWithHistory(parentObject, newArrayInActiveLayer, newArrayInActiveLayer.Name);
-
-            // --- MODIFICATION START ---
-            // This new array is a top-level override, so we must track its file origin.
-            if (newArrayInActiveLayer.Parent == ActiveEditorLayer?.LayerConfigRootNode)
-            {
-                string relativeFilePath = $"{newArrayInActiveLayer.Name.ToLower()}.json";
-                TrackOriginForNewNodeRecursive(newArrayInActiveLayer, relativeFilePath, ActiveEditorLayer.IntraLayerValueOrigins);
-            }
-            // --- MODIFICATION END ---
+            // *** CHANGE: Call the central method with the new array ***
+            FinalizeNodeCreation(parentObject, newArrayInActiveLayer);
 
             // 7. Mark dirty and refresh the UI (this might be better outside the helper)
             ActiveEditorLayer.IsDirty = true;
@@ -1942,6 +1925,96 @@ namespace JsonConfigEditor.ViewModels
                 {
                     TrackOriginForNewNodeRecursive(item, relativeFilePath, origins);
                 }
+            }
+        }
+
+        // --- Stage 2 Implementation: Central File Assignment Workflow ---
+
+        private bool IsNewFileRequiredForNode(DomNode node)
+        {
+            if (ActiveEditorLayer == null || node.Parent == null) return false;
+
+            // A new file is needed if the node's immediate parent does not have a source file  
+            // assigned to it within the currently active layer.
+            return !ActiveEditorLayer.IntraLayerValueOrigins.ContainsKey(node.Parent.Path);
+        }
+
+        private List<string> GetSuggestedFilePaths(string domPath)
+        {
+            var suggestions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var segments = domPath.Split('/');
+            if (segments.Length < 2) return new List<string> { "root.json" };
+
+            var topLevelProperty = segments[1]; // e.g., "features" from "$root/features/analytics"
+
+            // Heuristic 1: Look for precedent in other layers
+            foreach (var layer in _cascadeLayers.Where(l => l != ActiveEditorLayer))
+            {
+                // Find any file that houses a node at the top-level path
+                var precedentPaths = layer.IntraLayerValueOrigins
+                    .Where(kvp => kvp.Key.StartsWith($"$root/{topLevelProperty}", StringComparison.OrdinalIgnoreCase))
+                    .Select(kvp => kvp.Value) // Get the file path
+                    .Distinct();
+
+                foreach (var path in precedentPaths)
+                {
+                    suggestions.Add(path);
+                }
+            }
+
+            // Heuristic 2: Add the default convention (e.g., "features.json")
+            suggestions.Add($"{topLevelProperty}.json");
+
+            return suggestions.ToList();
+        }
+
+        private void FinalizeNodeCreation(DomNode parent, DomNode newNode)
+        {
+            if (ActiveEditorLayer == null) return;
+
+            if (IsNewFileRequiredForNode(newNode))
+            {
+                // --- A new file is required, so start the dialog workflow ---
+
+                // This is the final action, executed only after a path is successfully chosen.
+                Action<string> onPathSelected = chosenPath =>
+                {
+                    // FIX: The node must be added to the parent *first* so that the subsequent
+                    // recursive origin tracking can find the complete subtree.
+                    AddNodeWithHistory(parent, newNode, newNode.Name);
+
+                    // FIX: Track the origin for the parent node. This ensures that the object
+                    // corresponding to the file's root ({ "features": ... }) is mapped, and
+                    // the recursive call will also map the newNode that was just added.
+                    TrackOriginForNewNodeRecursive(parent, chosenPath, ActiveEditorLayer.IntraLayerValueOrigins);
+                };
+
+                // This function is passed to the dialog VM to let it open the secondary dialog.
+                Func<string, string?> openPathBuilder = (domPath) => {
+                    var pathBuilderVm = new PathBuilderViewModel(domPath);
+                    var pathBuilderDialog = new PathBuilderDialog { DataContext = pathBuilderVm, Owner = Application.Current.MainWindow };
+                    // ShowDialog returns bool?, so check for true
+                    if (pathBuilderDialog.ShowDialog() == true)
+                    {
+                        return pathBuilderVm.SelectedPath;
+                    }
+                    return null;
+                };
+
+                var suggestions = GetSuggestedFilePaths(newNode.Path);
+                var vm = new AssignSourceFileViewModel(suggestions, onPathSelected, openPathBuilder, newNode.Path);
+                var dialog = new AssignSourceFileDialog { DataContext = vm, Owner = Application.Current.MainWindow };
+
+                // Show the dialog. If the user selects a path and clicks OK, the `onPathSelected`
+                // callback will be executed, finalizing the node creation. If they cancel, nothing happens.
+                dialog.ShowDialog();
+            }
+            else
+            {
+                // --- No new file needed, proceed directly ---
+                var parentOrigin = ActiveEditorLayer.IntraLayerValueOrigins[parent.Path];
+                TrackOriginForNewNodeRecursive(newNode, parentOrigin, ActiveEditorLayer.IntraLayerValueOrigins);
+                AddNodeWithHistory(parent, newNode, newNode.Name);
             }
         }
 

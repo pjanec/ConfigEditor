@@ -1,1 +1,3 @@
- { "aaa": "new_value" }
+{
+  "aaa": "new_value"
+}
