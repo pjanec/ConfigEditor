@@ -154,8 +154,9 @@
             <MenuItem Header="_View">
                 <MenuItem Header="Show _Schema Nodes" IsCheckable="True" IsChecked="{Binding ShowSchemaNodes}" />
                 <MenuItem Header="Show Only _Invalid Nodes" IsCheckable="True" IsChecked="{Binding ShowOnlyInvalidNodes}" />
+                <MenuItem Header="Show Final _Merged View" IsCheckable="True" IsChecked="{Binding IsMergedViewActive, Mode=OneWay}" Command="{Binding ToggleMergedViewCommand}" />
                 <Separator />
-                <MenuItem Header="Show _Diagnostics Panel" IsCheckable="True" IsChecked="{Binding IsDiagnosticsPanelVisible}" Command="{Binding ToggleDiagnosticsPanelCommand}" />
+                <MenuItem Header="Show _Diagnostics Panel" IsCheckable="True" IsChecked="{Binding IsDiagnosticsPanelVisible, Mode=OneWay}" Command="{Binding ToggleDiagnosticsPanelCommand}" />
             </MenuItem>
             <MenuItem Header="_Schema">
                 <MenuItem Header="_Load Schema Assembly..." Command="{Binding LoadSchemaCommand}" />
