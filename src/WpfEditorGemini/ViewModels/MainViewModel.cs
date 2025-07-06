@@ -162,6 +162,7 @@ namespace JsonConfigEditor.ViewModels
         public ICommand RunIntegrityCheckCommand { get; }
         public ICommand DismissCriticalErrorCommand { get; }
         public ICommand CheckProjectStructureCommand { get; }
+        public ICommand ToggleDiagnosticsPanelCommand { get; }
 
         // --- Public Properties ---
 
@@ -315,6 +316,7 @@ namespace JsonConfigEditor.ViewModels
             RunIntegrityCheckCommand = new RelayCommand(ExecuteRunIntegrityCheck, () => IsCascadeModeActive);
             DismissCriticalErrorCommand = new RelayCommand(ExecuteDismissCriticalError);
             CheckProjectStructureCommand = new RelayCommand(ExecuteCheckProjectStructure, () => IsCascadeModeActive);
+            ToggleDiagnosticsPanelCommand = new RelayCommand(ExecuteToggleDiagnosticsPanel);
             SaveFileCommand = new RelayCommand(ExecuteSaveFile, CanExecuteSaveFile);
             SaveAsFileCommand = new RelayCommand(ExecuteSaveAsFile);
             ExitCommand = new RelayCommand(ExecuteExit);
@@ -1620,6 +1622,11 @@ namespace JsonConfigEditor.ViewModels
             {
                 MessageBox.Show("No project structure improvements found. Your project structure is already optimal.", "No Changes Needed", MessageBoxButton.OK, MessageBoxImage.Information);
             }
+        }
+
+        private void ExecuteToggleDiagnosticsPanel()
+        {
+            IsDiagnosticsPanelVisible = !IsDiagnosticsPanelVisible;
         }
 
         /// <summary>

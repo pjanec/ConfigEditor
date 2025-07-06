@@ -154,6 +154,8 @@
             <MenuItem Header="_View">
                 <MenuItem Header="Show _Schema Nodes" IsCheckable="True" IsChecked="{Binding ShowSchemaNodes}" />
                 <MenuItem Header="Show Only _Invalid Nodes" IsCheckable="True" IsChecked="{Binding ShowOnlyInvalidNodes}" />
+                <Separator />
+                <MenuItem Header="Show _Diagnostics Panel" IsCheckable="True" IsChecked="{Binding IsDiagnosticsPanelVisible}" Command="{Binding ToggleDiagnosticsPanelCommand}" />
             </MenuItem>
             <MenuItem Header="_Schema">
                 <MenuItem Header="_Load Schema Assembly..." Command="{Binding LoadSchemaCommand}" />
@@ -454,49 +456,65 @@
                       ResizeDirection="Rows"
                       Visibility="{Binding IsDiagnosticsPanelVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
-        <TabControl Grid.Row="4" 
-                    x:Name="DiagnosticsPanel"  
-                    MaxHeight="250"  
-                    Visibility="{Binding IsDiagnosticsPanelVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <TabItem Header="Issues">
-                <ListView ItemsSource="{Binding Issues}">
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <!-- Use a DataTrigger to color-code rows based on severity -->
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding Severity}" Value="Error">
-                                    <Setter Property="Foreground" Value="#B00020" /> <!-- Darker red -->
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding Severity}" Value="Warning">
-                                    <Setter Property="Foreground" Value="#B36B00" /> <!-- Darker orange -->
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding Severity}" Value="Info">
-                                    <Setter Property="Foreground" Value="DarkGray" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </ListView.ItemContainerStyle>
-                    <ListView.View>
-                        <GridView>
-                            <GridViewColumn Header="Severity" Width="80" DisplayMemberBinding="{Binding Severity}" />
-                            <GridViewColumn Header="Message" Width="450">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Message}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   ToolTip="{Binding Message}" />
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                            <GridViewColumn Header="Layer" Width="120" DisplayMemberBinding="{Binding LayerName}" />
-                            <GridViewColumn Header="File" Width="200" DisplayMemberBinding="{Binding FilePath}" />
-                            <GridViewColumn Header="Path" Width="300" DisplayMemberBinding="{Binding DomPath}" />
-                        </GridView>
-                    </ListView.View>
-                </ListView>
-            </TabItem>
-            <!-- Other tabs for Search Results, etc., can be added here later -->
-        </TabControl>
+        <Grid Grid.Row="4" 
+              Visibility="{Binding IsDiagnosticsPanelVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <!-- TabControl: occupies the full space -->
+            <TabControl x:Name="DiagnosticsPanel"
+                        MaxHeight="250">
+                <TabItem Header="Issues">
+                    <ListView ItemsSource="{Binding Issues}">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <!-- Use a DataTrigger to color-code rows based on severity -->
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Severity}" Value="Error">
+                                        <Setter Property="Foreground" Value="#B00020" /> <!-- Darker red -->
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                        <Setter Property="Foreground" Value="#B36B00" /> <!-- Darker orange -->
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Severity}" Value="Info">
+                                        <Setter Property="Foreground" Value="DarkGray" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Severity" Width="80" DisplayMemberBinding="{Binding Severity}" />
+                                <GridViewColumn Header="Message" Width="450">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Message}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Message}" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Layer" Width="120" DisplayMemberBinding="{Binding LayerName}" />
+                                <GridViewColumn Header="File" Width="200" DisplayMemberBinding="{Binding FilePath}" />
+                                <GridViewColumn Header="Path" Width="300" DisplayMemberBinding="{Binding DomPath}" />
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </TabItem>
+                <!-- Other tabs for Search Results, etc., can be added here later -->
+            </TabControl>
+            <!-- Close button: hovers on top of the TabControl, positioned absolutely -->
+            <Button Command="{Binding ToggleDiagnosticsPanelCommand}"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Width="22" Height="22"
+                    Margin="0,2,4,0"
+                    VerticalAlignment="Top"
+                    HorizontalAlignment="Right"
+                    Panel.ZIndex="1"
+                    ToolTip="Close diagnostics panel">
+                <Button.Content>
+                    <TextBlock Text="✕" FontSize="12" />
+                </Button.Content>
+            </Button>
+        </Grid>
         <!-- MODIFICATION END -->
 
         <!-- Status Bar -->
