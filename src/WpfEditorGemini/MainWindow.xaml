@@ -161,6 +161,7 @@
             <!-- MODIFICATION START -->
             <MenuItem Header="_Tools">
                 <MenuItem Header="_Run Integrity Checks..." Command="{Binding RunIntegrityCheckCommand}" />
+                <MenuItem Header="_Check Project Structure..." Command="{Binding CheckProjectStructureCommand}" />
             </MenuItem>
             <!-- MODIFICATION END -->
         </Menu>

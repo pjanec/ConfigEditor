@@ -161,6 +161,7 @@ namespace JsonConfigEditor.ViewModels
         public ICommand LoadCascadeProjectCommand { get; }
         public ICommand RunIntegrityCheckCommand { get; }
         public ICommand DismissCriticalErrorCommand { get; }
+        public ICommand CheckProjectStructureCommand { get; }
 
         // --- Public Properties ---
 
@@ -313,6 +314,7 @@ namespace JsonConfigEditor.ViewModels
             LoadCascadeProjectCommand = new RelayCommand(ExecuteLoadCascadeProject);
             RunIntegrityCheckCommand = new RelayCommand(ExecuteRunIntegrityCheck, () => IsCascadeModeActive);
             DismissCriticalErrorCommand = new RelayCommand(ExecuteDismissCriticalError);
+            CheckProjectStructureCommand = new RelayCommand(ExecuteCheckProjectStructure, () => IsCascadeModeActive);
             SaveFileCommand = new RelayCommand(ExecuteSaveFile, CanExecuteSaveFile);
             SaveAsFileCommand = new RelayCommand(ExecuteSaveAsFile);
             ExitCommand = new RelayCommand(ExecuteExit);
@@ -577,18 +579,11 @@ namespace JsonConfigEditor.ViewModels
                     var loadedLayersData = await _projectLoader.LoadProjectAsync(openDialog.FileName);
                     _cascadeLayers.Clear();
                     AllLayers.Clear();
-                    var allProposedConsolidations = new List<ConsolidationAction>();
 
                     int layerIndex = 0;
                     foreach (var layerData in loadedLayersData)
                     {
                         var mergeResult = _intraLayerMerger.Merge(layerData);
-                        // --- MODIFICATION START ---
-                        if (mergeResult.ProposedConsolidations.Any())
-                        {
-                            allProposedConsolidations.AddRange(mergeResult.ProposedConsolidations);
-                        }
-                        // --- MODIFICATION END ---
                         var cascadeLayer = new CascadeLayer(
                             layerIndex++,
                             layerData.Definition.Name,
@@ -601,18 +596,7 @@ namespace JsonConfigEditor.ViewModels
                         AllLayers.Add(cascadeLayer);
                     }
 
-                    // --- MODIFICATION START ---
-                    // After loading all layers, check if we need to show the consolidation dialog.
-                    if (allProposedConsolidations.Any())
-                    {
-                        var dialog = new ConsolidationDialog(allProposedConsolidations, selectedActions =>
-                        {
-                            // This is the callback that applies the changes.
-                            ApplyConsolidationActions(selectedActions);
-                        });
-                        dialog.ShowDialog();
-                    }
-                    // --- MODIFICATION END ---
+
 
                     // NEW: Perform a full project merge to populate authoritative origin maps
                     RecalculateAuthoritativeOriginMaps();
@@ -1591,6 +1575,51 @@ namespace JsonConfigEditor.ViewModels
         private void ExecuteDismissCriticalError()
         {
             ShowCriticalErrorNotification = false;
+        }
+
+        private void ExecuteCheckProjectStructure()
+        {
+            if (!IsCascadeModeActive)
+            {
+                MessageBox.Show("Project structure check is only available for cascade projects.", "Not Available", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Collect all proposed consolidations from all layers
+            var allProposedConsolidations = new List<ConsolidationAction>();
+            
+            foreach (var layer in _cascadeLayers)
+            {
+                // Create a LayerDefinitionModel from the existing layer data
+                var layerDefinition = new LayerDefinitionModel(layer.Name, layer.FolderPath);
+                
+                // Re-run the intra-layer merger to get consolidation proposals
+                var layerData = new LayerLoadResult(
+                    layerDefinition,
+                    layer.FolderPath,
+                    layer.SourceFiles
+                );
+                
+                var mergeResult = _intraLayerMerger.Merge(layerData);
+                if (mergeResult.ProposedConsolidations.Any())
+                {
+                    allProposedConsolidations.AddRange(mergeResult.ProposedConsolidations);
+                }
+            }
+
+            if (allProposedConsolidations.Any())
+            {
+                var dialog = new ConsolidationDialog(allProposedConsolidations, selectedActions =>
+                {
+                    // This is the callback that applies the changes.
+                    ApplyConsolidationActions(selectedActions);
+                });
+                dialog.ShowDialog();
+            }
+            else
+            {
+                MessageBox.Show("No project structure improvements found. Your project structure is already optimal.", "No Changes Needed", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         }
 
         /// <summary>
