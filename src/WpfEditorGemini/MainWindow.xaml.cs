@@ -20,6 +20,8 @@ namespace JsonConfigEditor
     {
         private MainViewModel ViewModel => (MainViewModel)DataContext;
 
+        private System.Threading.Timer? _saveSettingsDebounceTimer;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -37,6 +39,14 @@ namespace JsonConfigEditor
             { // Fallback for original logic, though DataContext should be vmInstance here
                 selector.UiRegistry = vm.UiRegistry;
             }
+            
+            // *** NEW: Apply loaded settings ***
+            this.Height = ViewModel.UserSettings.Window.Height;
+            this.Width = ViewModel.UserSettings.Window.Width;
+            ApplyColumnWidths();
+
+            // Hook into the SizeChanged event to trigger debounced saving
+            this.SizeChanged += OnWindowSizeChanged;
             
             // Set up keyboard navigation
             SetupKeyboardNavigation();
@@ -484,6 +494,7 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
                 }
             }
 
+            SaveLayoutSettings(); // Ensure settings are saved on close
             base.OnClosing(e);
         }
 
@@ -593,6 +604,51 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
                 }
                 System.Diagnostics.Debug.WriteLine($"VM.IsExpanded (after manual set): {vm.IsExpanded}");
             }
+        }
+
+        private void ApplyColumnWidths()
+        {
+            foreach (var column in MainDataGrid.Columns)
+            {
+                if (column.Header is string header &&
+                    ViewModel.UserSettings.DataGrid.ColumnWidths.TryGetValue(header, out var width))
+                {
+                    column.Width = new DataGridLength(width);
+                }
+            }
+        }
+
+        private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            // Dispose the old timer to reset the delay
+            _saveSettingsDebounceTimer?.Dispose();
+            // Create a new timer that will fire once after 2 seconds
+            _saveSettingsDebounceTimer = new System.Threading.Timer(
+                callback: _ => Dispatcher.Invoke(SaveLayoutSettings),
+                state: null,
+                dueTime: 2000,
+                period: System.Threading.Timeout.Infinite
+            );
+        }
+
+        private void SaveLayoutSettings()
+        {
+            // Update the settings model with the current layout
+            ViewModel.UserSettings.Window.Height = this.ActualHeight;
+            ViewModel.UserSettings.Window.Width = this.ActualWidth;
+
+            ViewModel.UserSettings.DataGrid.ColumnWidths.Clear();
+            foreach (var column in MainDataGrid.Columns)
+            {
+                if (column.Header is string header)
+                {
+                    // Store the actual pixel width, which is robust
+                    ViewModel.UserSettings.DataGrid.ColumnWidths[header] = column.ActualWidth;
+                }
+            }
+
+            // Tell the service to save the updated model to disk
+            _ = ViewModel.SaveCurrentUserSettings(); // This new method needs to be added to MainViewModel
         }
 
         // Helper function to get a specific cell from a row and column

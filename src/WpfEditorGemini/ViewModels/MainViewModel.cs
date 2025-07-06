@@ -3,6 +3,7 @@ using JsonConfigEditor.Core.Parsing;
 using JsonConfigEditor.Core.Schema;
 using JsonConfigEditor.Core.SchemaLoading;
 using JsonConfigEditor.Core.Serialization;
+using JsonConfigEditor.Core.Settings;
 using JsonConfigEditor.Core.Validation;
 using Microsoft.Win32;
 using System;
@@ -50,6 +51,8 @@ namespace JsonConfigEditor.ViewModels
         private readonly CriticalErrorScanner _errorScanner;
         // Add the new service as a private field
         private readonly CaseMismatchChecker _caseMismatchChecker;
+        private readonly UserSettingsService _userSettingsService;
+        public UserSettingsModel UserSettings { get; private set; }
 
         // --- Private Fields: Core Data State ---
         // REMOVE the old root node field:
@@ -312,6 +315,10 @@ namespace JsonConfigEditor.ViewModels
             _viewModelBuilder = new ViewModelBuilderService(_placeholderProvider, this);
             _errorScanner = new CriticalErrorScanner();
             _caseMismatchChecker = new CaseMismatchChecker();
+            _userSettingsService = new UserSettingsService();
+            // Load settings synchronously in the constructor for simplicity,
+            // or adapt to an async initialization pattern if preferred.
+            UserSettings = Task.Run(() => _userSettingsService.LoadSettingsAsync()).GetAwaiter().GetResult();
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
@@ -1574,9 +1581,8 @@ namespace JsonConfigEditor.ViewModels
 
         private void ExecuteRunIntegrityCheck()
         {
-            // The dialog already exists, we just need to show it.
-            // The dialog's ViewModel will call back into `ExecuteIntegrityCheck` below.
-            var dialog = new IntegrityCheckDialog(this, IntegrityCheckType.All);
+            // Pass the loaded settings to the dialog's ViewModel
+            var dialog = new IntegrityCheckDialog(this, UserSettings.IntegrityChecks.ChecksToRun);
             dialog.ShowDialog();
         }
 
@@ -1655,6 +1661,10 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         public void ExecuteIntegrityCheck(IntegrityCheckType checksToRun)
         {
+            // *** NEW: Update the settings model before saving ***
+            UserSettings.IntegrityChecks.ChecksToRun = checksToRun;
+            _ = _userSettingsService.SaveSettingsAsync(UserSettings); // Save the updated settings
+
             if (!_cascadeLayers.Any()) return;
 
             Issues.Clear();
@@ -2270,6 +2280,11 @@ namespace JsonConfigEditor.ViewModels
 
             // 3. No origin could be deduced from any surrounding properties.
             return null;
+        }
+
+        public async Task SaveCurrentUserSettings()
+        {
+            await _userSettingsService.SaveSettingsAsync(this.UserSettings);
         }
     }
 
