@@ -46,6 +46,7 @@ namespace JsonConfigEditor.ViewModels
         private readonly IntraLayerMerger _intraLayerMerger;
         private readonly ProjectLoader _projectLoader;
         private readonly CascadedDomDisplayMerger _displayMerger;
+        private readonly CriticalErrorScanner _errorScanner;
 
         // --- Private Fields: Core Data State ---
         // REMOVE the old root node field:
@@ -266,6 +267,13 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
+        private bool _hasCriticalErrors;
+        public bool HasCriticalErrors
+        {
+            get => _hasCriticalErrors;
+            private set => SetProperty(ref _hasCriticalErrors, value);
+        }
+
         public MainViewModel()
         {
             _jsonParser = new JsonDomParser();
@@ -286,6 +294,7 @@ namespace JsonConfigEditor.ViewModels
             _displayMerger = new CascadedDomDisplayMerger(); // Add this
             _projectSaver = new ProjectSaver(_jsonSerializer); // Initialize the saver
             _viewModelBuilder = new ViewModelBuilderService(_placeholderProvider, this);
+            _errorScanner = new CriticalErrorScanner();
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
@@ -595,6 +604,13 @@ namespace JsonConfigEditor.ViewModels
                     // NEW: Perform a full project merge to populate authoritative origin maps
                     RecalculateAuthoritativeOriginMaps();
                     // END NEW
+
+                    // *** NEW: Perform critical error scan ***
+                    var criticalIssues = _errorScanner.Scan(loadedLayersData);
+                    if (criticalIssues.Any())
+                    {
+                        NotifyUserOfCriticalErrors(criticalIssues);
+                    }
 
                     CurrentFilePath = openDialog.FileName;
                     ActiveEditorLayer = _cascadeLayers.LastOrDefault();
@@ -1970,6 +1986,19 @@ namespace JsonConfigEditor.ViewModels
                 layer.IsDirty = true; // Mark layer as dirty to trigger save.
             }
             OnPropertyChanged(nameof(IsDirty)); // Notify UI that overall state may be dirty.
+        }
+
+        private void NotifyUserOfCriticalErrors(List<ValidationIssue> issues)
+        {
+            Issues.Clear();
+            foreach (var issue in issues)
+            {
+                // This assumes a constructor for IssueViewModel that can take a ValidationIssue.
+                // Issues.Add(new IssueViewModel(issue, this));
+            }
+            HasCriticalErrors = true;
+            IsDiagnosticsPanelVisible = true; // Automatically open the panel
+            SearchStatusText = $"Project loaded with {issues.Count} critical errors."; // Reuse status text property
         }
     }
 

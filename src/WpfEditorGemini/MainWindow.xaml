@@ -507,6 +507,24 @@
             <StatusBarItem>
                 <TextBlock Text="{Binding SearchStatusText}" />
             </StatusBarItem>
+            <!-- NEW: Critical Error Notification Area -->
+            <StatusBarItem HorizontalAlignment="Right">
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasCriticalErrors}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Setter Property="Background" Value="Red" />
+                                    <Setter Property="Padding" Value="5,2"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding SearchStatusText}" Foreground="White" FontWeight="Bold" />
+                </Border>
+            </StatusBarItem>
         </StatusBar>
     </Grid>
 </Window> 
