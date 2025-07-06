@@ -1,5 +1,6 @@
 ﻿using JsonConfigEditor.Core.Cascade;
 using JsonConfigEditor.Core.Validation; // Add this
+using JsonConfigEditor.Core.SchemaLoading; // Add this for ISchemaLoaderService
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,7 +19,9 @@ namespace JsonConfigEditor.Core.Services
         SchemaCompliance = 4,
         PropertyNameCasing = 8,
         EmptyFilesOrFolders = 16,
-        All = FilePathConsistency | OverlappingDefinitions | SchemaCompliance | PropertyNameCasing | EmptyFilesOrFolders
+        // Add the new check type below
+        FileSystemSchemaCasing = 32,
+        All = FilePathConsistency | OverlappingDefinitions | SchemaCompliance | PropertyNameCasing | EmptyFilesOrFolders | FileSystemSchemaCasing
     }
 
     /// <summary>
@@ -35,9 +38,10 @@ namespace JsonConfigEditor.Core.Services
         /// Runs a series of selected checks against the loaded cascade layers.
         /// </summary>
         /// <param name="allLayers">The complete, ordered list of cascade layers.</param>
+        /// <param name="schemaLoader">The schema loader service for schema-related checks.</param>
         /// <param name="checksToRun">A flag enum specifying which checks to perform.</param>
         /// <returns>A list of all found integrity issues.</returns>
-        public List<IntegrityIssue> RunChecks(IReadOnlyList<CascadeLayer> allLayers, IntegrityCheckType checksToRun)
+        public List<IntegrityIssue> RunChecks(IReadOnlyList<CascadeLayer> allLayers, ISchemaLoaderService schemaLoader, IntegrityCheckType checksToRun)
         {
             var issues = new List<IntegrityIssue>();
 
@@ -54,6 +58,11 @@ namespace JsonConfigEditor.Core.Services
             if (checksToRun.HasFlag(IntegrityCheckType.PropertyNameCasing))
             {
                 issues.AddRange(CheckPropertyNameCasing(allLayers));
+            }
+            // Add this block to call the new checker
+            if (checksToRun.HasFlag(IntegrityCheckType.FileSystemSchemaCasing))
+            {
+                issues.AddRange(CheckFileSystemVsSchemaCasing(allLayers, schemaLoader));
             }
 
             return issues;
@@ -137,6 +146,54 @@ namespace JsonConfigEditor.Core.Services
                 }
             }
 
+            return issues;
+        }
+
+        /// <summary>
+        /// Checks if file and folder names in the file system match the casing of their corresponding schema properties.
+        /// </summary>
+        public List<IntegrityIssue> CheckFileSystemVsSchemaCasing(IReadOnlyList<CascadeLayer> allLayers, ISchemaLoaderService schemaLoader)
+        {
+            var issues = new List<IntegrityIssue>();
+            var rootSchema = schemaLoader.GetRootSchema();
+            if (rootSchema == null) return issues; // No schema to check against
+
+            foreach (var layer in allLayers)
+            {
+                foreach (var sourceFile in layer.SourceFiles)
+                {
+                    var pathWithoutExtension = sourceFile.RelativePath.Replace(".json", "", StringComparison.OrdinalIgnoreCase);
+                    var segments = pathWithoutExtension.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    var currentSchemaNode = rootSchema;
+                    var currentDomPath = "$root";
+
+                    foreach (var segment in segments)
+                    {
+                        // Cannot check casing if the path doesn't exist in the schema. This is a different error type.
+                        if (currentSchemaNode.Properties == null || !currentSchemaNode.Properties.TryGetValue(segment, out var childSchema))
+                        {
+                            break;
+                        }
+
+                        currentDomPath += "/" + segment;
+
+                        // Ordinal compare: "services" != "Services"
+                        if (!string.Equals(segment, childSchema.Name, StringComparison.Ordinal))
+                        {
+                            issues.Add(new IntegrityIssue(
+                                ValidationSeverity.Warning,
+                                $"Path segment '{segment}' in file path '{sourceFile.RelativePath}' should be cased as '{childSchema.Name}' to match the schema.",
+                                layer.Name,
+                                currentDomPath,
+                                sourceFile.RelativePath
+                            ));
+                        }
+                          
+                        currentSchemaNode = childSchema;
+                    }
+                }
+            }
             return issues;
         }
     }

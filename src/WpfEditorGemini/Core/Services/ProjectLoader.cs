@@ -98,8 +98,23 @@ namespace JsonConfigEditor.Core.Services
         /// </summary>
         private async Task<IReadOnlyList<SourceFileInfo>> LoadAllFilesFromLayerFolderAsync(string absoluteLayerPath, int layerIndex)
         {
-            var sourceFiles = new List<SourceFileInfo>();
             var jsonFiles = Directory.GetFiles(absoluteLayerPath, "*.json", SearchOption.AllDirectories);
+
+            // *** NEW: Add fatal check for file path casing conflicts ***
+            var pathGroups = jsonFiles.GroupBy(p => p, StringComparer.OrdinalIgnoreCase);
+            foreach (var group in pathGroups)
+            {
+                if (group.Count() > 1)
+                {
+                    // This is a fatal error. The project cannot be loaded reliably.
+                    throw new InvalidOperationException(
+                        $"Fatal load error: Multiple files found with case-only differences in path in layer '{absoluteLayerPath}'. " +
+                        $"Conflict between: {string.Join(" and ", group)}");
+                }
+            }
+            // *** END NEW ***
+
+            var sourceFiles = new List<SourceFileInfo>();
 
             foreach (var filePath in jsonFiles.OrderBy(p => p)) // Order for determinism
             {

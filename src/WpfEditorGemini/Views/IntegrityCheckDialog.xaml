@@ -24,8 +24,16 @@
             <TextBlock Text="Select checks to perform:" FontWeight="Bold" Margin="0,0,0,10" />
 
             <CheckBox Margin="5" IsChecked="{Binding CheckFilePathConsistency}"
-                      Content="File Path Consistency" 
+                      Content="File Path Consistency (Across Layers)" 
                       ToolTip="Warns if a config section (e.g., '/database') is stored in differently named files across layers."/>
+
+            <CheckBox Margin="5" IsChecked="{Binding CheckFileSystemVsSchemaCasing}"
+                      Content="File/Folder Name vs. Schema Casing"
+                      ToolTip="Warns if a folder or file name (e.g., 'services' or 'service.json') is cased differently than its corresponding schema property (e.g., 'Services')."/>
+
+            <CheckBox Margin="5" IsChecked="{Binding CheckPropertyNameCasing}"
+                      Content="Property Name Casing Mismatches (within JSON)"
+                      ToolTip="Warns about potential typos like 'timeout' vs 'timeOut' for keys inside the JSON files."/>
 
             <CheckBox Margin="5" IsChecked="{Binding CheckOverlappingDefinitions}"
                       Content="Overlapping Definitions Within a Layer"
@@ -34,10 +42,6 @@
             <CheckBox Margin="5" IsChecked="{Binding CheckSchemaCompliance}"
                       Content="Schema Compliance for All Layers"
                       ToolTip="Validates each layer's content against the schema individually, finding errors that might be hidden in the merged view."/>
-
-            <CheckBox Margin="5" IsChecked="{Binding CheckPropertyNameCasing}"
-                      Content="Property Name Casing Mismatches"
-                      ToolTip="Warns about potential typos like 'timeout' vs 'timeOut'."/>
 
             <CheckBox Margin="5" IsChecked="{Binding CheckEmptyFilesOrFolders}"
                       Content="Empty Files or Folders"

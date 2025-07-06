@@ -25,7 +25,8 @@ namespace JsonConfigEditor.Core.Dom
         /// <param name="parent">The parent node</param>
         public ObjectNode(string name, DomNode? parent) : base(name, parent)
         {
-            _children = new Dictionary<string, DomNode>();
+            // CHANGE: Initialize the dictionary to be case-insensitive.
+            _children = new Dictionary<string, DomNode>(StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>

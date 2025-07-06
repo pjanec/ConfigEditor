@@ -48,6 +48,8 @@ namespace JsonConfigEditor.ViewModels
         private readonly ProjectLoader _projectLoader;
         private readonly CascadedDomDisplayMerger _displayMerger;
         private readonly CriticalErrorScanner _errorScanner;
+        // Add the new service as a private field
+        private readonly CaseMismatchChecker _caseMismatchChecker;
 
         // --- Private Fields: Core Data State ---
         // REMOVE the old root node field:
@@ -296,6 +298,7 @@ namespace JsonConfigEditor.ViewModels
             _projectSaver = new ProjectSaver(_jsonSerializer); // Initialize the saver
             _viewModelBuilder = new ViewModelBuilderService(_placeholderProvider, this);
             _errorScanner = new CriticalErrorScanner();
+            _caseMismatchChecker = new CaseMismatchChecker();
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
@@ -611,6 +614,22 @@ namespace JsonConfigEditor.ViewModels
                     if (criticalIssues.Any())
                     {
                         NotifyUserOfCriticalErrors(criticalIssues);
+                    }
+
+                    // *** NEW: Perform case mismatch scan ***
+                    var caseWarnings = _caseMismatchChecker.Scan(_cascadeLayers, _schemaLoader);
+                    if (caseWarnings.Any())
+                    {
+                        // Add these warnings to the existing Issues collection
+                        foreach (var warning in caseWarnings)
+                        {
+                            Issues.Add(new IssueViewModel(warning, this));
+                        }
+                        // Ensure the panel is visible if we found new issues
+                        if (Issues.Any())
+                        {
+                            IsDiagnosticsPanelVisible = true;
+                        }
                     }
 
                     CurrentFilePath = openDialog.FileName;
@@ -1570,7 +1589,8 @@ namespace JsonConfigEditor.ViewModels
             Issues.Clear();
 
             var integrityChecker = new IntegrityChecker(); // Instantiate the service
-            var issuesFound = integrityChecker.RunChecks(_cascadeLayers, checksToRun);
+            // Modify this line to pass the schema loader
+            var issuesFound = integrityChecker.RunChecks(_cascadeLayers, _schemaLoader, checksToRun);
 
             if (issuesFound.Any())
             {

@@ -48,6 +48,14 @@ namespace JsonConfigEditor.ViewModels
             set => SetProperty(ref _checkEmptyFilesOrFolders, value);
         }
 
+        // Add a property for the new checkbox
+        private bool _checkFileSystemVsSchemaCasing;
+        public bool CheckFileSystemVsSchemaCasing
+        {
+            get => _checkFileSystemVsSchemaCasing;
+            set => SetProperty(ref _checkFileSystemVsSchemaCasing, value);
+        }
+
         /// <summary>
         /// Command to execute the selected integrity checks.
         /// </summary>
@@ -64,6 +72,8 @@ namespace JsonConfigEditor.ViewModels
             CheckSchemaCompliance = initialSelection.HasFlag(IntegrityCheckType.SchemaCompliance);
             CheckPropertyNameCasing = initialSelection.HasFlag(IntegrityCheckType.PropertyNameCasing);
             CheckEmptyFilesOrFolders = initialSelection.HasFlag(IntegrityCheckType.EmptyFilesOrFolders);
+            // Initialize the new property
+            CheckFileSystemVsSchemaCasing = initialSelection.HasFlag(IntegrityCheckType.FileSystemSchemaCasing);
             
             RunChecksCommand = new RelayCommand(ExecuteRunChecks);
         }
@@ -79,6 +89,8 @@ namespace JsonConfigEditor.ViewModels
             if (CheckSchemaCompliance) checksToRun |= IntegrityCheckType.SchemaCompliance;
             if (CheckPropertyNameCasing) checksToRun |= IntegrityCheckType.PropertyNameCasing;
             if (CheckEmptyFilesOrFolders) checksToRun |= IntegrityCheckType.EmptyFilesOrFolders;
+            // Add the new check to the flag
+            if (CheckFileSystemVsSchemaCasing) checksToRun |= IntegrityCheckType.FileSystemSchemaCasing;
             
             // Delegate execution to the MainViewModel
             _mainViewModel.ExecuteIntegrityCheck(checksToRun);

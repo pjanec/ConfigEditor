@@ -464,12 +464,12 @@
                             <!-- Use a DataTrigger to color-code rows based on severity -->
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding Severity}" Value="Error">
-                                    <Setter Property="Foreground" Value="Red" />
+                                    <Setter Property="Foreground" Value="#B00020" /> <!-- Darker red -->
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Severity}" Value="Warning">
-                                    <Setter Property="Foreground" Value="#E59400" />
+                                    <Setter Property="Foreground" Value="#B36B00" /> <!-- Darker orange -->
                                 </DataTrigger>
-                                 <DataTrigger Binding="{Binding Severity}" Value="Info">
+                                <DataTrigger Binding="{Binding Severity}" Value="Info">
                                     <Setter Property="Foreground" Value="DarkGray" />
                                 </DataTrigger>
                             </Style.Triggers>
@@ -478,7 +478,15 @@
                     <ListView.View>
                         <GridView>
                             <GridViewColumn Header="Severity" Width="80" DisplayMemberBinding="{Binding Severity}" />
-                            <GridViewColumn Header="Message" Width="450" DisplayMemberBinding="{Binding Message}" />
+                            <GridViewColumn Header="Message" Width="450">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Message}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding Message}" />
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
                             <GridViewColumn Header="Layer" Width="120" DisplayMemberBinding="{Binding LayerName}" />
                             <GridViewColumn Header="File" Width="200" DisplayMemberBinding="{Binding FilePath}" />
                             <GridViewColumn Header="Path" Width="300" DisplayMemberBinding="{Binding DomPath}" />
