@@ -505,10 +505,6 @@
             </StatusBarItem>
             <Separator />
             <StatusBarItem>
-                <TextBlock Text="{Binding CurrentFilePath, StringFormat='File: {0}', TargetNullValue='No file loaded'}" />
-            </StatusBarItem>
-            <Separator />
-            <StatusBarItem>
                 <TextBlock Text="{Binding IsDirty, StringFormat='Modified: {0}'}" />
             </StatusBarItem>
             <Separator />
@@ -522,15 +518,39 @@
                         <Style TargetType="Border">
                             <Setter Property="Visibility" Value="Collapsed" />
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasCriticalErrors}" Value="True">
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding HasCriticalErrors}" Value="True" />
+                                        <Condition Binding="{Binding ShowCriticalErrorNotification}" Value="True" />
+                                    </MultiDataTrigger.Conditions>
                                     <Setter Property="Visibility" Value="Visible" />
                                     <Setter Property="Background" Value="Red" />
                                     <Setter Property="Padding" Value="5,2"/>
-                                </DataTrigger>
+                                </MultiDataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
-                    <TextBlock Text="{Binding SearchStatusText}" Foreground="White" FontWeight="Bold" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding SearchStatusText}" Foreground="White" FontWeight="Bold" />
+                        <Button Grid.Column="1" 
+                                Command="{Binding DismissCriticalErrorCommand}"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Foreground="White"
+                                FontWeight="Bold"
+                                FontSize="12"
+                                Width="16" Height="16"
+                                Margin="5,0,0,0"
+                                ToolTip="Dismiss critical error notification">
+                            <Button.Content>
+                                <TextBlock Text="✕" />
+                            </Button.Content>
+                        </Button>
+                    </Grid>
                 </Border>
             </StatusBarItem>
         </StatusBar>

@@ -160,6 +160,7 @@ namespace JsonConfigEditor.ViewModels
         public ICommand CollapseSelectedRecursiveCommand { get; }
         public ICommand LoadCascadeProjectCommand { get; }
         public ICommand RunIntegrityCheckCommand { get; }
+        public ICommand DismissCriticalErrorCommand { get; }
 
         // --- Public Properties ---
 
@@ -277,6 +278,13 @@ namespace JsonConfigEditor.ViewModels
             private set => SetProperty(ref _hasCriticalErrors, value);
         }
 
+        private bool _showCriticalErrorNotification = true;
+        public bool ShowCriticalErrorNotification
+        {
+            get => _showCriticalErrorNotification;
+            set => SetProperty(ref _showCriticalErrorNotification, value);
+        }
+
         public MainViewModel()
         {
             _jsonParser = new JsonDomParser();
@@ -304,6 +312,7 @@ namespace JsonConfigEditor.ViewModels
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
             LoadCascadeProjectCommand = new RelayCommand(ExecuteLoadCascadeProject);
             RunIntegrityCheckCommand = new RelayCommand(ExecuteRunIntegrityCheck, () => IsCascadeModeActive);
+            DismissCriticalErrorCommand = new RelayCommand(ExecuteDismissCriticalError);
             SaveFileCommand = new RelayCommand(ExecuteSaveFile, CanExecuteSaveFile);
             SaveAsFileCommand = new RelayCommand(ExecuteSaveAsFile);
             ExitCommand = new RelayCommand(ExecuteExit);
@@ -1577,6 +1586,11 @@ namespace JsonConfigEditor.ViewModels
             // The dialog's ViewModel will call back into `ExecuteIntegrityCheck` below.
             var dialog = new IntegrityCheckDialog(this, IntegrityCheckType.All);
             dialog.ShowDialog();
+        }
+
+        private void ExecuteDismissCriticalError()
+        {
+            ShowCriticalErrorNotification = false;
         }
 
         /// <summary>
