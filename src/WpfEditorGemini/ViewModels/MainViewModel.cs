@@ -1988,14 +1988,16 @@ namespace JsonConfigEditor.ViewModels
             OnPropertyChanged(nameof(IsDirty)); // Notify UI that overall state may be dirty.
         }
 
-        private void NotifyUserOfCriticalErrors(List<ValidationIssue> issues)
+        private void NotifyUserOfCriticalErrors(List<IntegrityIssue> issues)
         {
             Issues.Clear();
             foreach (var issue in issues)
             {
-                // This assumes a constructor for IssueViewModel that can take a ValidationIssue.
-                // Issues.Add(new IssueViewModel(issue, this));
+                // This line should be present and not commented out.
+                // The IssueViewModel constructor is designed to take an IntegrityIssue.
+                Issues.Add(new IssueViewModel(issue, this));
             }
+
             HasCriticalErrors = true;
             IsDiagnosticsPanelVisible = true; // Automatically open the panel
             SearchStatusText = $"Project loaded with {issues.Count} critical errors."; // Reuse status text property

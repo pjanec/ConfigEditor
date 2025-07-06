@@ -15,10 +15,10 @@ namespace JsonConfigEditor.Core.Services
         /// Scans all loaded layers for critical errors.
         /// </summary>
         /// <param name="loadedLayers">The list of loaded layer results</param>
-        /// <returns>A list of validation issues found</returns>
-        public List<ValidationIssue> Scan(List<LayerLoadResult> loadedLayers)
+        /// <returns>A list of integrity issues found</returns>
+        public List<IntegrityIssue> Scan(List<LayerLoadResult> loadedLayers)
         {
-            var issues = new List<ValidationIssue>();
+            var issues = new List<IntegrityIssue>();
 
             foreach (var layerData in loadedLayers)
             {
@@ -35,24 +35,20 @@ namespace JsonConfigEditor.Core.Services
         /// <summary>
         /// Traverses the DOM tree to find leaf nodes and detect overlaps.
         /// </summary>
-        /// <param name="node">The current node to check</param>
-        /// <param name="filePath">The relative file path containing this node</param>
-        /// <param name="origins">Dictionary tracking the origin file for each path</param>
-        /// <param name="issues">List to collect validation issues</param>
-        /// <param name="layerName">The name of the current layer</param>
-        private void TraverseForLeafNodes(DomNode node, string filePath, Dictionary<string, string> origins, List<ValidationIssue> issues, string layerName)
+        private void TraverseForLeafNodes(DomNode node, string filePath, Dictionary<string, string> origins, List<IntegrityIssue> issues, string layerName)
         {
             // A "leaf" is a ValueNode or an ArrayNode.
             if (node is ValueNode || node is ArrayNode)
             {
                 if (origins.TryGetValue(node.Path, out var originalFile))
                 {
-                    // A true overlap has been found!
-                    var issue = new ValidationIssue(
-                        node,
+                    // A true overlap has been found! Create an IntegrityIssue which contains all necessary info for the UI.
+                    var issue = new IntegrityIssue(
                         ValidationSeverity.Error,
                         $"Property '{node.Path}' is defined in both '{originalFile}' and '{filePath}'.",
-                        "TrueOverlap"
+                        layerName,
+                        node.Path,
+                        filePath
                     );
                     issues.Add(issue);
                 }
@@ -72,4 +68,4 @@ namespace JsonConfigEditor.Core.Services
             }
         }
     }
-} 
+}
