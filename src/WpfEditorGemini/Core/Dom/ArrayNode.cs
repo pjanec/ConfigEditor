@@ -54,9 +54,7 @@ namespace JsonConfigEditor.Core.Dom
                 throw new ArgumentOutOfRangeException(nameof(index));
 
             _items.Insert(index, item);
-            
-            // Update the names of subsequent items to reflect their new indices
-            UpdateItemNames(index);
+            Reindex();
         }
 
         /// <summary>
@@ -70,9 +68,7 @@ namespace JsonConfigEditor.Core.Dom
                 return false;
 
             _items.RemoveAt(index);
-            
-            // Update the names of subsequent items to reflect their new indices
-            UpdateItemNames(index);
+            Reindex();
             return true;
         }
 
@@ -145,20 +141,44 @@ namespace JsonConfigEditor.Core.Dom
             _items.Clear();
         }
 
-        /// <summary>
-        /// Updates the names of items starting from the specified index to reflect their array indices.
-        /// This is called after insertions or deletions to keep names synchronized.
-        /// </summary>
-        /// <param name="startIndex">The index to start updating from</param>
-        private void UpdateItemNames(int startIndex)
+        private DomNode RecreateNodeWithNewName(DomNode oldNode, string newName)
         {
-            for (int i = startIndex; i < _items.Count; i++)
+            switch (oldNode)
             {
-                // Note: This assumes that array item names are their string indices
-                // In a more sophisticated implementation, we might need to recreate nodes
-                // with new names, but for now we'll assume the names can be updated
-                // This is a simplification - in practice, DomNode names are readonly
-                // so we might need a different approach
+                case ValueNode v:
+                    return new ValueNode(newName, this, v.Value);
+                case RefNode r:
+                    return new RefNode(newName, this, r.ReferencePath, r.OriginalValue);
+                case ObjectNode o:
+                    var newObject = new ObjectNode(newName, this);
+                    foreach (var child in o.Children.Values)
+                    {
+                        newObject.AddChild(child.Name, DomCloning.CloneNode(child, newObject));
+                    }
+                    return newObject;
+                case ArrayNode a:
+                    var newArray = new ArrayNode(newName, this);
+                    foreach (var item in a.Items)
+                    {
+                        newArray.AddItem(DomCloning.CloneNode(item, newArray));
+                    }
+                    return newArray;
+                default:
+                    throw new NotSupportedException($"Unsupported node type for re-indexing: {oldNode.GetType().Name}");
+            }
+        }
+
+        private void Reindex()
+        {
+            for (int i = 0; i < _items.Count; i++)
+            {
+                var oldNode = _items[i];
+                string newName = i.ToString();
+
+                if (oldNode.Name != newName)
+                {
+                    _items[i] = RecreateNodeWithNewName(oldNode, newName);
+                }
             }
         }
 

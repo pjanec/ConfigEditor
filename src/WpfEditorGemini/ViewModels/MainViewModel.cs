@@ -171,6 +171,8 @@ namespace JsonConfigEditor.ViewModels
         public ICommand ToggleInvalidOnlyCommand { get; }
         public ICommand AddNewSiblingNodeCommand { get; }
         public ICommand AddNewChildNodeCommand { get; }
+        public ICommand AddItemAboveCommand { get; }
+        public ICommand AddItemBelowCommand { get; }
 
         // --- Public Properties ---
 
@@ -350,6 +352,8 @@ namespace JsonConfigEditor.ViewModels
             CollapseSelectedRecursiveCommand = new RelayCommand(param => ExecuteCollapseSelectedRecursive(param as DataGridRowItemViewModel), param => CanExecuteExpandCollapseSelectedRecursive(param as DataGridRowItemViewModel));
             AddNewSiblingNodeCommand = new RelayCommand(param => ExecuteAddNewNode(param as DataGridRowItemViewModel, isChild: false), param => CanExecuteAddNewNode(param as DataGridRowItemViewModel));
             AddNewChildNodeCommand = new RelayCommand(param => ExecuteAddNewNode(param as DataGridRowItemViewModel, isChild: true), param => CanExecuteAddNewChildNode(param as DataGridRowItemViewModel));
+            AddItemAboveCommand = new RelayCommand(param => ExecuteAddItem(param as DataGridRowItemViewModel, insertAbove: true), param => param is DataGridRowItemViewModel);
+            AddItemBelowCommand = new RelayCommand(param => ExecuteAddItem(param as DataGridRowItemViewModel, insertAbove: false), param => param is DataGridRowItemViewModel);
 
             InitializeEmptyDocument();
         }
@@ -453,7 +457,6 @@ namespace JsonConfigEditor.ViewModels
 
             _ = Task.Run(() => ValidateDocumentAsync());
 
-            // This property is true for AddNodeOperation and RemoveNodeOperation
             if (operation.RequiresFullRefresh)
             {
                 // --- OPTIMIZATION ---
@@ -461,25 +464,48 @@ namespace JsonConfigEditor.ViewModels
                 RecalculateAuthoritativeOriginMaps();
                 // --- END OPTIMIZATION ---
 
-                string? pathToSelect = null;
-                if (operation is RemoveNodeOperation)
+                string? pathToSelect = operation.NodePath; // Default path
+
+                // NEW: Special logic to handle focus after deleting an array item
+                if (operation is RemoveNodeOperation removeOp)
                 {
-                    var itemToSelect = FindNextItemToSelectForDeletion(SelectedGridItem);
-                    pathToSelect = itemToSelect?.DomNode?.Path ?? itemToSelect?.SchemaNodePathKey;
-                }
-                else
-                {
-                    pathToSelect = operation.NodePath;
+                    var parent = removeOp.ParentNode;
+                    if (parent is ArrayNode arrayParent)
+                    {
+                        int originalIndex = removeOp.OriginalIndexInArray;
+                        
+                        // After deletion, the arrayParent.Count is already one less than before.
+                        if (originalIndex < arrayParent.Count)
+                        {
+                            // If we didn't delete the last item, select the item that took its place.
+                            // Its new path will end with the index `originalIndex`.
+                            pathToSelect = $"{parent.Path}/{originalIndex}";
+                        }
+                        else if (arrayParent.Count > 0)
+                        {
+                            // If we deleted the last item, select the new last item.
+                            int newLastIndex = arrayParent.Count - 1;
+                            pathToSelect = $"{parent.Path}/{newLastIndex}";
+                        }
+                        else
+                        {
+                            // If the array is now empty, select the parent array itself.
+                            pathToSelect = parent.Path;
+                        }
+                    }
+                    else
+                    {
+                        // Fallback to the old logic for non-array deletions (object properties)
+                        var itemToSelect = FindNextItemToSelectForDeletion(SelectedGridItem);
+                        pathToSelect = itemToSelect?.DomNode?.Path ?? itemToSelect?.SchemaNodePathKey;
+                    }
                 }
 
-                // Pass the path of the new node directly into the refresh process.
-                // The selection logic is now handled inside RefreshFlatList.
+                // Pass the correctly calculated path directly into the refresh process.
                 RefreshDisplay(pathToSelect);
             }
             else if (operation is ValueEditOperation valueOp && valueOp.NodePath != null)
             {
-                // For simple value edits, no origin recalculation is needed.
-                // We just sync the UI with the new value.
                 if (_persistentVmMap.TryGetValue(valueOp.NodePath, out var vmToUpdate))
                 {
                     var newValue = valueOp.Node.Value;
@@ -946,6 +972,30 @@ namespace JsonConfigEditor.ViewModels
             }
             // Fallback to a JSON string if no other type matches.
             return JsonDocument.Parse($"\"{JsonEncodedText.Encode(stringValue)}\"").RootElement;
+        }
+
+        // Helper method to create a JsonElement from an object, based on a target type.
+        private JsonElement CreateJsonElementFromObject(object? defaultValue, Type targetType)
+        {
+            if (defaultValue == null)
+            {
+                return JsonDocument.Parse("null").RootElement;
+            }
+
+            if (targetType == typeof(bool))
+            {
+                return (bool)defaultValue ? JsonDocument.Parse("true").RootElement : JsonDocument.Parse("false").RootElement;
+            }
+            if (targetType == typeof(int) || targetType == typeof(long))
+            {
+                return JsonDocument.Parse(defaultValue.ToString()!).RootElement;
+            }
+            if (targetType == typeof(double) || targetType == typeof(float) || targetType == typeof(decimal))
+            {
+                return JsonDocument.Parse(defaultValue.ToString()!).RootElement;
+            }
+            // Fallback to a JSON string if no other type matches.
+            return JsonDocument.Parse($"\"{JsonEncodedText.Encode(defaultValue.ToString()!)}\"").RootElement;
         }
 
 
@@ -1730,6 +1780,85 @@ namespace JsonConfigEditor.ViewModels
             };
 
             dialog.ShowDialog();
+        }
+
+        private void ExecuteAddItem(DataGridRowItemViewModel? selectedItem, bool insertAbove)
+        {
+            if (selectedItem == null || ActiveEditorLayer == null) return;
+
+            // Determine the target array based on the context
+            ArrayNode? displayParentArray = null;
+            if (selectedItem.DomNode is ArrayNode arrayNode)
+            {
+                displayParentArray = arrayNode; // Case: User clicked on an empty or populated array node itself.
+            }
+            else if (selectedItem.DomNode?.Parent is ArrayNode parent)
+            {
+                displayParentArray = parent; // Case: User clicked on an item within an array.
+            }
+            else if (selectedItem.IsAddItemPlaceholder)
+            {
+                // Case: User clicked the "(Add new item)" placeholder.
+                displayParentArray = FindDomNodeByPath(selectedItem.SchemaNodePathKey.Substring(0, selectedItem.SchemaNodePathKey.Length - 5)) as ArrayNode;
+            }
+            else if (selectedItem.IsSchemaOnlyNode && selectedItem.NodeType == DataGridRowItemViewModel.ViewModelNodeType.Array)
+            {
+                // Case: User clicked a schema-only array. It must be materialized first.
+                var materializedNode = _nodeFactory.MaterializeDomPathRecursive(selectedItem.SchemaNodePathKey, selectedItem.SchemaContextNode);
+                displayParentArray = materializedNode as ArrayNode;
+            }
+              
+            if (displayParentArray == null) return;
+
+            var realParentArray = FindNodeInSourceLayer(displayParentArray.Path, ActiveEditorLayer.LayerIndex) as ArrayNode;
+
+            Action<ArrayNode> insertAction = (targetArray) =>
+            {
+                int insertionIndex;
+                if (selectedItem.DomNode == targetArray) // If we clicked the array itself
+                {
+                    insertionIndex = 0; // Add to the beginning
+                }
+                else if (selectedItem.IsAddItemPlaceholder)
+                {
+                    insertionIndex = targetArray.Count; // Add to the end
+                }
+                else
+                {
+                    var nodeInTarget = targetArray.Items.FirstOrDefault(i => i.Path.EndsWith(selectedItem.DomNode.Name));
+                    int anIndex = (nodeInTarget != null) ? targetArray.IndexOf(nodeInTarget) : -1;
+                    insertionIndex = insertAbove ? anIndex : anIndex + 1;
+                }
+
+                if (insertionIndex < 0) insertionIndex = 0;
+
+                var arraySchema = _domToSchemaMap.GetValueOrDefault(targetArray.Path);
+                var itemSchema = arraySchema?.ItemSchema;
+
+                DomNode newNode;
+                if (itemSchema != null)
+                {
+                    var defaultJson = CreateJsonElementFromObject(itemSchema.DefaultValue, itemSchema.ClrType);
+                    newNode = new ValueNode(insertionIndex.ToString(), targetArray, defaultJson);
+                }
+                else
+                {
+                    newNode = new ValueNode(insertionIndex.ToString(), targetArray, JsonDocument.Parse("\"new item\"").RootElement);
+                }
+
+                var operation = new InsertArrayItemOperation(ActiveEditorLayer.LayerIndex, targetArray, newNode, insertionIndex);
+                operation.Redo(this);
+                HistoryService.Record(operation);
+            };
+
+            if (realParentArray != null)
+            {
+                insertAction(realParentArray);
+            }
+            else
+            {
+                CreateArrayOverride(displayParentArray, insertAction, "add an item to");
+            }
         }
 
         private DomNode? CreateNodeFromUserInput(string name, string value, NodeType? selectedType, DomNode parent)

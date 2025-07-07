@@ -309,32 +309,53 @@
                     <Setter Property="ContextMenu">
                         <Setter.Value>
                             <ContextMenu DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-
-                                <!-- Add New Node Items -->
-                                <MenuItem Header="Add New Sibling Node"
-                                          Command="{Binding Path=ParentViewModel.AddNewSiblingNodeCommand}"
-                                          CommandParameter="{Binding}"/>
-                                      
-                                <MenuItem Header="Add New Child Node"
-                                          Command="{Binding Path=ParentViewModel.AddNewChildNodeCommand}"
-                                          CommandParameter="{Binding}">
+                                <MenuItem Header="Add Item Above" Command="{Binding Path=ParentViewModel.AddItemAboveCommand}" CommandParameter="{Binding}">
                                     <MenuItem.Style>
                                         <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding DomNode, Converter={StaticResource IsObjectTypeConverter}}" Value="True">
+                                                <DataTrigger Binding="{Binding IsInArray}" Value="True">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </MenuItem.Style>
                                 </MenuItem>
-                                      
-                                <Separator />
+                                <MenuItem Header="Add Item Below" Command="{Binding Path=ParentViewModel.AddItemBelowCommand}" CommandParameter="{Binding}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsArrayContext}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                </MenuItem>
 
-                                <MenuItem Header="Override Sources"
-                                          ItemsSource="{Binding OverrideSourceLayers}"
-                                          Visibility="{Binding Path=ParentViewModel.IsCascadeModeActive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <MenuItem Header="Add New Sibling Node" Command="{Binding Path=ParentViewModel.AddNewSiblingNodeCommand}" CommandParameter="{Binding}" Visibility="{Binding IsArrayContext, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                <MenuItem Header="Add New Child Node" Command="{Binding Path=ParentViewModel.AddNewChildNodeCommand}" CommandParameter="{Binding}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding IsArrayContext}" Value="False"/>
+                                                        <Condition Binding="{Binding DomNode, Converter={StaticResource IsObjectTypeConverter}}" Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                </MenuItem>
+
+                                <Separator/>
+                                <MenuItem Header="Delete" Command="{Binding Path=ParentViewModel.DeleteSelectedNodesCommand}" CommandParameter="{Binding}"/>
+                                <Separator />
+                                <MenuItem Header="Override Sources" ItemsSource="{Binding OverrideSourceLayers}" Visibility="{Binding Path=ParentViewModel.IsCascadeModeActive, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <MenuItem.ItemContainerStyle>
                                         <Style TargetType="MenuItem">
                                             <Setter Property="Header" Value="{Binding LayerName}" />
@@ -343,7 +364,6 @@
                                                 <DataTrigger Binding="{Binding IsDefinedInThisLayer}" Value="True">
                                                     <Setter Property="FontWeight" Value="Bold" />
                                                 </DataTrigger>
-
                                                 <DataTrigger Binding="{Binding IsCurrentlyActiveLayer}" Value="True">
                                                     <Setter Property="Icon">
                                                         <Setter.Value>
@@ -356,16 +376,8 @@
                                     </MenuItem.ItemContainerStyle>
                                 </MenuItem>
                                 <Separator Visibility="{Binding Path=ParentViewModel.IsCascadeModeActive, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                <MenuItem Header="Delete"
-                                          Command="{Binding Path=ParentViewModel.DeleteSelectedNodesCommand}" 
-                                          CommandParameter="{Binding}"/>
-                                <Separator />
-                                <MenuItem Header="Expand Recursive"
-                                          Command="{Binding Path=ParentViewModel.ExpandSelectedRecursiveCommand}"
-                                          CommandParameter="{Binding}" />
-                                <MenuItem Header="Collapse Recursive"
-                                          Command="{Binding Path=ParentViewModel.CollapseSelectedRecursiveCommand}"
-                                          CommandParameter="{Binding}" />
+                                <MenuItem Header="Expand Recursive" Command="{Binding Path=ParentViewModel.ExpandSelectedRecursiveCommand}" CommandParameter="{Binding}" />
+                                <MenuItem Header="Collapse Recursive" Command="{Binding Path=ParentViewModel.CollapseSelectedRecursiveCommand}" CommandParameter="{Binding}" />
                             </ContextMenu>
                         </Setter.Value>
                     </Setter>

@@ -232,9 +232,18 @@ namespace JsonConfigEditor
                     }
                     break;
                 case Key.Insert:
-                    if (Keyboard.Modifiers == ModifierKeys.Alt)
+                    // Check if the selected item is inside an array (or is the placeholder)
+                    if (selectedItem.IsInArray)
                     {
-                        // Alt+Insert for adding a child
+                        if (ViewModel.AddItemAboveCommand.CanExecute(selectedItem))
+                        {
+                            ViewModel.AddItemAboveCommand.Execute(selectedItem);
+                            e.Handled = true;
+                        }
+                    }
+                    else if (Keyboard.Modifiers == ModifierKeys.Alt)
+                    {
+                        // Alt+Insert for adding a child to an object
                         if (ViewModel.AddNewChildNodeCommand.CanExecute(selectedItem))
                         {
                             ViewModel.AddNewChildNodeCommand.Execute(selectedItem);
@@ -243,7 +252,7 @@ namespace JsonConfigEditor
                     }
                     else
                     {
-                        // Regular Insert for adding a sibling
+                        // Regular Insert for adding a sibling to a property in an object
                         if (ViewModel.AddNewSiblingNodeCommand.CanExecute(selectedItem))
                         {
                             ViewModel.AddNewSiblingNodeCommand.Execute(selectedItem);

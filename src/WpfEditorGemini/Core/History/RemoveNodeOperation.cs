@@ -12,6 +12,11 @@ namespace JsonConfigEditor.Core.History
 
         public override string? NodePath => _removedNode.Path;
 
+        // Add these three properties to expose necessary information for selection logic
+        public DomNode ParentNode => _parent;
+        public DomNode RemovedNode => _removedNode;
+        public int OriginalIndexInArray => _originalIndexInArray;
+
         public RemoveNodeOperation(int layerIndex, DomNode parent, DomNode removedNode, string nameOrIndexAtTimeOfRemoval, int originalIndexInArray)
             : base(layerIndex)
         {

@@ -143,6 +143,17 @@ namespace JsonConfigEditor.ViewModels
         /// </summary>
         public bool IsAddItemPlaceholder => _isAddItemPlaceholder;
 
+        /// <summary>
+        /// True if this row represents an item in an array.
+        /// </summary>
+        public bool IsInArray => DomNode?.Parent is ArrayNode || _isAddItemPlaceholder;
+
+        /// <summary>
+        /// Determines if the context menu should show options for adding array items.
+        /// This is true if the node is an array itself, or is an item within an array.
+        /// </summary>
+        public bool IsArrayContext => IsInArray || (DomNode is ArrayNode) || (IsSchemaOnlyNode && NodeType == ViewModelNodeType.Array);
+
 
         /// <summary>
         /// Gets a value indicating if this item should be edited with a ComboBox
