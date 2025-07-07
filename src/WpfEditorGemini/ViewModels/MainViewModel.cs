@@ -1240,61 +1240,48 @@ namespace JsonConfigEditor.ViewModels
             return _searchResultNodes.Contains(node);
         }
 
+
         private async Task ValidateDocumentAsync()
         {
             var rootNode = GetRootDomNode();
             if (rootNode == null) return;
 
+            // 1. Create a NEW, LOCAL dictionary. This will be safely populated on the background thread.
+            var localIssuesMap = new Dictionary<string, List<ValidationIssue>>();
+
             await Task.Run(() =>
             {
-                _validationIssuesMap.Clear();
-                // CHANGE: This now uses a temporary DomNode-keyed dictionary for the service call.
+                // This code now operates ONLY on the local dictionary, not the shared _validationIssuesMap.
                 var tempDomToSchemaMap = new Dictionary<DomNode, SchemaNode?>();
-                // This helper function would need to be created or adapted to build the temp map.
                 BuildTemporaryDomToSchemaMap(rootNode, tempDomToSchemaMap);
                 var issuesByNode = _validationService.ValidateTree(rootNode, tempDomToSchemaMap);
 
                 foreach (var issueEntry in issuesByNode)
                 {
-                    // CHANGE: Store validation issues by path.
-                    _validationIssuesMap[issueEntry.Key.Path] = issueEntry.Value;
+                    localIssuesMap[issueEntry.Key.Path] = issueEntry.Value;
                 }
             });
 
-            // Update UI on the main thread
-            Application.Current.Dispatcher.Invoke(() =>
+            // 2. We are now back on the UI thread. It is safe to modify the shared collection.
+            _validationIssuesMap.Clear();
+            foreach (var entry in localIssuesMap)
             {
-                // Update validation state for all ViewModels in the persistent map
-                foreach (var vm in _persistentVmMap.Values)
+                _validationIssuesMap.Add(entry.Key, entry.Value);
+            }
+
+            // 3. Now that the shared map is safely updated, update the validation state on all visible ViewModels.
+            foreach (var vm in _persistentVmMap.Values)
+            {
+                string? pathKey = vm.DomNode?.Path;
+                if (pathKey != null && _validationIssuesMap.TryGetValue(pathKey, out var nodeIssues))
                 {
-                    string? pathKey = vm.DomNode?.Path;
-                    if (pathKey != null && _validationIssuesMap.TryGetValue(pathKey, out var nodeIssues))
-                    {
-                        vm.SetValidationState(false, nodeIssues.FirstOrDefault()?.Message ?? "Validation failed");
-                    }
-                    else
-                    {
-                        vm.SetValidationState(true, "");
-                    }
+                    vm.SetValidationState(false, nodeIssues.FirstOrDefault()?.Message ?? "Validation failed");
                 }
-                
-                // Also update validation state for schema-only nodes
-                foreach (var vm in FlatItemsSource)
+                else
                 {
-                    if (vm.IsSchemaOnlyNode)
-                    {
-                        string? pathKey = vm.SchemaNodePathKey;
-                        if (pathKey != null && _validationIssuesMap.TryGetValue(pathKey, out var nodeIssues))
-                        {
-                            vm.SetValidationState(false, nodeIssues.FirstOrDefault()?.Message ?? "Validation failed");
-                        }
-                        else
-                        {
-                            vm.SetValidationState(true, "");
-                        }
-                    }
+                    vm.SetValidationState(true, "");
                 }
-            });
+            }
         }
 
         // Helper to create the temporary map needed by the existing validation service
