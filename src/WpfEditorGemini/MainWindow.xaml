@@ -588,7 +588,10 @@
                         </ListView.View>
                     </ListView>
                 </TabItem>
-                <!-- Other tabs for Search Results, etc., can be added here later -->
+
+                <TabItem Header="Log">
+                    <ListView ItemsSource="{Binding LogMessages}" FontFamily="Consolas" Margin="2"/>
+                </TabItem>
             </TabControl>
             <!-- Close button: hovers on top of the TabControl, positioned absolutely -->
             <Button Command="{Binding ToggleDiagnosticsPanelCommand}"

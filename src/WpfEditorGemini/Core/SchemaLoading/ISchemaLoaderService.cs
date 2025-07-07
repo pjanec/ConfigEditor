@@ -21,6 +21,11 @@ namespace JsonConfigEditor.Core.SchemaLoading
         IReadOnlyList<string> ErrorMessages { get; }
 
         /// <summary>
+        /// NEW: Gets log messages generated during the schema loading process.
+        /// </summary>
+        IReadOnlyList<string> LogMessages { get; }
+
+        /// <summary>
         /// Asynchronously loads schema definitions from the specified assembly paths.
         /// </summary>
         /// <param name="assemblyPaths">The paths to assemblies containing schema classes</param>

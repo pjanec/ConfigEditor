@@ -24,6 +24,7 @@ namespace JsonConfigEditor.Core.SchemaLoading
     {
         private readonly Dictionary<string, SchemaNode> _rootSchemas = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _errorMessages = new();
+        private readonly List<string> _logMessages = new(); // NEW
         private readonly CustomUIRegistryService _uiRegistry;
         
         // Missing field from previous erroneous edit
@@ -48,6 +49,9 @@ namespace JsonConfigEditor.Core.SchemaLoading
         /// </summary>
         public IReadOnlyList<string> ErrorMessages => _errorMessages;
 
+        // NEW: Implement the new property
+        public IReadOnlyList<string> LogMessages => _logMessages;
+
         /// <summary>
         /// Asynchronously loads schema definitions from the specified assembly paths.
         /// </summary>
@@ -59,6 +63,7 @@ namespace JsonConfigEditor.Core.SchemaLoading
             {
                 _rootSchemas.Clear();
                 _errorMessages.Clear();
+                _logMessages.Clear(); // Clear log messages when loading starts
                 _uiRegistry.ClearRegistry(); // Assuming this is safe to call multiple times
                 _processedTypes.Clear(); // Clear for fresh loading session
 
@@ -110,6 +115,7 @@ namespace JsonConfigEditor.Core.SchemaLoading
         {
             _rootSchemas.Clear();
             _errorMessages.Clear();
+            _logMessages.Clear(); // Clear log messages when clearing
             _processedTypes.Clear();
             _uiRegistry.ClearRegistry();
         }
@@ -162,6 +168,8 @@ namespace JsonConfigEditor.Core.SchemaLoading
         /// </summary>
         private void ProcessAssemblyFile(string assemblyFilePath)
         {
+            // In ProcessAssemblyFile method, at the beginning
+            _logMessages.Add($"Scanning assembly: {assemblyFilePath}");
             try
             {
                 var assembly = Assembly.LoadFrom(assemblyFilePath); // Consider AssemblyLoadContext for unloadability if needed
@@ -259,6 +267,8 @@ namespace JsonConfigEditor.Core.SchemaLoading
                 // ParseTypeRecursive passes `currentPath` which is `mountPath` for the root.
 
                 _rootSchemas[mountPath] = rootNode; // rootNode should have its MountPath correctly set if constructor handles it
+                // In ProcessSchemaClass method, after successfully creating rootNode
+                _logMessages.Add($"  -> Found root schema '{schemaClassType.FullName}' with mount path '{mountPath}'");
                  System.Diagnostics.Debug.WriteLine($"SchemaLoaderService.ProcessSchemaClass: Registered root schema for Type='{schemaClassType.FullName}', MountPath='{mountPath}', SchemaNodeName='{rootNode.Name}'");
             }
             else

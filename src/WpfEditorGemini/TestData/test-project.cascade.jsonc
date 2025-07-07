@@ -1,4 +1,7 @@
 {
+  "schemaSources": [
+    "."
+  ],
   "layers": [
     {
       "name": "Base",

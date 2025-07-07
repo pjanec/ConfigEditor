@@ -182,6 +182,7 @@ namespace JsonConfigEditor.ViewModels
 
         public ObservableCollection<DataGridRowItemViewModel> FlatItemsSource { get; } = new();
         public ObservableCollection<IssueViewModel> Issues { get; } = new();
+        public ObservableCollection<string> LogMessages { get; } = new();
 
         private System.Threading.Timer? _filterDebounceTimer;
 
@@ -606,6 +607,7 @@ namespace JsonConfigEditor.ViewModels
             SearchText = string.Empty;
         }
 
+        // REPLACE the entire ExecuteLoadCascadeProject method
         private async void ExecuteLoadCascadeProject()
         {
             if (!CheckUnsavedChanges()) return;
@@ -618,19 +620,41 @@ namespace JsonConfigEditor.ViewModels
             {
                 try
                 {
-                    var loadedLayersData = await _projectLoader.LoadProjectAsync(openDialog.FileName);
+                    var projectLoadResult = await _projectLoader.LoadProjectAsync(openDialog.FileName);
+
+                    // 1. Load schemas first, including defaults and project-specific ones.
+                    var allSchemaPaths = new List<string> { Assembly.GetExecutingAssembly().Location };
+                    allSchemaPaths.AddRange(projectLoadResult.SchemaAssemblyPaths);
+                    await LoadSchemasAsync(allSchemaPaths.Distinct());
+
+                    // 2. Clear and populate diagnostic panels from schema and project loading.
+                    Issues.Clear();
+                    LogMessages.Clear();
+                    foreach (var log in _schemaLoader.LogMessages) { LogMessages.Add(log); }
+                    foreach (var error in _schemaLoader.ErrorMessages.Concat(projectLoadResult.Errors))
+                    {
+                        var issue = new IntegrityIssue(ValidationSeverity.Error, error, "Project Load");
+                        Issues.Add(new IssueViewModel(issue, this));
+                    }
+
+                    // 3. Process the layers from the project load result.
                     _cascadeLayers.Clear();
                     AllLayers.Clear();
-
                     int layerIndex = 0;
-                    foreach (var layerData in loadedLayersData)
+                    foreach (var layerData in projectLoadResult.LayerData)
                     {
+                        foreach (var error in layerData.Errors)
+                        {
+                            var issue = new IntegrityIssue(ValidationSeverity.Error, error, layerData.Definition.Name);
+                            Issues.Add(new IssueViewModel(issue, this));
+                        }
+
                         var mergeResult = _intraLayerMerger.Merge(layerData);
                         var cascadeLayer = new CascadeLayer(
                             layerIndex++,
                             layerData.Definition.Name,
-                            layerData.AbsoluteFolderPath, // Use the absolute path from the load result
-                            layerData.SourceFiles,
+                            layerData.AbsoluteFolderPath,
+                             layerData.SourceFiles,
                             mergeResult.LayerConfigRootNode,
                             mergeResult.IntraLayerValueOrigins
                         );
@@ -638,39 +662,29 @@ namespace JsonConfigEditor.ViewModels
                         AllLayers.Add(cascadeLayer);
                     }
 
-
-
-                    // NEW: Perform a full project merge to populate authoritative origin maps
-                    RecalculateAuthoritativeOriginMaps();
-                    // END NEW
-
-                    // *** NEW: Perform critical error scan ***
-                    var criticalIssues = _errorScanner.Scan(loadedLayersData);
+                    var criticalIssues = _errorScanner.Scan(projectLoadResult.LayerData);
                     if (criticalIssues.Any())
                     {
                         NotifyUserOfCriticalErrors(criticalIssues);
                     }
 
-                    // *** NEW: Perform case mismatch scan ***
                     var caseWarnings = _caseMismatchChecker.Scan(_cascadeLayers, _schemaLoader);
-                    if (caseWarnings.Any())
+                    foreach (var warning in caseWarnings)
                     {
-                        // Add these warnings to the existing Issues collection
-                        foreach (var warning in caseWarnings)
-                        {
-                            Issues.Add(new IssueViewModel(warning, this));
-                        }
-                        // Ensure the panel is visible if we found new issues
-                        if (Issues.Any())
-                        {
-                            IsDiagnosticsPanelVisible = true;
-                        }
+                        Issues.Add(new IssueViewModel(warning, this));
+                    }
+
+                    // 4. Finalize state and refresh UI
+                    RecalculateAuthoritativeOriginMaps();
+                    if (Issues.Any())
+                    {
+                        IsDiagnosticsPanelVisible = true;
                     }
 
                     CurrentFilePath = openDialog.FileName;
                     ActiveEditorLayer = _cascadeLayers.LastOrDefault();
                     OnPropertyChanged(nameof(IsCascadeModeActive)); 
-              
+
                     RefreshDisplay();
                 }
                 catch (Exception ex)
@@ -1650,7 +1664,8 @@ namespace JsonConfigEditor.ViewModels
                 var layerData = new LayerLoadResult(
                     layerDefinition,
                     layer.FolderPath,
-                    layer.SourceFiles
+                    layer.SourceFiles,
+                    new List<string>() // Empty errors list for this re-run
                 );
                 
                 var mergeResult = _intraLayerMerger.Merge(layerData);

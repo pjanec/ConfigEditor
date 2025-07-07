@@ -38,7 +38,7 @@ namespace JsonConfigEditor.Core.Services
         {
             var rootNode = new ObjectNode("$root", null);
             var origins = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var errors = new List<string>();
+            var errors = new List<string>(layerLoadResult.Errors); // Include existing errors from the layer load result
             var proposedConsolidations = new List<ConsolidationAction>(); // Instantiate the new list
 
             foreach (var sourceFile in layerLoadResult.SourceFiles.OrderBy(f => f.RelativePath))
