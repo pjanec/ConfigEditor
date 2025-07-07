@@ -423,21 +423,42 @@
                             <Grid Margin="{Binding Indentation}">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="20" />
+                                    <ColumnDefinition Width="20" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                
-                                <!-- Expand/Collapse Button -->
-                                <ToggleButton Grid.Column="0" 
+
+                                <ToggleButton Grid.Column="0"
                                               IsChecked="{Binding IsExpanded, Mode=TwoWay}"
                                               Click="ExpandToggleButton_Click"
                                               Visibility="{Binding IsExpandable, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                              Width="16" Height="16" 
+                                              Width="16" Height="16"
                                               Margin="0,0,4,0"
                                               Style="{StaticResource ExpandCollapseToggleStyle}" />
-                                
-                                <!-- Node Name -->
-                                <TextBlock Grid.Column="1" 
-                                           Text="{Binding NodeName}" 
+
+                                <TextBlock Grid.Column="1" Text="{Binding NodeTypeIcon}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="14" Cursor="Hand">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="Icon_PreviewMouseLeftButtonDown"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding NodeType}" Value="Object">
+                                                    <Setter Property="Foreground" Value="#FFC600"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding NodeType}" Value="Array">
+                                                    <Setter Property="Foreground" Value="#3ADF00"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding NodeType}" Value="Value">
+                                                    <Setter Property="Foreground" Value="Black"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsSchemaOnlyNode}" Value="True">
+                                                    <Setter Property="Foreground" Value="LightGray"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding NodeName}"
                                            VerticalAlignment="Center"
                                            ToolTip="{Binding ValidationErrorMessage}" />
                             </Grid>

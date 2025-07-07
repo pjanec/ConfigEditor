@@ -714,6 +714,20 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
             return GetCell(row, column);
         }
 
+        private void Icon_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is FrameworkElement element && element.DataContext is DataGridRowItemViewModel vm)
+            {
+                // Only toggle if the node is expandable
+                if (vm.IsExpandable)
+                {
+                    vm.IsExpanded = !vm.IsExpanded;
+                }
+                // Mark the event as handled to prevent the grid from trying to
+                // select the row or start an edit, which can feel clunky.
+                e.Handled = true;
+            }
+        }
 
     }
 } 

@@ -183,6 +183,34 @@ namespace JsonConfigEditor.ViewModels
         }
 
         /// <summary>
+        /// Gets the icon character representing the node type.
+        /// </summary>
+        public string NodeTypeIcon
+        {
+            get
+            {
+                // For schema-only nodes, determine type from the schema context
+                if (IsSchemaOnlyNode)
+                {
+                    return _schemaContextNode?.NodeType switch
+                    {
+                        SchemaNodeType.Object => "📁", // Folder icon for objects
+                        SchemaNodeType.Array => "⛓",  // Chain/List icon for arrays
+                        _ => "•"                     // Bullet for values
+                    };
+                }
+
+                // For real DOM nodes, determine type from the node itself
+                return _domNode switch
+                {
+                    ObjectNode => "📁",
+                    ArrayNode => "⛓",
+                    _ => "•"
+                };
+            }
+        }
+
+        /// <summary>
         /// Gets a string representation of the node's value for display.
         /// For schema-only nodes, shows the default value. For placeholders, shows placeholder text.
         /// (From specification document, Section 2.3.2, 2.12)
@@ -723,6 +751,38 @@ namespace JsonConfigEditor.ViewModels
             }  
         }
 
+        public enum ViewModelNodeType
+        {
+            Object,
+            Array,
+            Value
+        }
+
+        /// <summary>
+        /// Gets the simple type of the node for styling triggers.
+        /// </summary>
+        public ViewModelNodeType NodeType
+        {
+            get
+            {
+                if (IsSchemaOnlyNode)
+                {
+                    return _schemaContextNode?.NodeType switch
+                    {
+                        SchemaNodeType.Object => ViewModelNodeType.Object,
+                        SchemaNodeType.Array => ViewModelNodeType.Array,
+                        _ => ViewModelNodeType.Value
+                    };
+                }
+
+                return _domNode switch
+                {
+                    ObjectNode => ViewModelNodeType.Object,
+                    ArrayNode => ViewModelNodeType.Array,
+                    _ => ViewModelNodeType.Value
+                };
+            }
+        }
 
     }
 } 
