@@ -169,6 +169,8 @@ namespace JsonConfigEditor.ViewModels
         public ICommand ToggleMergedViewCommand { get; }
         public ICommand ToggleSchemaNodesCommand { get; }
         public ICommand ToggleInvalidOnlyCommand { get; }
+        public ICommand AddNewSiblingNodeCommand { get; }
+        public ICommand AddNewChildNodeCommand { get; }
 
         // --- Public Properties ---
 
@@ -346,6 +348,8 @@ namespace JsonConfigEditor.ViewModels
             DeleteSelectedNodesCommand = new RelayCommand(param => ExecuteDeleteSelectedNodes(param as DataGridRowItemViewModel), param => CanExecuteDeleteSelectedNodes(param as DataGridRowItemViewModel));
             ExpandSelectedRecursiveCommand = new RelayCommand(param => ExecuteExpandSelectedRecursive(param as DataGridRowItemViewModel), param => CanExecuteExpandCollapseSelectedRecursive(param as DataGridRowItemViewModel));
             CollapseSelectedRecursiveCommand = new RelayCommand(param => ExecuteCollapseSelectedRecursive(param as DataGridRowItemViewModel), param => CanExecuteExpandCollapseSelectedRecursive(param as DataGridRowItemViewModel));
+            AddNewSiblingNodeCommand = new RelayCommand(param => ExecuteAddNewNode(param as DataGridRowItemViewModel, isChild: false), param => CanExecuteAddNewNode(param as DataGridRowItemViewModel));
+            AddNewChildNodeCommand = new RelayCommand(param => ExecuteAddNewNode(param as DataGridRowItemViewModel, isChild: true), param => CanExecuteAddNewChildNode(param as DataGridRowItemViewModel));
 
             InitializeEmptyDocument();
         }
@@ -468,12 +472,9 @@ namespace JsonConfigEditor.ViewModels
                     pathToSelect = operation.NodePath;
                 }
 
-                RefreshDisplay();
-
-                if (pathToSelect != null && _persistentVmMap.TryGetValue(pathToSelect, out var vmToSelect))
-                {
-                    SelectedGridItem = vmToSelect;
-                }
+                // Pass the path of the new node directly into the refresh process.
+                // The selection logic is now handled inside RefreshFlatList.
+                RefreshDisplay(pathToSelect);
             }
             else if (operation is ValueEditOperation valueOp && valueOp.NodePath != null)
             {
@@ -996,7 +997,7 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
-        private void RefreshDisplay()
+        private void RefreshDisplay(string? pathToSelect = null)
         {
             Dictionary<string, int> viewSpecificValueOrigins;
               
@@ -1023,7 +1024,7 @@ namespace JsonConfigEditor.ViewModels
             }
 
             RebuildDomToSchemaMapping();
-            RefreshFlatList(viewSpecificValueOrigins); // Pass the view-specific map
+            RefreshFlatList(viewSpecificValueOrigins, pathToSelect); // Pass the view-specific map
             _ = ValidateDocumentAsync();
             OnPropertyChanged(nameof(WindowTitle));
         }
@@ -1072,7 +1073,7 @@ namespace JsonConfigEditor.ViewModels
             }
         }
 
-    private void RefreshFlatList(Dictionary<string, int> viewSpecificValueOrigins)
+    private void RefreshFlatList(Dictionary<string, int> viewSpecificValueOrigins, string? pathToSelect = null)
         {
             // Persist the expansion state from the current ViewModels into the state dictionary.
             foreach (var vm in _persistentVmMap.Values)
@@ -1096,7 +1097,8 @@ namespace JsonConfigEditor.ViewModels
                 return;
             }
 
-            string? selectedPathIdentifier = SelectedGridItem?.DomNode?.Path ?? (SelectedGridItem?.IsSchemaOnlyNode == true ? SelectedGridItem.SchemaNodePathKey : null);
+            // Use the explicit path if provided; otherwise, fall back to the currently selected item.
+            string? selectedPathIdentifier = pathToSelect ?? (SelectedGridItem?.DomNode?.Path ?? (SelectedGridItem?.IsSchemaOnlyNode == true ? SelectedGridItem.SchemaNodePathKey : null));
               
             List<DataGridRowItemViewModel> tempFlatList;
             if (!string.IsNullOrEmpty(FilterText))
@@ -1654,6 +1656,124 @@ namespace JsonConfigEditor.ViewModels
         private void ExecuteToggleInvalidOnly()
         {
             ShowOnlyInvalidNodes = !ShowOnlyInvalidNodes;
+        }
+
+        private bool CanExecuteAddNewNode(DataGridRowItemViewModel? item)
+        {
+            // Can add a sibling to any existing node.
+            return item?.IsDomNodePresent == true;
+        }
+
+        private bool CanExecuteAddNewChildNode(DataGridRowItemViewModel? item)
+        {
+            // Can only add a child to an existing ObjectNode.
+            return item?.DomNode is ObjectNode;
+        }
+
+        private ObjectNode? FindOrCreateObjectNodeInSource(string path)
+        {
+            if (ActiveEditorLayer == null) return null;
+
+            var segments = path.Split('/').Where(s => !string.IsNullOrEmpty(s) && s != "$root").ToList();
+            ObjectNode currentParent = ActiveEditorLayer.LayerConfigRootNode;
+
+            foreach (var segment in segments)
+            {
+                var childNode = currentParent.GetChild(segment);
+                if (childNode == null)
+                {
+                    // Child doesn't exist, create it.
+                    var newObject = new ObjectNode(segment, currentParent);
+                    currentParent.AddChild(segment, newObject);
+                    // Also track its origin to the most likely file
+                    var deducedOrigin = DeduceOriginForNewNode(newObject);
+                    if (deducedOrigin != null)
+                    {
+                        TrackOriginForNewNodeRecursive(newObject, deducedOrigin, ActiveEditorLayer.IntraLayerValueOrigins);
+                    }
+                    currentParent = newObject;
+                }
+                else if (childNode is ObjectNode obj)
+                {
+                    // Child exists and is an object, traverse into it.
+                    currentParent = obj;
+                }
+                else
+                {
+                    // A node exists at this path but it's not an object (e.g., a value or array).
+                    // This is an error condition. We cannot add a child to it.
+                    return null;
+                }
+            }
+            return currentParent;
+        }
+
+        private void ExecuteAddNewNode(DataGridRowItemViewModel? selectedItem, bool isChild)
+        {
+            if (selectedItem?.DomNode == null || ActiveEditorLayer == null) return;
+
+            var displayParentNode = isChild ? selectedItem.DomNode : selectedItem.DomNode.Parent;
+            if (displayParentNode == null) return;
+
+            // Use the new helper to get the REAL parent from the source layer, creating it if necessary.
+            var realParentObject = FindOrCreateObjectNodeInSource(displayParentNode.Path);
+            if (realParentObject == null)
+            {
+                MessageBox.Show($"Cannot add a property to '{displayParentNode.Path}' because a non-object value already exists at this path in the '{ActiveEditorLayer.Name}' layer.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            Action<string, string, NodeType?> onCommit = (propName, valueStr, selectedType) =>
+            {
+                var newNode = CreateNodeFromUserInput(propName, valueStr, selectedType, realParentObject);
+                if (newNode == null) return;
+
+                // FinalizeNodeCreation will now operate on the real parent object.
+                FinalizeNodeCreation(realParentObject, newNode);
+                ActiveEditorLayer.IsDirty = true;
+            };
+
+            Func<string, bool> isNameValid = (newName) => !realParentObject.HasProperty(newName);
+
+            var vm = new AddNewNodeViewModel(onCommit, isNameValid);
+            var dialog = new AddNewNodeDialog
+            {
+                DataContext = vm,
+                Owner = Application.Current.MainWindow
+            };
+
+            dialog.ShowDialog();
+        }
+
+        private DomNode? CreateNodeFromUserInput(string name, string value, NodeType? selectedType, DomNode parent)
+        {
+            NodeType finalType = selectedType ?? DeduceTypeFromString(value);
+
+            if (finalType == NodeType.String && value.StartsWith("\"") && value.EndsWith("\"") && value.Length >= 2)
+            {
+                value = value.Substring(1, value.Length - 2);
+            }
+
+            return finalType switch
+            {
+                NodeType.Object => new ObjectNode(name, parent),
+                NodeType.Array => new ArrayNode(name, parent),
+                NodeType.Boolean => new ValueNode(name, parent, JsonDocument.Parse(bool.TryParse(value, out var b) && b ? "true" : "false").RootElement),
+                NodeType.Null => new ValueNode(name, parent, JsonDocument.Parse("null").RootElement),
+                NodeType.Number => double.TryParse(value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num) ? new ValueNode(name, parent, JsonDocument.Parse(num.ToString(System.Globalization.CultureInfo.InvariantCulture)).RootElement) : null,
+                _ => new ValueNode(name, parent, JsonDocument.Parse($"\"{JsonEncodedText.Encode(value)}\"").RootElement),
+            };
+        }
+
+        private NodeType DeduceTypeFromString(string value)
+        {
+            if (value.StartsWith("\"") && value.EndsWith("\"")) return NodeType.String;
+            if (value.Trim() == "{}") return NodeType.Object;
+            if (value.Trim() == "[]") return NodeType.Array;
+            if (bool.TryParse(value, out _)) return NodeType.Boolean;
+            if (value.Equals("null", StringComparison.OrdinalIgnoreCase)) return NodeType.Null;
+            if (double.TryParse(value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out _)) return NodeType.Number;
+            return NodeType.String;
         }
 
         /// <summary>

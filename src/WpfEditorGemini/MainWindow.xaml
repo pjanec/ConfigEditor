@@ -23,6 +23,8 @@
         <KeyBinding Key="F3" Command="{Binding FindNextCommand}" />
         <KeyBinding Key="F3" Modifiers="Shift" Command="{Binding FindPreviousCommand}" />
         <KeyBinding Key="Delete" Command="{Binding DeleteSelectedNodesCommand}" CommandParameter="{Binding SelectedGridItem}"/>
+        <KeyBinding Key="Insert" Command="{Binding AddNewSiblingNodeCommand}" CommandParameter="{Binding SelectedGridItem}"/>
+        <KeyBinding Key="Insert" Modifiers="Alt" Command="{Binding AddNewChildNodeCommand}" CommandParameter="{Binding SelectedGridItem}"/>
         <KeyBinding Key="Z" Modifiers="Ctrl" Command="{Binding UndoCommand}" />
         <KeyBinding Key="Y" Modifiers="Ctrl" Command="{Binding RedoCommand}" />
     </Window.InputBindings>
@@ -35,6 +37,8 @@
 
             <converters:CustomTooltipConverter x:Key="CustomTooltipConverter" />
             <converters:BooleanToStringConverter x:Key="BooleanToStringConverter" />
+            <converters:EnumToBooleanConverter x:Key="EnumToBooleanConverter" />
+            <converters:IsObjectTypeConverter x:Key="IsObjectTypeConverter" />
 
             <DataTemplate x:Key="DisplayStringTemplate">
                 <TextBlock Text="{Binding ValueDisplay}" VerticalAlignment="Center" Margin="2,0" />
@@ -306,6 +310,28 @@
                         <Setter.Value>
                             <ContextMenu DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
 
+                                <!-- Add New Node Items -->
+                                <MenuItem Header="Add New Sibling Node"
+                                          Command="{Binding Path=ParentViewModel.AddNewSiblingNodeCommand}"
+                                          CommandParameter="{Binding}"/>
+                                      
+                                <MenuItem Header="Add New Child Node"
+                                          Command="{Binding Path=ParentViewModel.AddNewChildNodeCommand}"
+                                          CommandParameter="{Binding}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding DomNode, Converter={StaticResource IsObjectTypeConverter}}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                </MenuItem>
+                                      
+                                <Separator />
+
                                 <MenuItem Header="Override Sources"
                                           ItemsSource="{Binding OverrideSourceLayers}"
                                           Visibility="{Binding Path=ParentViewModel.IsCascadeModeActive, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -333,11 +359,11 @@
                                 <MenuItem Header="Delete"
                                           Command="{Binding Path=ParentViewModel.DeleteSelectedNodesCommand}" 
                                           CommandParameter="{Binding}"/>
-                                                            <Separator />
-                                                            <MenuItem Header="Expand Recursive"
+                                <Separator />
+                                <MenuItem Header="Expand Recursive"
                                           Command="{Binding Path=ParentViewModel.ExpandSelectedRecursiveCommand}"
                                           CommandParameter="{Binding}" />
-                                                            <MenuItem Header="Collapse Recursive"
+                                <MenuItem Header="Collapse Recursive"
                                           Command="{Binding Path=ParentViewModel.CollapseSelectedRecursiveCommand}"
                                           CommandParameter="{Binding}" />
                             </ContextMenu>

@@ -231,6 +231,26 @@ namespace JsonConfigEditor
                         e.Handled = true;
                     }
                     break;
+                case Key.Insert:
+                    if (Keyboard.Modifiers == ModifierKeys.Alt)
+                    {
+                        // Alt+Insert for adding a child
+                        if (ViewModel.AddNewChildNodeCommand.CanExecute(selectedItem))
+                        {
+                            ViewModel.AddNewChildNodeCommand.Execute(selectedItem);
+                            e.Handled = true;
+                        }
+                    }
+                    else
+                    {
+                        // Regular Insert for adding a sibling
+                        if (ViewModel.AddNewSiblingNodeCommand.CanExecute(selectedItem))
+                        {
+                            ViewModel.AddNewSiblingNodeCommand.Execute(selectedItem);
+                            e.Handled = true;
+                        }
+                    }
+                    break;
             }
         }
 
@@ -581,7 +601,7 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
                         }
                         System.Diagnostics.Debug.WriteLine($">>> Dispatcher 'focusAction' finished for '{selectedVm.NodeName}'");
                     };
-                    MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.DataBind);
+                    MainDataGrid.Dispatcher.BeginInvoke(focusAction, System.Windows.Threading.DispatcherPriority.Loaded);
                 }
             }
         }
