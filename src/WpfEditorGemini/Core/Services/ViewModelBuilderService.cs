@@ -137,27 +137,50 @@ namespace JsonConfigEditor.Core.Services
             {
                 if (node is ObjectNode objectNode)
                 {
+                    // 1. Create a single, combined list of all potential children (both real and placeholder).
+                    var combinedChildrenVms = new List<DataGridRowItemViewModel>();
+
+                    // 2. Add view models for real DOM children to the list.
                     foreach (var childDomNode in objectNode.GetChildren())
                     {
-                        // Pass the maps down in the recursive call
-                        BuildListRecursive(childDomNode, flatItems, persistentVmMap, domToSchemaMap, valueOrigins, showSchemaNodes);
+                        if (!persistentVmMap.TryGetValue(childDomNode.Path, out var childVm) || !childVm.IsDomNodePresent)
+                        {
+                            domToSchemaMap.TryGetValue(childDomNode.Path, out var schema1);
+                            valueOrigins.TryGetValue(childDomNode.Path, out int originIndex);
+                            childVm = new DataGridRowItemViewModel(childDomNode, schema1, _mainViewModel, originIndex);
+                        }
+                        combinedChildrenVms.Add(childVm);
                     }
 
-                    // Use the placeholder provider to get schema-only nodes.
+                    // 3. Add view models for schema-only placeholders to the same list.
                     if (showSchemaNodes && domToSchemaMap.TryGetValue(objectNode.Path, out var schema) && schema?.NodeType == SchemaNodeType.Object)
                     {
-                        var placeholders = _placeholderProvider.GetPlaceholders(objectNode, schema, _mainViewModel)
-                                                               .OrderBy(vm => vm.NodeName)
-                                                               .ToList();
+                        var placeholders = _placeholderProvider.GetPlaceholders(objectNode, schema, _mainViewModel);
+                        combinedChildrenVms.AddRange(placeholders);
+                    }
 
-                        // Iterate and add children immediately after the parent.
-                        foreach (var p in placeholders)
+                    // 4. Sort the combined list alphabetically by the displayed node name.
+                    var sortedChildren = combinedChildrenVms.OrderBy(vm => vm.NodeName).ToList();
+
+                    // 5. Process the sorted children.
+                    foreach (var childVm in sortedChildren)
+                    {
+                        if (childVm.IsDomNodePresent && childVm.DomNode != null)
                         {
-                            flatItems.Add(p); // Add the parent placeholder (e.g., "Database")
-                            if (p.IsExpanded && p.IsExpandable)
+                            // For real nodes, we simply make the recursive call.
+                            // That call itself is responsible for adding the item to the flat list.
+                            // This prevents the duplication.
+                            BuildListRecursive(childVm.DomNode, flatItems, persistentVmMap, domToSchemaMap, valueOrigins, showSchemaNodes);
+                        }
+                        else if (childVm.IsSchemaOnlyNode)
+                        {
+                            // For schema-only placeholders, there is no DomNode to recurse on.
+                            // We must add the placeholder VM directly, and then manually handle
+                            // adding its children if it's expanded.
+                            flatItems.Add(childVm);
+                            if (childVm.IsExpanded)
                             {
-                                // Immediately add its children before moving to the next top-level placeholder
-                                AddSchemaOnlyChildrenRecursive(p, flatItems, persistentVmMap, domToSchemaMap, valueOrigins);
+                                AddSchemaOnlyChildrenRecursive(childVm, flatItems, persistentVmMap, domToSchemaMap, valueOrigins);
                             }
                         }
                     }
