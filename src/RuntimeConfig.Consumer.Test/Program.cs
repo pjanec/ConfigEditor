@@ -46,7 +46,7 @@ public class Program
         // Test ApplicationName - exists in Base and Production, should get Production value
         try
         {
-            string appName = query.Get<string>("app/ApplicationName");
+            string appName = query.Get<string>("app/app-settings/ApplicationName");
             Console.WriteLine($"Application Name: {appName}");
             Console.WriteLine("  → Base layer: 'My Awesome App (Base)'");
             Console.WriteLine("  → Production layer: 'My Awesome App'");
@@ -60,7 +60,7 @@ public class Program
         // Test Port - exists in Base, Staging, and Production, should get Production value
         try
         {
-            int port = query.Get<int>("app/Port");
+            int port = query.Get<int>("app/app-settings/Port");
             Console.WriteLine($"Port: {port}");
             Console.WriteLine("  → Base layer: 80");
             Console.WriteLine("  → Staging layer: 8080");
@@ -75,7 +75,7 @@ public class Program
         // Test EnableLogging - exists in Base and Production, should get Production value
         try
         {
-            bool enableLogging = query.Get<bool>("app/EnableLogging");
+            bool enableLogging = query.Get<bool>("app/app-settings/EnableLogging");
             Console.WriteLine($"Enable Logging: {enableLogging}");
             Console.WriteLine("  → Base layer: true");
             Console.WriteLine("  → Production layer: false");
@@ -89,7 +89,7 @@ public class Program
         // Test AllowedHosts - exists in Base and Staging, should get Staging value
         try
         {
-            var allowedHosts = query.Get<string[]>("app/AllowedHosts");
+            var allowedHosts = query.Get<string[]>("app/app-settings/AllowedHosts");
             Console.WriteLine($"Allowed Hosts: [{string.Join(", ", allowedHosts)}]");
             Console.WriteLine("  → Base layer: ['localhost']");
             Console.WriteLine("  → Staging layer: ['localhost', 'staging.server.com']");
