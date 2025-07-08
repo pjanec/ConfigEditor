@@ -18,19 +18,31 @@ public class Program
 
         Console.WriteLine($"Loading configuration from: {testDataPath}");
         
-        var layers = new List<LayerDefinition>
-        {
-            new LayerDefinition("Base", Path.Combine(testDataPath, "1_base")),
-            new LayerDefinition("Staging", Path.Combine(testDataPath, "2_staging")),
-            new LayerDefinition("Production", Path.Combine(testDataPath, "3_production"))
-        };
+        // The test app now only needs to know the path to the main project file.
+        var projectFilePath = Path.Combine(AppContext.BaseDirectory, "TestData", "test-project.cascade.jsonc");
+        Console.WriteLine($"Loading configuration from project file: {projectFilePath}\n");
 
+
+        // specify the cascading layers to load the config from
+        //var layers = new List<LayerDefinition>
+        //{
+        //    new LayerDefinition("Base", Path.Combine(testDataPath, "1_base")),
+        //    new LayerDefinition("Staging", Path.Combine(testDataPath, "2_staging")),
+        //    new LayerDefinition("Production", Path.Combine(testDataPath, "3_production"))
+        //};
+
+        // Use this helper to load layer definitions from the project file.
+        // This abstracts away the details of parsing the .cascade.jsonc file.
+        var projectLoader = new CascadingProjectLoader();
+        var layers = await projectLoader.LoadLayersFromProjectFileAsync(projectFilePath);
+
+        // register the config to the runtime dom tree for later querying
         var provider = new CascadingJsonProvider(layers);
         var configTree = new RuntimeDomTree();
         configTree.RegisterProvider("app", provider);
 
         Console.WriteLine("Loading and resolving configuration...");
-        await configTree.RefreshAsync();
+        await configTree.RefreshAsync(); // resolve refs, prepare for querying
         Console.WriteLine("Load complete.\n");
 
         // Debug: Let's see what the actual DOM structure looks like
@@ -42,6 +54,13 @@ public class Program
 
         Console.WriteLine("=== Cascading Configuration Demo ===");
         Console.WriteLine("Testing values that exist in multiple layers to demonstrate cascading behavior:\n");
+
+        // Read whole config to an in-memory class instance (this class is also used as a schema definition for the editor)
+        {
+            var appSettings = query.Get<JsonConfigEditor.TestData.AppConfiguration>("app/app-settings");
+            Console.WriteLine($"App name from config: {appSettings.ApplicationName}");
+        }
+
 
         // Test ApplicationName - exists in Base and Production, should get Production value
         try
@@ -99,6 +118,7 @@ public class Program
         {
             Console.WriteLine($"Error getting AllowedHosts: {ex.Message}\n");
         }
+
 
         Console.WriteLine("=== Summary ===");
         Console.WriteLine("The cascading configuration system correctly resolves values from the highest layer");
