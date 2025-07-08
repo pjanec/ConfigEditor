@@ -1,4 +1,4 @@
-using JsonConfigEditor.Core.Dom;
+using RuntimeConfig.Core.Dom;
 using System;
 using System.IO;
 using System.Text.Json;

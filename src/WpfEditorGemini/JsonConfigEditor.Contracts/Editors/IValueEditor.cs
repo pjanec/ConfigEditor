@@ -1,6 +1,6 @@
 using System.Windows;
-using JsonConfigEditor.Core.Dom;
-using JsonConfigEditor.Core.Schema;
+using RuntimeConfig.Core.Dom;
+using RuntimeConfig.Core.Schema;
 
 namespace JsonConfigEditor.Contracts.Editors
 {

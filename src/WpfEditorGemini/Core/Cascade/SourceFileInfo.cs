@@ -1,4 +1,4 @@
-﻿using JsonConfigEditor.Core.Dom;
+﻿using RuntimeConfig.Core.Dom;
 using System;
 
 namespace JsonConfigEditor.Core.Cascade

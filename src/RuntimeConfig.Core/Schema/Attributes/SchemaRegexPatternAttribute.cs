@@ -1,6 +1,6 @@
 using System;
 
-namespace JsonConfigEditor.Contracts.Attributes
+namespace RuntimeConfig.Core.Schema.Attributes
 {
     /// <summary>
     /// Attribute to specify a regex pattern for string property validation in schemas.

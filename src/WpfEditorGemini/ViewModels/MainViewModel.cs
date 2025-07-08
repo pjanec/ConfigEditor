@@ -1,6 +1,4 @@
-using JsonConfigEditor.Core.Dom;
 using JsonConfigEditor.Core.Parsing;
-using JsonConfigEditor.Core.Schema;
 using JsonConfigEditor.Core.SchemaLoading;
 using JsonConfigEditor.Core.Serialization;
 using JsonConfigEditor.Core.Settings;
@@ -24,6 +22,8 @@ using JsonConfigEditor.Core.Services;
 using JsonConfigEditor.Core.History;
 using JsonConfigEditor.Views; // Add this for IntegrityCheckDialog
 using JsonConfigEditor.ViewModels; // Add this for new ViewModels
+using RuntimeConfig.Core.Dom;
+using RuntimeConfig.Core.Schema;
 
 namespace JsonConfigEditor.ViewModels
 {

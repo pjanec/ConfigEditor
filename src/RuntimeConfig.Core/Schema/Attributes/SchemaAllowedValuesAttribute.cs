@@ -1,6 +1,6 @@
 using System;
 
-namespace JsonConfigEditor.Contracts.Attributes
+namespace RuntimeConfig.Core.Schema.Attributes
 {
     /// <summary>
     /// Attribute to specify allowed values for string properties in schemas.

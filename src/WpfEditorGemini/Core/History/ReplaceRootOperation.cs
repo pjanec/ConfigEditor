@@ -1,5 +1,5 @@
-using JsonConfigEditor.Core.Dom;
 using JsonConfigEditor.ViewModels;
+using RuntimeConfig.Core.Dom;
 
 namespace JsonConfigEditor.Core.History
 {

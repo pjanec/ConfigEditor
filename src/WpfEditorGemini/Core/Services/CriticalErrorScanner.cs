@@ -1,5 +1,5 @@
 using JsonConfigEditor.Core.Cascade;
-using JsonConfigEditor.Core.Dom;
+using RuntimeConfig.Core.Dom;
 using JsonConfigEditor.Core.Validation;
 using System.Collections.Generic;
 

@@ -1,4 +1,4 @@
-using JsonConfigEditor.Contracts.Attributes;
+using RuntimeConfig.Core.Schema.Attributes;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 

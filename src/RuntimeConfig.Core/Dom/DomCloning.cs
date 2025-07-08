@@ -1,6 +1,6 @@
 using System;
 
-namespace JsonConfigEditor.Core.Dom
+namespace RuntimeConfig.Core.Dom
 {
     /// <summary>
     /// Provides a centralized, shared utility for performing a deep clone of a DomNode tree.

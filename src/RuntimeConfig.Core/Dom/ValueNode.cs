@@ -1,7 +1,7 @@
 using System;
 using System.Text.Json;
 
-namespace JsonConfigEditor.Core.Dom
+namespace RuntimeConfig.Core.Dom
 {
     /// <summary>
     /// Represents a JSON primitive value node in the DOM tree.

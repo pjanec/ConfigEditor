@@ -1,5 +1,5 @@
-using JsonConfigEditor.Core.Dom;
-using JsonConfigEditor.Core.Schema;
+using RuntimeConfig.Core.Dom;
+using RuntimeConfig.Core.Schema;
 using JsonConfigEditor.Core.SchemaLoading;
 using JsonConfigEditor.ViewModels;
 using System;

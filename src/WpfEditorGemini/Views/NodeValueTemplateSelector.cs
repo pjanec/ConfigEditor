@@ -1,12 +1,12 @@
 using JsonConfigEditor.ViewModels;
-using JsonConfigEditor.Core.Dom;
+using RuntimeConfig.Core.Dom;
 using System.Windows;
 using System.Windows.Controls;
 using System.Text.Json;
 using JsonConfigEditor.Wpf.Services;
 using JsonConfigEditor.Contracts.Rendering;
 using JsonConfigEditor.Contracts.Editors;
-using JsonConfigEditor.Core.Schema;
+using RuntimeConfig.Core.Schema;
 using System;
 
 namespace JsonConfigEditor.Views

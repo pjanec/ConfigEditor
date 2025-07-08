@@ -3,6 +3,7 @@ using JsonConfigEditor.Wpf.Services;
 using System;
 using System.Globalization;
 using System.Windows.Data;
+using RuntimeConfig.Core.Dom;
 
 namespace JsonConfigEditor.Wpf.Converters
 {
@@ -33,7 +34,7 @@ namespace JsonConfigEditor.Wpf.Converters
             }
             
             // For RefNodes, show full path by default if no custom provider (as per specs 2.3.4)
-            if (vm.DomNode is Core.Dom.RefNode refNode)
+            if (vm.DomNode is RuntimeConfig.Core.Dom.RefNode refNode)
             {
                 return refNode.ReferencePath;
             }

@@ -1,5 +1,4 @@
-using JsonConfigEditor.Contracts.Attributes;
-using JsonConfigEditor.Core.Schema;
+using RuntimeConfig.Core.Schema;
 using System;
 using System.Collections; // Required for IDictionary, IEnumerable
 using System.Collections.Generic;
@@ -13,6 +12,8 @@ using JsonConfigEditor.Contracts.Rendering;
 using JsonConfigEditor.Contracts.Editors;
 using JsonConfigEditor.Contracts.Tooltips;
 using JsonConfigEditor.Wpf.Services; // Assuming this is for CustomUIRegistryService
+using RuntimeConfig.Core.Schema.Attributes;
+using JsonConfigEditor.Contracts.Attributes;
 
 namespace JsonConfigEditor.Core.SchemaLoading
 {
@@ -205,7 +206,7 @@ namespace JsonConfigEditor.Core.SchemaLoading
                 {
                     try
                     {
-                        var configSchemaAttr = type.GetCustomAttribute<ConfigSchemaAttribute>();
+                        var configSchemaAttr = type.GetCustomAttribute<RuntimeConfig.Core.Schema.Attributes.ConfigSchemaAttribute>();
                         if (configSchemaAttr != null)
                         {
                             ProcessSchemaClass(type, configSchemaAttr);
@@ -239,7 +240,7 @@ namespace JsonConfigEditor.Core.SchemaLoading
         /// <summary>
         /// Processes a class marked with ConfigSchemaAttribute.
         /// </summary>
-        private void ProcessSchemaClass(Type schemaClassType, ConfigSchemaAttribute configSchemaAttribute)
+        private void ProcessSchemaClass(Type schemaClassType, RuntimeConfig.Core.Schema.Attributes.ConfigSchemaAttribute configSchemaAttribute)
         {
             var mountPath = configSchemaAttribute.MountPath ?? ""; // Ensure mountPath is not null
 
@@ -527,14 +528,14 @@ namespace JsonConfigEditor.Core.SchemaLoading
 
         private string? GetRegexPattern(PropertyInfo propertyInfo)
         {
-            return propertyInfo.GetCustomAttribute<SchemaRegexPatternAttribute>()?.Pattern;
+            return propertyInfo.GetCustomAttribute<RuntimeConfig.Core.Schema.Attributes.SchemaRegexPatternAttribute>()?.Pattern;
         }
 
         private List<string>? GetAllowedValues(PropertyInfo? propertyInfo, Type typeForEnumCheck)
         {
             if (propertyInfo != null)
             {
-                var allowedValuesAttr = propertyInfo.GetCustomAttribute<SchemaAllowedValuesAttribute>();
+                var allowedValuesAttr = propertyInfo.GetCustomAttribute<RuntimeConfig.Core.Schema.Attributes.SchemaAllowedValuesAttribute>();
                 if (allowedValuesAttr != null) return allowedValuesAttr.AllowedValues.ToList();
             }
             if (typeForEnumCheck.IsEnum) return Enum.GetNames(typeForEnumCheck).ToList();

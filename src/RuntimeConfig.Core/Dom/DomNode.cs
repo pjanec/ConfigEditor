@@ -1,6 +1,6 @@
 using System;
 
-namespace JsonConfigEditor.Core.Dom
+namespace RuntimeConfig.Core.Dom
 {
     /// <summary>
     /// Abstract base class for all nodes in the JSON Document Object Model (DOM) tree.

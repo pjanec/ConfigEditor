@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace JsonConfigEditor.Core.Dom
+namespace RuntimeConfig.Core.Dom
 {
     /// <summary>
     /// Represents a JSON object node in the DOM tree.

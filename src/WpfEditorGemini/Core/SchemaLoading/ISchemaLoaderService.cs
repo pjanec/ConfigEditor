@@ -1,4 +1,4 @@
-using JsonConfigEditor.Core.Schema;
+using RuntimeConfig.Core.Schema;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 

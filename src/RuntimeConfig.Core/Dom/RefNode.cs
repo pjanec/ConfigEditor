@@ -1,7 +1,7 @@
 using System;
 using System.Text.Json;
 
-namespace JsonConfigEditor.Core.Dom
+namespace RuntimeConfig.Core.Dom
 {
     /// <summary>
     /// Represents a symbolic link within the DOM tree.

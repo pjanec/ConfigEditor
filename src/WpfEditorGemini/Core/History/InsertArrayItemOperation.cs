@@ -1,4 +1,4 @@
-using JsonConfigEditor.Core.Dom;
+using RuntimeConfig.Core.Dom;
 using JsonConfigEditor.ViewModels;
 
 namespace JsonConfigEditor.Core.History

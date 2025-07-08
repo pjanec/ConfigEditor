@@ -1,6 +1,6 @@
 using JsonConfigEditor.Core.Cascade;
-using JsonConfigEditor.Core.Dom;
-using JsonConfigEditor.Core.Schema;
+using RuntimeConfig.Core.Dom;
+using RuntimeConfig.Core.Schema;
 using JsonConfigEditor.Core.SchemaLoading;
 using JsonConfigEditor.Core.Validation;
 using System;

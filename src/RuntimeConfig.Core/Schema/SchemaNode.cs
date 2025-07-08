@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace JsonConfigEditor.Core.Schema
+namespace RuntimeConfig.Core.Schema
 {
     /// <summary>
     /// Defines the type of a schema node (Value, Object, or Array).
