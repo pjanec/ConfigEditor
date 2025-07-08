@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
-namespace RuntimeConfig.Core
+namespace RuntimeConfig.Core.Helpers
 {
     // Internal model for deserializing the layer definitions from the project file.
     internal record LayerDefinitionModel([property: JsonPropertyName("name")] string Name, [property: JsonPropertyName("folderPath")] string FolderPath);

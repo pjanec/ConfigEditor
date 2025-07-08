@@ -2,6 +2,7 @@
 using RuntimeConfig.Core.Models;
 using RuntimeConfig.Core.Providers;
 using RuntimeConfig.Core.Querying;
+using RuntimeConfig.Core.Helpers;
 using System;
 using System.Collections.Generic;
 using System.IO;

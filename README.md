@@ -78,11 +78,13 @@ var provider = new CascadingJsonProvider(layers);
 // Create the main DOM tree and register the provider  
 var configTree = new RuntimeDomTree();  
 configTree.RegisterProvider("app", provider);
+```
 
 ### **3. Loading and Refreshing the Configuration**
 
 Before you can query for values, you must load and merge the configuration from all the layers. This is done asynchronously.
 
+``` csharp
 // Asynchronously load and resolve the configuration from all layers  
 await configTree.RefreshAsync();
 ```
@@ -99,6 +101,11 @@ DomQuery query = configTree.Query();
 
 try  
 {  
+    // Read whole config to an in-memory class instance (this class is also used as a schema
+    // definition for the editor - editor load it dynamically from this app assembly.)
+    var appSettings = query.Get<JsonConfigEditor.TestData.AppConfiguration>("app/app-settings");
+    Console.WriteLine($"App name from config: {appSettings.ApplicationName}");
+
     // Query for a string value from app-settings.json  
     // Path: {mount-point}/{file-name}/{property-name}  
     string appName = query.Get<string>("app/app-settings/ApplicationName");
