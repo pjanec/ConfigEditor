@@ -1,1 +1,1 @@
-python cs_dump.py WpfEditorGemini src.txt
+python cs_dump.py . src.txt

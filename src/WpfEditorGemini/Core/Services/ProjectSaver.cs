@@ -1,6 +1,6 @@
 ﻿using JsonConfigEditor.Core.Cascade;
 using RuntimeConfig.Core.Dom;
-using JsonConfigEditor.Core.Serialization;
+using RuntimeConfig.Core.Serialization;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -57,9 +57,9 @@ namespace JsonConfigEditor.Core.Services
 
     public class ProjectSaver
     {
-        private readonly IDomNodeToJsonSerializer _serializer;
+        private readonly RuntimeConfig.Core.Serialization.JsonDomSerializer _serializer;
 
-        public ProjectSaver(IDomNodeToJsonSerializer serializer)
+        public ProjectSaver(RuntimeConfig.Core.Serialization.JsonDomSerializer serializer)
         {
             _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         }
@@ -81,7 +81,7 @@ namespace JsonConfigEditor.Core.Services
                 var originalFile = layer.SourceFiles.FirstOrDefault(f => f.RelativePath.Equals(relativeFilePath, StringComparison.OrdinalIgnoreCase));
                 
                 // The serializer correctly handles writing the contents of the object node.
-                string newContent = _serializer.SerializeToString(nodeToSave, indented: true);
+                string newContent = _serializer.ToJson(nodeToSave);
 
                 if (originalFile == null || originalFile.OriginalText != newContent)
                 {
@@ -137,7 +137,7 @@ namespace JsonConfigEditor.Core.Services
                 var segments = pathWithoutExtension.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);  
                 var mountPath = segments.Any() ? "$root/" + string.Join("/", segments) : "$root";  
                   
-                var mountNode = FindNodeByPath(layer.LayerConfigRootNode, mountPath) as ObjectNode;  
+                var mountNode = DomTree.FindNodeByPath(layer.LayerConfigRootNode, mountPath) as ObjectNode;  
                 var fileContentRoot = new ObjectNode("$file_root", null);
 
                 if (mountNode != null)  
@@ -148,7 +148,7 @@ namespace JsonConfigEditor.Core.Services
                         // Only include the child if its branch truly belongs to this file.  
                         if (DoesBranchBelongToFile(childNode, relativeFilePath, layer.IntraLayerValueOrigins))  
                         {  
-                            fileContentRoot.AddChild(childNode.Name, DomCloning.CloneNode(childNode, fileContentRoot));  
+                            fileContentRoot.AddChild(childNode.Name, DomTree.CloneNode(childNode, fileContentRoot));  
                         }  
                     }  
                 }  
@@ -185,41 +185,7 @@ namespace JsonConfigEditor.Core.Services
 
 
 
-        /// <summary>
-        /// Finds a node in a DOM tree by its full path.
-        /// </summary>
-        private DomNode? FindNodeByPath(DomNode rootNode, string path)
-        {
-            if (rootNode.Path.Equals(path, StringComparison.OrdinalIgnoreCase))
-            {
-                return rootNode;
-            }
 
-            if (rootNode is ObjectNode objectNode)
-            {
-                foreach (var child in objectNode.GetChildren())
-                {
-                    if (path.StartsWith(child.Path, StringComparison.OrdinalIgnoreCase))
-                    {
-                        var found = FindNodeByPath(child, path);
-                        if (found != null) return found;
-                    }
-                }
-            }
-            else if (rootNode is ArrayNode arrayNode)
-            {
-                foreach (var item in arrayNode.GetItems())
-                {
-                    if (path.StartsWith(item.Path, StringComparison.OrdinalIgnoreCase))
-                    {
-                        var found = FindNodeByPath(item, path);
-                        if (found != null) return found;
-                    }
-                }
-            }
-
-            return null;
-        }
 
 
     }

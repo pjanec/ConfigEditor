@@ -153,14 +153,14 @@ namespace RuntimeConfig.Core.Dom
                     var newObject = new ObjectNode(newName, this);
                     foreach (var child in o.Children.Values)
                     {
-                        newObject.AddChild(child.Name, DomCloning.CloneNode(child, newObject));
+                        newObject.AddChild(child.Name, DomTree.CloneNode(child, newObject));
                     }
                     return newObject;
                 case ArrayNode a:
                     var newArray = new ArrayNode(newName, this);
                     foreach (var item in a.Items)
                     {
-                        newArray.AddItem(DomCloning.CloneNode(item, newArray));
+                        newArray.AddItem(DomTree.CloneNode(item, newArray));
                     }
                     return newArray;
                 default:

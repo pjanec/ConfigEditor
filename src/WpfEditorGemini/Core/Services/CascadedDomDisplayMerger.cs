@@ -36,7 +36,7 @@ namespace JsonConfigEditor.Core.Services
             }
 
             // Pass 2: Build the final merged tree by combining the layers.
-            var mergedRoot = (ObjectNode)DomCloning.CloneNode(schemaDefaultsRoot, null);
+            var mergedRoot = (ObjectNode)DomTree.CloneNode(schemaDefaultsRoot, null);
             foreach (var layer in allLayers)
             {
                 MergeNodeIntoRecursive(mergedRoot, layer.LayerConfigRootNode);
@@ -67,26 +67,7 @@ namespace JsonConfigEditor.Core.Services
         
         private void MergeNodeIntoRecursive(ObjectNode targetParent, ObjectNode sourceParent)
         {
-            foreach (var (childKey, sourceChild) in sourceParent.Children)
-            {
-                if (targetParent.Children.TryGetValue(childKey, out var existingChild))
-                {
-                    if (existingChild is ObjectNode existingObject && sourceChild is ObjectNode sourceObject)
-                    {
-                        MergeNodeIntoRecursive(existingObject, sourceObject);
-                    }
-                    else
-                    {
-                        var clonedSourceChild = DomCloning.CloneNode(sourceChild, targetParent);
-                        targetParent.ReplaceChild(clonedSourceChild.Name, clonedSourceChild);
-                    }
-                }
-                else
-                {
-                    var clonedSourceChild = DomCloning.CloneNode(sourceChild, targetParent);
-                    targetParent.AddChild(clonedSourceChild.Name, clonedSourceChild);
-                }
-            }
+            DomMerger.MergeInto(targetParent, sourceParent);
         }
     }
 }

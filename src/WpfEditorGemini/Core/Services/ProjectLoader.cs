@@ -1,6 +1,6 @@
 ﻿using JsonConfigEditor.Core.Cascade;
 using RuntimeConfig.Core.Dom;
-using JsonConfigEditor.Core.Parsing;
+using RuntimeConfig.Core.Serialization;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -34,14 +34,14 @@ namespace JsonConfigEditor.Core.Services
     /// </summary>
     public class ProjectLoader
     {
-        private readonly IJsonDomParser _jsonParser;
+        private readonly JsonDomDeserializer _jsonParser;
         private static readonly JsonSerializerOptions _serializerOptions = new()
         {
             PropertyNameCaseInsensitive = true,
             ReadCommentHandling = JsonCommentHandling.Skip
         };
 
-        public ProjectLoader(IJsonDomParser jsonParser)
+        public ProjectLoader(JsonDomDeserializer jsonParser)
         {
             _jsonParser = jsonParser ?? throw new ArgumentNullException(nameof(jsonParser));
         }
@@ -131,8 +131,8 @@ namespace JsonConfigEditor.Core.Services
                 try
                 {
                     var fileContent = await File.ReadAllTextAsync(filePath);
-                    // Use the existing parser service from WpfEditorGemini
-                    var domRoot = _jsonParser.ParseFromString(fileContent); 
+                    // Use the new deserializer from RuntimeConfig.Core
+                    var domRoot = _jsonParser.FromJson(fileContent); 
                     
                     var relativePath = Path.GetRelativePath(absoluteLayerPath, filePath).Replace('\\', '/');
 

@@ -65,7 +65,7 @@ namespace JsonConfigEditor.Core.Services
                             continue;
                         }
 
-                        DomNode? existingDomForMountPath = _mainViewModel.FindDomNodeByPath(mountPath);
+                        DomNode? existingDomForMountPath = RuntimeConfig.Core.Dom.DomTree.FindNodeByPath(_mainViewModel.GetRootDomNode(), mountPath);
                         if (existingDomForMountPath != null)
                         {
                             continue;

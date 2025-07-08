@@ -1,6 +1,5 @@
-using JsonConfigEditor.Core.Parsing;
 using JsonConfigEditor.Core.SchemaLoading;
-using JsonConfigEditor.Core.Serialization;
+using RuntimeConfig.Core.Serialization;
 using JsonConfigEditor.Core.Settings;
 using JsonConfigEditor.Core.Validation;
 using Microsoft.Win32;
@@ -30,8 +29,8 @@ namespace JsonConfigEditor.ViewModels
     public class MainViewModel : ViewModelBase
     {
         // --- Private Fields: Services ---
-        private readonly IJsonDomParser _jsonParser;
-        private readonly IDomNodeToJsonSerializer _jsonSerializer;
+        private readonly RuntimeConfig.Core.Serialization.JsonDomDeserializer _jsonParser;
+        private readonly RuntimeConfig.Core.Serialization.JsonDomSerializer _jsonSerializer;
         private readonly ISchemaLoaderService _schemaLoader;
         private readonly ValidationService _validationService;
         private readonly CustomUIRegistryService _uiRegistry;
@@ -300,8 +299,8 @@ namespace JsonConfigEditor.ViewModels
 
         public MainViewModel()
         {
-            _jsonParser = new JsonDomParser();
-            _jsonSerializer = new DomNodeToJsonSerializer();
+            _jsonParser = new RuntimeConfig.Core.Serialization.JsonDomDeserializer();
+            _jsonSerializer = new RuntimeConfig.Core.Serialization.JsonDomSerializer();
             _searchService = new DomSearchService();
             _placeholderProvider = new SchemaPlaceholderProvider();
             _validationService = new ValidationService();
@@ -721,7 +720,7 @@ namespace JsonConfigEditor.ViewModels
             try
             {
                 var fileContent = await File.ReadAllTextAsync(filePath);
-                var domRoot = _jsonParser.ParseFromString(fileContent) as ObjectNode;
+                var domRoot = _jsonParser.FromJson(fileContent) as ObjectNode;
 
                 if (domRoot == null)
                 {
@@ -838,7 +837,8 @@ namespace JsonConfigEditor.ViewModels
                 var rootNodeToSave = _cascadeLayers.FirstOrDefault()?.LayerConfigRootNode;
                 if (rootNodeToSave == null) return;
 
-                await _jsonSerializer.SerializeToFileAsync(rootNodeToSave, targetPath);
+                var jsonContent = _jsonSerializer.ToJson(rootNodeToSave);
+                await File.WriteAllTextAsync(targetPath, jsonContent);
                 CurrentFilePath = targetPath; // Update path if 'Save As' was used.
 
                 // Mark the single layer as no longer dirty.
@@ -1193,7 +1193,7 @@ namespace JsonConfigEditor.ViewModels
               
             // 4. Update the UI collection and the persistent map
             FlatItemsSource.Clear();
-            var newPersistentMap = new Dictionary<string, DataGridRowItemViewModel>();
+            var newPersistentMap = new Dictionary<string, DataGridRowItemViewModel>(StringComparer.OrdinalIgnoreCase);
             DataGridRowItemViewModel? itemToReselect = null;
 
             foreach (var itemVm in processedList)
@@ -1814,7 +1814,7 @@ namespace JsonConfigEditor.ViewModels
             else if (selectedItem.IsAddItemPlaceholder)
             {
                 // Case: User clicked the "(Add new item)" placeholder.
-                displayParentArray = FindDomNodeByPath(selectedItem.SchemaNodePathKey.Substring(0, selectedItem.SchemaNodePathKey.Length - 5)) as ArrayNode;
+                displayParentArray = DomTree.FindNodeByPath(GetRootDomNode(), selectedItem.SchemaNodePathKey.Substring(0, selectedItem.SchemaNodePathKey.Length - 5)) as ArrayNode;
             }
             else if (selectedItem.IsSchemaOnlyNode && selectedItem.NodeType == DataGridRowItemViewModel.ViewModelNodeType.Array)
             {
@@ -1947,7 +1947,7 @@ namespace JsonConfigEditor.ViewModels
 
         public DomNode? FindDomNodeByPath(string path)
         {
-            return FindNodeByPathFromRoot(GetRootDomNode(), path);
+            return DomTree.FindNodeByPath(GetRootDomNode(), path);
         }
 
         // Change the type of the 'parent' parameter from ObjectNode to DomNode
@@ -2046,7 +2046,7 @@ namespace JsonConfigEditor.ViewModels
 
             if (parentSchema?.NodeType == SchemaNodeType.Array)
             {
-                var inheritedArray = FindDomNodeByPath(parentPath) as ArrayNode;
+                var inheritedArray = DomTree.FindNodeByPath(GetRootDomNode(), parentPath) as ArrayNode;
                 if (inheritedArray == null) return;
 
                 Action<ArrayNode> editAction = (array) => {

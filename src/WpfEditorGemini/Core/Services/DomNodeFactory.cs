@@ -122,7 +122,7 @@ namespace JsonConfigEditor.Core.Services
             }
 
             // Find existing node first
-            DomNode? existingNode = _mainViewModel.FindDomNodeByPath(targetPathKey);
+            DomNode? existingNode = RuntimeConfig.Core.Dom.DomTree.FindNodeByPath(_mainViewModel.GetRootDomNode(), targetPathKey);
             if (existingNode != null)
             {
                 return existingNode;
