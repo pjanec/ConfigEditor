@@ -3,8 +3,6 @@ Empty object should be created.
 
 BUG: Folding/unfolding takes long time on little json files.
 
-FEAT: Insert key for adding new stuff into array. Insert item in context menu. Inserts ABOVE selected array item.
-
 BUG: Editor allows editing the Value field of a object-typed schema node
 
 
