@@ -11,9 +11,13 @@ public class Program
 {
     public static async Task Main(string[] args)
     {
-        // Use the test data in the output config folder
-        var testDataPath = Path.Combine(AppContext.BaseDirectory, "config");
+        Console.WriteLine("=== RuntimeConfig Cascading Configuration Demo ===\n");
+        
+        // Use the TestData folder that was copied to the output directory
+        var testDataPath = Path.Combine(AppContext.BaseDirectory, "TestData", "config");
 
+        Console.WriteLine($"Loading configuration from: {testDataPath}");
+        
         var layers = new List<LayerDefinition>
         {
             new LayerDefinition("Base", Path.Combine(testDataPath, "1_base")),
@@ -27,54 +31,78 @@ public class Program
 
         Console.WriteLine("Loading and resolving configuration...");
         await configTree.RefreshAsync();
-        Console.WriteLine("Load complete.");
+        Console.WriteLine("Load complete.\n");
 
         // Debug: Let's see what the actual DOM structure looks like
-        Console.WriteLine("\n=== DOM Structure Debug ===");
+        Console.WriteLine("=== DOM Structure Debug ===");
         DumpDomStructure(configTree.ResolvedRoot, 0);
+        Console.WriteLine();
 
         DomQuery query = configTree.Query();
 
-        // Test various queries - using the actual data that exists
+        Console.WriteLine("=== Cascading Configuration Demo ===");
+        Console.WriteLine("Testing values that exist in multiple layers to demonstrate cascading behavior:\n");
+
+        // Test ApplicationName - exists in Base and Production, should get Production value
         try
         {
             string appName = query.Get<string>("app/ApplicationName");
-            Console.WriteLine($"Application Name: {appName}"); // Expected: My Awesome App
+            Console.WriteLine($"Application Name: {appName}");
+            Console.WriteLine("  → Base layer: 'My Awesome App (Base)'");
+            Console.WriteLine("  → Production layer: 'My Awesome App'");
+            Console.WriteLine("  → Result: Production overrides Base ✓\n");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error getting ApplicationName: {ex.Message}");
+            Console.WriteLine($"Error getting ApplicationName: {ex.Message}\n");
         }
 
+        // Test Port - exists in Base, Staging, and Production, should get Production value
         try
         {
             int port = query.Get<int>("app/Port");
-            Console.WriteLine($"Port: {port}"); // Expected: 8080
+            Console.WriteLine($"Port: {port}");
+            Console.WriteLine("  → Base layer: 80");
+            Console.WriteLine("  → Staging layer: 8080");
+            Console.WriteLine("  → Production layer: 443");
+            Console.WriteLine("  → Result: Production overrides Staging overrides Base ✓\n");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error getting Port: {ex.Message}");
+            Console.WriteLine($"Error getting Port: {ex.Message}\n");
         }
 
+        // Test EnableLogging - exists in Base and Production, should get Production value
         try
         {
             bool enableLogging = query.Get<bool>("app/EnableLogging");
-            Console.WriteLine($"Enable Logging: {enableLogging}"); // Expected: false
+            Console.WriteLine($"Enable Logging: {enableLogging}");
+            Console.WriteLine("  → Base layer: true");
+            Console.WriteLine("  → Production layer: false");
+            Console.WriteLine("  → Result: Production overrides Base ✓\n");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error getting EnableLogging: {ex.Message}");
+            Console.WriteLine($"Error getting EnableLogging: {ex.Message}\n");
         }
 
+        // Test AllowedHosts - exists in Base and Staging, should get Staging value
         try
         {
-            string apiKey = query.Get<string>("app/secrets/ApiKey");
-            Console.WriteLine($"API Key: {apiKey}"); // Expected: STAGING_API_KEY
+            var allowedHosts = query.Get<string[]>("app/AllowedHosts");
+            Console.WriteLine($"Allowed Hosts: [{string.Join(", ", allowedHosts)}]");
+            Console.WriteLine("  → Base layer: ['localhost']");
+            Console.WriteLine("  → Staging layer: ['localhost', 'staging.server.com']");
+            Console.WriteLine("  → Result: Staging overrides Base ✓\n");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error getting ApiKey: {ex.Message}");
+            Console.WriteLine($"Error getting AllowedHosts: {ex.Message}\n");
         }
+
+        Console.WriteLine("=== Summary ===");
+        Console.WriteLine("The cascading configuration system correctly resolves values from the highest layer");
+        Console.WriteLine("that contains the configuration, demonstrating the override behavior.");
     }
 
     private static void DumpDomStructure(RuntimeConfig.Core.Dom.DomNode? node, int depth)

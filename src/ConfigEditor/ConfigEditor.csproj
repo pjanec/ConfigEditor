@@ -17,14 +17,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="TestData\test-config.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\RuntimeConfig.Core\RuntimeConfig.Core.csproj" />
   </ItemGroup>
+
+  <Target Name="CopyTestData" AfterTargets="Build">
+    <Exec Command="powershell.exe -ExecutionPolicy Bypass -File $(MSBuildProjectDirectory)\..\copy-testdata.ps1 -ProjectOutputPath $(TargetDir) -TestDataPath $(MSBuildProjectDirectory)\..\TestData" />
+  </Target>
 
   <ItemGroup>
     <Folder Include="Contracts\Attributes\" />

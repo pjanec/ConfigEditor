@@ -2,10 +2,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RuntimeConfig.Core\RuntimeConfig.Core.csproj" />
-    <Content Include="config\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
+
+  <Target Name="CopyTestData" AfterTargets="Build">
+    <Exec Command="powershell.exe -ExecutionPolicy Bypass -File $(MSBuildProjectDirectory)\..\copy-testdata.ps1 -ProjectOutputPath $(TargetDir) -TestDataPath $(MSBuildProjectDirectory)\..\TestData" />
+  </Target>
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>

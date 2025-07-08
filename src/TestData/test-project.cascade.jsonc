@@ -1,6 +1,6 @@
 {
   "schemaSources": [
-    "."
+    "../RuntimeConfig.Consumer.Test/bin/Debug/net8.0"
   ],
   "layers": [
     {
