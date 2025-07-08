@@ -23,6 +23,7 @@ using JsonConfigEditor.Views; // Add this for IntegrityCheckDialog
 using JsonConfigEditor.ViewModels; // Add this for new ViewModels
 using RuntimeConfig.Core.Dom;
 using RuntimeConfig.Core.Schema;
+using RuntimeConfig.Core.Models;
 
 namespace JsonConfigEditor.ViewModels
 {
@@ -44,7 +45,7 @@ namespace JsonConfigEditor.ViewModels
         private readonly ViewModelBuilderService _viewModelBuilder;
         private readonly ProjectSaver _projectSaver; // Add this field
         // ADD the new intra-layer merger service
-        private readonly IntraLayerMerger _intraLayerMerger;
+        private readonly RuntimeConfig.Core.Services.LayerProcessor _layerProcessor;
         private readonly ProjectLoader _projectLoader;
         private readonly CascadedDomDisplayMerger _displayMerger;
         private readonly CriticalErrorScanner _errorScanner;
@@ -134,6 +135,8 @@ namespace JsonConfigEditor.ViewModels
         private System.Threading.Timer? _searchDebounceTimer;
         private const int SearchDebounceMilliseconds = 500;
         private readonly object _searchLock = new object(); // For thread safety with timer
+
+        private readonly ProjectStructureAnalyzer _structureAnalyzer;
 
         // --- Serializer Options for converting object to JsonElement ---
         private static readonly JsonSerializerOptions _defaultSerializerOptions = new JsonSerializerOptions
@@ -312,17 +315,19 @@ namespace JsonConfigEditor.ViewModels
             _historyService = new EditHistoryService(this);
             _historyService.ModelChanged += OnHistoryModelChanged; // Subscribe to the event
             _filterService = new DomFilterService();
-            _intraLayerMerger = new IntraLayerMerger();
+            _layerProcessor = new RuntimeConfig.Core.Services.LayerProcessor();
             _projectLoader = new ProjectLoader(_jsonParser); // Add this
             _displayMerger = new CascadedDomDisplayMerger(); // Add this
             _projectSaver = new ProjectSaver(_jsonSerializer); // Initialize the saver
             _viewModelBuilder = new ViewModelBuilderService(_placeholderProvider, this);
             _errorScanner = new CriticalErrorScanner();
             _caseMismatchChecker = new CaseMismatchChecker();
+            _structureAnalyzer = new ProjectStructureAnalyzer();
             _userSettingsService = new UserSettingsService();
             // Load settings synchronously in the constructor for simplicity,
             // or adapt to an async initialization pattern if preferred.
             UserSettings = Task.Run(() => _userSettingsService.LoadSettingsAsync()).GetAwaiter().GetResult();
+
 
             NewFileCommand = new RelayCommand(ExecuteNewFile);
             OpenFileCommand = new RelayCommand(ExecuteOpenFile);
@@ -647,15 +652,22 @@ namespace JsonConfigEditor.ViewModels
                             var issue = new IntegrityIssue(ValidationSeverity.Error, error, layerData.Definition.Name);
                             Issues.Add(new IssueViewModel(issue, this));
                         }
-
-                        var mergeResult = _intraLayerMerger.Merge(layerData);
+                        
+                        var result = _layerProcessor.Process(layerData.AbsoluteFolderPath, layerIndex);
+                        
+                        // Add errors from LayerProcessor
+                        foreach (var error in result.Errors)
+                        {
+                            var issue = new IntegrityIssue(ValidationSeverity.Error, error, layerData.Definition.Name);
+                            Issues.Add(new IssueViewModel(issue, this));
+                        }
                         var cascadeLayer = new CascadeLayer(
                             layerIndex++,
                             layerData.Definition.Name,
                             layerData.AbsoluteFolderPath,
-                             layerData.SourceFiles,
-                            mergeResult.LayerConfigRootNode,
-                            mergeResult.IntraLayerValueOrigins
+                            result.LoadedSourceFiles,
+                            result.MergedRootNode,
+                            new Dictionary<string, string>(result.ValueOrigins)
                         );
                         _cascadeLayers.Add(cascadeLayer);
                         AllLayers.Add(cascadeLayer);
@@ -1652,26 +1664,15 @@ namespace JsonConfigEditor.ViewModels
                 return;
             }
 
-            // Collect all proposed consolidations from all layers
+            // Collect all proposed consolidations from all layers by using the new analyzer.
             var allProposedConsolidations = new List<ConsolidationAction>();
-            
+
             foreach (var layer in _cascadeLayers)
             {
-                // Create a LayerDefinitionModel from the existing layer data
-                var layerDefinition = new LayerDefinitionModel(layer.Name, layer.FolderPath);
-                
-                // Re-run the intra-layer merger to get consolidation proposals
-                var layerData = new LayerLoadResult(
-                    layerDefinition,
-                    layer.FolderPath,
-                    layer.SourceFiles,
-                    new List<string>() // Empty errors list for this re-run
-                );
-                
-                var mergeResult = _intraLayerMerger.Merge(layerData);
-                if (mergeResult.ProposedConsolidations.Any())
+                var actionsForLayer = _structureAnalyzer.ProposeConsolidations(layer);
+                if (actionsForLayer.Any())
                 {
-                    allProposedConsolidations.AddRange(mergeResult.ProposedConsolidations);
+                    allProposedConsolidations.AddRange(actionsForLayer);
                 }
             }
 
@@ -1679,7 +1680,6 @@ namespace JsonConfigEditor.ViewModels
             {
                 var dialog = new ConsolidationDialog(allProposedConsolidations, selectedActions =>
                 {
-                    // This is the callback that applies the changes.
                     ApplyConsolidationActions(selectedActions);
                 });
                 dialog.ShowDialog();

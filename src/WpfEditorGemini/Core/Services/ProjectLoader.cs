@@ -15,7 +15,7 @@ namespace JsonConfigEditor.Core.Services
     /// Represents the structured result of loading all files for a single layer,
     /// before any merging has occurred.
     /// </summary>
-    public record LayerLoadResult(LayerDefinitionModel Definition, string AbsoluteFolderPath, IReadOnlyList<SourceFileInfo> SourceFiles, List<string> Errors);
+    public record LayerLoadResult(LayerDefinitionModel Definition, string AbsoluteFolderPath, IReadOnlyList<RuntimeConfig.Core.Models.SourceFileInfo> SourceFiles, List<string> Errors);
     
     /// <summary>
     /// Represents the complete result of loading a project, including schema paths and errors.
@@ -72,7 +72,7 @@ namespace JsonConfigEditor.Core.Services
                 if (!Directory.Exists(absoluteLayerPath))
                 {
                     layerErrors.Add($"Layer '{layerDef.Name}' folder not found: {absoluteLayerPath}");
-                    loadedLayers.Add(new LayerLoadResult(layerDef, absoluteLayerPath, new List<SourceFileInfo>(), layerErrors));
+                    loadedLayers.Add(new LayerLoadResult(layerDef, absoluteLayerPath, new List<RuntimeConfig.Core.Models.SourceFileInfo>(), layerErrors));
                     continue;
                 }
 
@@ -105,7 +105,7 @@ namespace JsonConfigEditor.Core.Services
         /// <summary>
         /// Finds all *.json files in a layer folder and parses each one into a SourceFileInfo object.
         /// </summary>
-        private async Task<IReadOnlyList<SourceFileInfo>> LoadAllFilesFromLayerFolderAsync(string absoluteLayerPath, int layerIndex, List<string> errors)
+        private async Task<IReadOnlyList<RuntimeConfig.Core.Models.SourceFileInfo>> LoadAllFilesFromLayerFolderAsync(string absoluteLayerPath, int layerIndex, List<string> errors)
         {
             var jsonFiles = Directory.GetFiles(absoluteLayerPath, "*.json", SearchOption.AllDirectories);
 
@@ -124,7 +124,7 @@ namespace JsonConfigEditor.Core.Services
             }
             // *** END NEW ***
 
-            var sourceFiles = new List<SourceFileInfo>();
+            var sourceFiles = new List<RuntimeConfig.Core.Models.SourceFileInfo>();
 
             foreach (var filePath in jsonFiles.OrderBy(p => p)) // Order for determinism
             {
@@ -136,7 +136,7 @@ namespace JsonConfigEditor.Core.Services
                     
                     var relativePath = Path.GetRelativePath(absoluteLayerPath, filePath).Replace('\\', '/');
 
-                    sourceFiles.Add(new SourceFileInfo(filePath, relativePath, domRoot, fileContent, layerIndex));
+                    sourceFiles.Add(new RuntimeConfig.Core.Models.SourceFileInfo(filePath, relativePath, domRoot, fileContent, layerIndex));
                 }
                 catch(Exception ex)
                 {

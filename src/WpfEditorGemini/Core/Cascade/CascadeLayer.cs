@@ -30,7 +30,7 @@ namespace JsonConfigEditor.Core.Cascade
         /// Gets a list of all source files that were loaded from this layer's folder.
         /// This is the raw, un-merged data for the layer.
         /// </summary>
-        public IReadOnlyList<SourceFileInfo> SourceFiles { get; }
+        public IReadOnlyList<RuntimeConfig.Core.Models.SourceFileInfo> SourceFiles { get; }
 
         /// <summary>
         /// Gets the single, unified root DomNode for this layer. This property
@@ -70,7 +70,7 @@ namespace JsonConfigEditor.Core.Cascade
             int layerIndex,
             string name,
             string folderPath,
-            IReadOnlyList<SourceFileInfo> sourceFiles,
+            IReadOnlyList<RuntimeConfig.Core.Models.SourceFileInfo> sourceFiles,
             ObjectNode layerConfigRootNode,
             Dictionary<string, string> intraLayerValueOrigins)
         {
