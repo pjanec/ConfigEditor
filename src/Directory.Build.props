@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <AppVersionText>$([System.IO.File]::ReadAllText('version.txt'))</AppVersionText>
+    <Version>$(AppVersionText)</Version>
+    <AssemblyVersion>$(AppVersionText)</AssemblyVersion>
+    <FileVersion>$(AppVersionText)</FileVersion>
+    <InformationalVersion>$(AppVersionText)</InformationalVersion>
+  </PropertyGroup>
+</Project>
