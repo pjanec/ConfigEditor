@@ -171,6 +171,9 @@
                 <MenuItem Header="_Check Project Structure..." Command="{Binding CheckProjectStructureCommand}" />
             </MenuItem>
             <!-- MODIFICATION END -->
+            <MenuItem Header="_Help" HorizontalAlignment="Right">
+                <MenuItem Header="_About" Click="AboutMenuItem_Click" />
+            </MenuItem>
         </Menu>
 
         <!-- Toolbar -->

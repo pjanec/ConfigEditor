@@ -738,5 +738,12 @@ private void MainDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEv
             }
         }
 
+        private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var about = new Views.AboutDialog();
+            about.Owner = this;
+            about.ShowDialog();
+        }
+
     }
 } 
