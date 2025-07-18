@@ -2,6 +2,8 @@
 
 This project is a sophisticated WPF-based editor designed for viewing, editing, and managing complex, layered JSON configuration files. It moves beyond simple text editing by representing JSON data as a structured Document Object Model (DOM) and leveraging C# class definitions for powerful, schema-driven validation, editing, and UI hints.
 
+![Editor Screenshot](./doc/screenshot.png)
+
 The editor's primary goal is to provide an intuitive and robust interface for handling enterprise-level configurations, where settings are often inherited and overridden across multiple environments (e.g., base, staging, production). It unifies single-file editing and multi-layer project management into a single, consistent workflow.
 
 ## **Core Features**
